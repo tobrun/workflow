@@ -22,10 +22,7 @@ Read [references/layers.md](references/layers.md), [references/tests.md](referen
 5. When every change set is committed, loop `python3 {build-skill-root}/scripts/check-tests.py .dev/{plan-name}` until it exits clean: it proves every specced scenario has a test that really exists, rather than one that was reported.
 6. Then run the full e2e pass per "The e2e layer" below over the whole spec, and loop on failures until it is green.
 7. Run the repository's required pull-request commands per [../../references/ci-parity.md](../../references/ci-parity.md), starting them in the background as soon as the e2e loop is green and rendering the e2e report while they run - the two share nothing. A known-red CI scenario is not an acceptable deviation.
-8. After the e2e report and CI-parity gate, follow the "Jira sync and pull request" rules below.
-   Only then suggest the follow-up, never launching it yourself: `ship` for
-   the quality pass over the full body of work, pointed at
-   `implementation-notes.md` and the `{plan-name}-e2e-report.html`.
+8. After the e2e report and CI-parity gate, follow the "Jira sync and pull request" rules below, then close per "Closing message".
 
 ## Jira sync and pull request
 
@@ -42,6 +39,16 @@ no Jira behavior or mention, but still ask before pushing anything.
 After creating the PR, follow its required checks to green per
 [../../references/ci-parity.md](../../references/ci-parity.md); opening the PR
 is not the terminal state of an authorized PR workflow.
+
+## Closing message
+
+Every build run ends with the same two lines, in this order - a green run, a blocked gate, and a run with open deviations all get both:
+
+1. `Next step: run ship over this work, pointed at .dev/{plan-name}/implementation-notes.md and the {plan-name}-e2e-report.html.` Recommend it; never launch it yourself.
+2. Then any question left for the user - the push/PR ask, a blocked gate, an unresolved deviation.
+
+A blocked gate or an unanswered PR question never replaces line 1.
+Neither does a failed e2e loop: say what is blocked, then still point at `ship`.
 
 ## The change-set loop
 

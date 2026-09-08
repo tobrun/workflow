@@ -31,7 +31,7 @@ Both phases share one scope.
 
 ## Phase 1: the gauntlet
 
-Eight checks, run cheapest first; [references/tools.md](references/tools.md) owns their definitions and the acquisition ladder.
+Eight checks, cheapest first - the five read-only analyzers scan as one parallel batch, the three test-contending ones run sequentially, per the loop reference; [references/tools.md](references/tools.md) owns their definitions and the acquisition ladder.
 Never weaken or skip a check because acquiring its tool is work.
 
 1. **Project static analysis** - every linter, type checker, and format checker the repo already configures, run over the in-scope files.

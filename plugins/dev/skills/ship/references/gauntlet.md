@@ -5,7 +5,10 @@ The check definitions and their acquisition ladder live in [tools.md](tools.md);
 
 ## The loop
 
-For each tool, in order:
+The five read-only analyzers - static analysis, security, dead code, duplication, dependency rules - scan as one parallel batch: their initial runs mutate nothing, so collect all five violation lists concurrently, dispatch fix agents grouped by independent area across the combined lists, and re-run all five together until clean.
+The expensive three - complexity x coverage, flakiness, mutation - stay sequential, cheapest first: they contend for the test runner, and each one's input shifts with every fix the previous one landed.
+
+For each tool (the batched five count as one), in order:
 
 1. Run it; collect the violations.
 2. Dispatch fixes: one fresh-context agent per independent area, launched in a single message, each given only the violation list for its area, the relevant file paths, and the fix vocabulary below.

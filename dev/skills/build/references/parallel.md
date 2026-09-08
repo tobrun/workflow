@@ -9,10 +9,11 @@ Group the change sets into waves by consecutive-disjoint batching:
 
 - Walk change sets in numeric order; the spec author's ordering is the dependency order.
 - Grow the current wave with the next change set only when its file list is disjoint from every change set already in the wave AND it consumes nothing a change set in the wave introduces (a module, function, endpoint, or decision outcome - your judgment while reading the spec).
-- Any overlap or doubt closes the wave; the next change set starts the next wave.
+- Any overlap or doubt excludes that change set from the wave; it anchors the next wave.
+- A change set past an excluded one may still join the current wave, under a doubled condition: disjoint from, and consuming nothing introduced by, every change set in the wave AND every earlier change set not yet committed. Doubt excludes it - the skip-ahead is the same dependency proxy applied against everything still unfinished, so it cannot produce an order the sequential walk would forbid.
 
 Sequential-by-default means parallelism is a pure optimization that can never produce a wrong order.
-Do not start a change set in a later wave while the current wave is in flight, even if it looks unrelated.
+Never start work belonging to the next wave while the current wave is in flight.
 
 ## Launching a wave
 
@@ -50,7 +51,7 @@ Output contract (the agent's final message must be exactly one fenced JSON block
 ## After a wave
 
 1. Verify rather than trust the reports: run the spec's Validation block yourself, once per wave - the shared tree already holds the whole wave's changes, so one run covers every change set in it.
-2. Commit each change set's work on the current branch, in number order, one commit per change set.
+2. Commit each change set's work on the current branch, in number order, one commit per change set. A skipped-ahead change set's commit waits until every earlier change set is committed, so history keeps the spec's order.
 3. Append each change set's entry to `implementation-notes.md` from `whatWasDone`, `seamsTested`, `testsAdded`, and `deviations`. `testsAdded` becomes the entry's `Tests added:` line, which the scenario checker reads.
 
 A `status: blocked` change set, a failing validation, or a reported conflict is yours to finish in the main thread before the next wave starts - do not carry a red change set forward and do not relaunch the same agent on the same failure more than once.

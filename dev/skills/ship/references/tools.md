@@ -9,6 +9,7 @@ Never hand-roll what the ecosystem already maintains, and never download a gener
 Repo-fitted scripts and configs go under `tools/harden/` in the consuming repository, committed with a README line saying what each does and how to invoke it.
 The first run pays the acquisition cost; every later run - and any other agent - reuses them.
 Check `tools/harden/` before acquiring anything.
+Acquisitions are independent of each other: when several tools are missing, acquire them in parallel - one agent per tool, launched in a single message - rather than building them one after another.
 
 ## 1. Project static analysis
 

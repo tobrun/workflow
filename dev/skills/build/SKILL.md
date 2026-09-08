@@ -16,12 +16,12 @@ Read [references/layers.md](references/layers.md), [references/tests.md](referen
 ## Workflow
 
 1. Read `spec.md` in full: the research section (the decisions and their rationale), the scope section (including its Validation block of real repo commands), and the change plan. Explore the relevant code. If the Validation block is absent, discover the repo's real test and typecheck commands yourself from `package.json`, a `Makefile`, or CI config, and log them in `implementation-notes.md`.
-2. Build waves by consecutive-disjoint batching per [references/parallel.md](references/parallel.md): sequential in spec order by default, batched only when file lists are disjoint and nothing a wave-mate introduces is consumed. Every change set in the plan is in scope, not just the first.
+2. Build waves by disjoint batching per [references/parallel.md](references/parallel.md): sequential in spec order by default, batched only when file lists are disjoint and nothing a wave-mate or earlier unfinished change set introduces is consumed. Every change set in the plan is in scope, not just the first.
 3. For each wave, run its change sets in parallel per the same reference, then commit each finished change set on the current branch and append its entry to `implementation-notes.md`.
 4. Move straight to the next wave. Never stop after one change set or wave to ask about review.
 5. When every change set is committed, loop `python3 {build-skill-root}/scripts/check-tests.py .dev/{plan-name}` until it exits clean: it proves every specced scenario has a test that really exists, rather than one that was reported.
 6. Then run the full e2e pass per "The e2e layer" below over the whole spec, and loop on failures until it is green.
-7. Run the repository's required pull-request commands per [../../references/ci-parity.md](../../references/ci-parity.md). A known-red CI scenario is not an acceptable deviation.
+7. Run the repository's required pull-request commands per [../../references/ci-parity.md](../../references/ci-parity.md), starting them in the background as soon as the e2e loop is green and rendering the e2e report while they run - the two share nothing. A known-red CI scenario is not an acceptable deviation.
 8. After the e2e report and CI-parity gate, follow the "Jira sync and pull request" rules below.
    Only then suggest the follow-up, never launching it yourself: `ship` for
    the quality pass over the full body of work, pointed at

@@ -9,6 +9,7 @@ The spec is the deliverable: do not implement anything.
 It is a fresh-context handoff - planning happens here, implementation happens in another session (often another model) that reads only the spec.
 
 The numbered sections are an addressing scheme, not a march. Four orderings are load-bearing: catalog decisions before arguing them, argue them before reading the project's ledger, settle the spec before promoting anything out of it, and never let the change plan outrun an open decision. The rest is judgment - work it in whatever order the change calls for.
+Before the interview, run `python3 {scope-skill-root}/../../scripts/skill-metrics.py start scope` so the retrospective can measure the run.
 
 ## 1. Interview
 
@@ -137,6 +138,7 @@ Audit the run itself. Four checks, each reported as a typed line - silence reads
 - **Catalog gaps** - `none | gap`. What did the reviewer or blind-spot pass find that phase 2 should have caught? A missed *category* is a proposed edit to the phase 2 list - propose it to the user, never apply it silently.
 - **Familiarity** - `matched | adjusted`. Did the decision talk match what the quiz predicted? If not, amend the phase 8 familiarity line and say so.
 
+Then print the measured run metrics with `python3 {scope-skill-root}/../../scripts/skill-metrics.py end scope --count decisions=N --count change_sets=N --count scenarios=N`, pasting its table verbatim.
 Then recommend next steps, never launching them: `scope-review` first when the change is large or risky or build will run in a different session - it reviews the spec with a fresh-context panel and refines it in place before any code exists - and `build` to implement.
 
 ## Jira sync

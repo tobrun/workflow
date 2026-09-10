@@ -58,6 +58,12 @@ Packages a finished change - its spec, implementation notes, and e2e evidence - 
 Renders a context/intuition/what-was-done report with a graded comprehension quiz.
 Cannot enforce a merge gate, so it says so plainly and produces an honest pass/fail check instead.
 
+## Run metrics
+
+`scope`, `scope-review`, `build`, and `ship` each start by snapshotting the run with `scripts/skill-metrics.py start` and end by printing what it measured: wall time, tokens split between the orchestrator and its subagents, agents dispatched, tool calls, the git delta since the snapshot, and any counters the skill tallied from tool output.
+The numbers come from the session transcript under `$CLAUDE_CONFIG_DIR` (default `~/.claude`) and from git, never from the model's recollection.
+Every run appends a row to `.dev/metrics.jsonl` in the consuming repository, and the table compares the run against the median of earlier runs of the same skill, which is where a skill's cost and catch rate become visible over time.
+
 ## Jira integration
 
 The spec-driven workflow can mirror its local state to Jira through the

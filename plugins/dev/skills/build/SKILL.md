@@ -14,7 +14,7 @@ Read [references/layers.md](references/layers.md), [references/tests.md](referen
 
 ## Workflow
 
-1. Read `spec.md` in full: the research section (the decisions and their rationale), the scope section (including its Validation block of real repo commands), and the change plan. Explore the relevant code. If the Validation block is absent, discover the repo's real test and typecheck commands yourself from `package.json`, a `Makefile`, or CI config, and log them in `implementation-notes.md`.
+1. Run `python3 {build-skill-root}/../../scripts/skill-metrics.py start build`, then read `spec.md` in full: the research section (the decisions and their rationale), the scope section (including its Validation block of real repo commands), and the change plan. Explore the relevant code. If the Validation block is absent, discover the repo's real test and typecheck commands yourself from `package.json`, a `Makefile`, or CI config, and log them in `implementation-notes.md`.
 2. Build waves by disjoint batching per [references/parallel.md](references/parallel.md): sequential in spec order by default, batched only when file lists are disjoint and nothing a wave-mate or earlier unfinished change set introduces is consumed. Every change set in the plan is in scope, not just the first.
 3. For each wave, run its change sets in parallel per the same reference, then commit each finished change set on the current branch and append its entry to `implementation-notes.md`.
 4. Move straight to the next wave. Never stop after one change set or wave to ask about review.
@@ -41,7 +41,13 @@ is not the terminal state of an authorized PR workflow.
 
 ## Closing message
 
-Every build run ends with the same two lines, in this order - a green run, a blocked gate, and a run with open deviations all get both:
+Every build run first prints the measured run metrics, pasting the table verbatim:
+
+```bash
+python3 {build-skill-root}/../../scripts/skill-metrics.py end build --count change_sets=N --count scenarios=N --count e2e_passed=N --count e2e_failed=N
+```
+
+Then it ends with the same two lines, in this order - a green run, a blocked gate, and a run with open deviations all get both:
 
 1. `Next step: run ship over this work, pointed at .dev/{plan-name}/implementation-notes.md and the {plan-name}-e2e-report.html.` Recommend it; never launch it yourself.
 2. Then any question left for the user - the push/PR ask, a blocked gate, an unresolved deviation.

@@ -17,6 +17,7 @@ This skill edits `spec.md` and nothing else: never code, never `docs/decisions.m
 This skill is the standalone deeper pass: fresh agents with repo access, adversarial verification, and automatic refinement - worth running when the change is large or risky, or when build will run in a different session.
 
 Invoking this skill is the task - locate the spec yourself and start immediately; do not ask what to review.
+First run `python3 {scope-review-skill-root}/../../scripts/skill-metrics.py start scope-review` so the wrap-up can measure this run.
 
 ## 1. Locate and gate
 
@@ -114,7 +115,8 @@ Asked: {the question} - Answered: {the user's decision} -> {what the spec says n
 
 ## Wrap up
 
-Summarize in one chat message: the verdict, what was refined and what the user's answers changed (so the loop's edits stay auditable after the fact), anything deferred with its open question, and a link to the report.
+Open the chat summary with the table from `python3 {scope-review-skill-root}/../../scripts/skill-metrics.py end scope-review --count findings_verified=N --count findings_refuted=N --count refinements_applied=N --count escalated=N`, pasted verbatim.
+Then summarize in the same message: the verdict, what was refined and what the user's answers changed (so the loop's edits stay auditable after the fact), anything deferred with its open question, and a link to the report.
 Recommend next steps, never invoking them:
 
 - `build` when the verdict is APPROVED - the spec was refined, the questions are answered, and implementation can start directly.

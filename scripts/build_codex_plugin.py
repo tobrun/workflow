@@ -91,9 +91,10 @@ def build(destination: Path) -> None:
         (SOURCE / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8")
     )
     description = claude_manifest["description"]
-    junk = shutil.ignore_patterns(".DS_Store")
+    junk = shutil.ignore_patterns(".DS_Store", "__pycache__")
     shutil.copytree(SOURCE / "skills", destination / "skills", ignore=junk)
     shutil.copytree(SOURCE / "references", destination / "references", ignore=junk)
+    shutil.copytree(SOURCE / "scripts", destination / "scripts", ignore=junk)
 
     skill_names = sorted(
         path.name for path in (destination / "skills").iterdir() if path.is_dir()

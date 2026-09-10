@@ -12,6 +12,7 @@ You are the orchestrator for both phases: run tools, dispatch agents, aggregate,
 Never weaken a check to make it pass, and never stand in for the panel - your own reading of the code is not a lens.
 
 Invoking this skill is the task - detect the diff yourself and start immediately; do not ask what to ship.
+First run `python3 {ship-skill-root}/../../scripts/skill-metrics.py start ship` so the wrap-up can measure this run instead of recalling it.
 
 ## Phase selection
 
@@ -111,7 +112,13 @@ Map the report onto `REVIEW_DATA` per [references/data-schema.md](references/dat
 
 ## Wrap up
 
-Summarize whichever phases ran in one chat message.
+Summarize whichever phases ran in one chat message, opening with the measured run metrics:
+
+```bash
+python3 {ship-skill-root}/../../scripts/skill-metrics.py end ship --count violations_found=N --count violations_fixed=N --count violations_surviving=N --count findings_verified=N --count findings_refuted=N
+```
+
+Pass only counters you tallied from tool output and the aggregate script; the table it prints (time, tokens, agents, tool calls, git delta, trend against earlier runs) is pasted verbatim, never retyped.
 For the gauntlet, per tool: violations found, fixed, and surviving (with the human call each is waiting on); name the tools acquired or built this run and where they live; state the scope honestly - "hardened the diff" is not "hardened the repo".
 For the review: the verdict and top findings, linking the `review_N.md` file, local HTML report, and published URL when one was requested and created.
 Recommend next steps, never invoking them:

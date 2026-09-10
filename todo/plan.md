@@ -8,7 +8,7 @@ Do not move to the next phase until the current phase passes its acceptance crit
 
 ## Goal
 
-Build a Claude Code skills repository at `~/ws/skills` that conforms to the plugin marketplace concept used by `~/ws/claude-plugins`.
+Build a Claude Code skills repository at `~/ws/workflow` that conforms to the plugin marketplace concept used by `~/ws/claude-plugins`.
 The repository is a monorepo: one marketplace manifest at the root, and one directory per plugin.
 Each plugin packages one or more skills.
 The repository must be installable via `claude plugin marketplace add` and self-validating via a check script and CI.
@@ -58,7 +58,7 @@ Also read the official docs before starting:
 
 ### Tasks
 
-1. Initialize a git repository in `~/ws/skills` if not already one.
+1. Initialize a git repository in `~/ws/workflow` if not already one.
 2. Create `.gitignore` covering OS junk (`.DS_Store`), editor files, and `node_modules` if any tooling is added later.
 3. Create the root `README.md` with a short description and an empty plugin table (fill it in as plugins land).
 4. Create `CLAUDE.md` describing the repository structure and the rule that all changes must pass `scripts/validate.sh`.
@@ -84,13 +84,13 @@ Run `ls -la` and confirm the layout matches the structure diagram above (minus p
 
 - [ ] `jq . .claude-plugin/marketplace.json` parses without error.
 - [ ] The manifest contains `name`, `owner`, `metadata.description`, and `plugins`.
-- [ ] `claude plugin marketplace add ~/ws/skills` succeeds locally (an empty marketplace is valid).
+- [ ] `claude plugin marketplace add ~/ws/workflow` succeeds locally (an empty marketplace is valid).
 
 ### Validation
 
 ```bash
 jq -e '.name and .owner.name and (.plugins | type == "array")' .claude-plugin/marketplace.json
-claude plugin marketplace add ~/ws/skills
+claude plugin marketplace add ~/ws/workflow
 claude plugin marketplace list
 ```
 
@@ -130,7 +130,7 @@ description: One sentence saying what the skill does and when Claude should use 
 
 ### Validation (end-to-end test)
 
-1. `claude plugin marketplace add ~/ws/skills`.
+1. `claude plugin marketplace add ~/ws/workflow`.
 2. `claude plugin install {plugin-name}@{marketplace-name}`.
 3. Start a fresh Claude Code session and confirm the skill appears in the available skills listing.
 4. Give Claude a prompt that should trigger the skill and confirm the skill content is loaded and followed.
@@ -220,7 +220,7 @@ Follow this loop for every change to the repository, no exceptions:
 - A `SKILL.md` that dumps everything into the body wastes context. Move detail into `references/` and link to it.
 - Forgetting to add a new plugin to `marketplace.json` or the README table. The validate script catches both; run it.
 - Name mismatches between directory, `plugin.json`, and the marketplace entry. Pick the name once and copy it exactly.
-- Editing an installed copy of the plugin instead of the repo. Always edit in `~/ws/skills`, then reinstall to test.
+- Editing an installed copy of the plugin instead of the repo. Always edit in `~/ws/workflow`, then reinstall to test.
 
 ## Estimated Effort
 

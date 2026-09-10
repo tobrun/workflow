@@ -126,7 +126,7 @@ def build(destination: Path) -> None:
         "version": claude_manifest["version"],
         "description": description,
         "author": claude_manifest["author"],
-        "repository": "https://github.com/tobrun/skills",
+        "repository": "https://github.com/tobrun/workflow",
         "skills": "./skills/",
         "interface": {
             "displayName": "Dev Workflow",

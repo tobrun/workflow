@@ -7,7 +7,7 @@
 ## Claude Code
 
 ```bash
-/plugin marketplace add tobrun/skills
+/plugin marketplace add tobrun/workflow
 /plugin install dev@nurbot
 ```
 
@@ -16,7 +16,7 @@ Invoke skills as `/scope`, `/build`, and so on.
 ## Codex
 
 ```bash
-codex plugin marketplace add tobrun/skills
+codex plugin marketplace add tobrun/workflow
 codex plugin add dev@nurbot
 ```
 
@@ -34,12 +34,12 @@ opencode reads the Claude-format source skills directly; symlink them into its
 global skill directory:
 
 ```bash
-git clone https://github.com/tobrun/skills ~/ws/skills
+git clone https://github.com/tobrun/workflow ~/ws/workflow
 mkdir -p ~/.config/opencode/skills
-for skill in ~/ws/skills/dev/skills/*/; do
+for skill in ~/ws/workflow/dev/skills/*/; do
   ln -sfn "$skill" ~/.config/opencode/skills/"$(basename "$skill")"
 done
-ln -sfn ~/ws/skills/dev/references ~/.config/opencode/references
+ln -sfn ~/ws/workflow/dev/references ~/.config/opencode/references
 ```
 
 Ask the agent for a skill by name, for example "run the scope skill".
@@ -49,7 +49,7 @@ see [dev/README.md](dev/README.md#opencode-installation) for the full setup.
 ## Pi
 
 ```bash
-pi install git:github.com/tobrun/skills
+pi install git:github.com/tobrun/workflow
 ```
 
 Invoke skills as `/skill:scope`, `/skill:build`, and so on. Pi consumes

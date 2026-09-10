@@ -103,7 +103,7 @@ skills do not poll for merges.
 ## Claude Code installation
 
 ```bash
-/plugin marketplace add tobrun/skills
+/plugin marketplace add tobrun/workflow
 /plugin install dev@nurbot
 ```
 
@@ -112,7 +112,7 @@ Invoke skills as `/scope`, `/build`, and so on.
 ## Codex installation
 
 ```bash
-codex plugin marketplace add tobrun/skills
+codex plugin marketplace add tobrun/workflow
 codex plugin add dev@nurbot
 ```
 
@@ -124,12 +124,12 @@ opencode reads Claude-format `SKILL.md` files natively, so no generated distribu
 Clone this repository and symlink the source skills into opencode's global skill directory:
 
 ```bash
-git clone https://github.com/tobrun/skills ~/ws/skills
+git clone https://github.com/tobrun/workflow ~/ws/workflow
 mkdir -p ~/.config/opencode/skills
-for skill in ~/ws/skills/dev/skills/*/; do
+for skill in ~/ws/workflow/dev/skills/*/; do
   ln -sfn "$skill" ~/.config/opencode/skills/"$(basename "$skill")"
 done
-ln -sfn ~/ws/skills/dev/references ~/.config/opencode/references
+ln -sfn ~/ws/workflow/dev/references ~/.config/opencode/references
 ```
 
 The last symlink keeps the shared references (`jira.md`, `decision-ledger.md`, `contracts.md`) reachable through the `../../references/` links inside the skills.
@@ -161,7 +161,7 @@ Verify discovery with `opencode debug skill`.
 ## Pi installation
 
 ```bash
-pi install git:github.com/tobrun/skills
+pi install git:github.com/tobrun/workflow
 ```
 
 Invoke skills as `/skill:scope`, `/skill:build`, and so on. Pi loads the

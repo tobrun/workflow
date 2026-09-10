@@ -58,5 +58,5 @@ This is a monorepo for Tobrun's Claude Code, Codex, and Pi skills. The root
 - Codex testing: `codex plugin marketplace add .` then
   `codex plugin add {name}@nurbot`.
 - Pi testing: `pi install .` then `pi list`.
-- Local testing: `/plugin marketplace add ~/ws/skills` then `/plugin install {name}@nurbot`.
+- Local testing: `/plugin marketplace add ~/ws/workflow` then `/plugin install {name}@nurbot`.
 - If changes aren't picked up after reinstall, bump the version with a `-devN` suffix in `plugin.json`.

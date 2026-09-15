@@ -109,7 +109,7 @@ operation and ask the user how to proceed. Never silently skip Jira, continue
 with divergent local-only state, invent an issue key, or mark a transition
 successful without verification.
 
-The Epic is not polled or closed by the skills. When build asks permission
-to push and open a PR, include the Epic key in the proposed branch name and at
-the start of the PR title. A documented Jira automation rule closes the Epic
+The Epic is not polled or closed by the skills. When build creates the work
+branch and when ship opens the PR, include the Epic key in the branch name and
+at the start of the PR title. A documented Jira automation rule closes the Epic
 after the linked PR is merged.

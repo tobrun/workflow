@@ -11,6 +11,7 @@ This reference owns the layout, the locating convention, and the diff scope; ski
 | `spec-review_N.md` | `scope-review` (next free index) | `scope` (remediation), re-reviews |
 | `implementation-notes.md` | `build` (append-only) | `ship`, `to-pitch`, `to-quiz` |
 | `review_N.md` | `ship` (next free index) | `scope` (remediation), re-reviews |
+| `pr.md` | `ship` (phase 3, overwritten per run) | the PR tool via `--body-file`; re-runs |
 | `.dev/config.json` | the user | any skill with Jira behavior |
 
 Each producing skill also renders an HTML companion under `/tmp/{project-slug}/reports/` per [reporting.md](reporting.md), named by that skill.

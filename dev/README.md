@@ -29,19 +29,22 @@ Executes a spec's change sets at the layer each `tests:` scenario is tagged with
 Enforces outcomes rather than rituals: every test must have been seen to fail before its green counts, with strict failing-test-first reserved for bug fixes, where red is the proof the issue was actually reproduced.
 Runs independent change sets in parallel as waves of subagents batched by disjoint file lists in spec order, committing each change set and appending to a running `implementation-notes.md` that logs any deviations forced by an edge case.
 Once every change set is committed, drives the real app against a mocked environment, loops until every e2e scenario passes, then renders the e2e report: screenshots per scenario for frontend systems, Test Scenario and Data Model State tables for everything else.
-Every run then asks whether to push and open a PR, whether or not Jira is configured (see Jira integration below).
+Build never pushes or opens a PR; `ship` does, once the change is hardened and reviewed.
 
 ### ship
 
-Runs the quality pass that finishes a change, in two phases; by default both run, and either can be requested alone ("gauntlet only", "review only").
+Runs the quality pass that finishes a change, in three phases; by default all run, and the first two can be requested alone ("gauntlet only", "review only"), or the flow can stop short of the PR ("no PR").
 Phase 1 puts the change through deterministic tools that cannot be argued with, looping fresh-context fix agents until every check passes: every linter, type checker, and format checker the repo already configures, a security scan (secrets, vulnerable dependencies, SAST), dead code and duplication introduced by the diff, module dependency rules from `docs/dependencies.md`, coverage-weighted cyclomatic complexity per function, flakiness runs over diff-touched tests, and mutation testing over the in-scope files.
 It acquires tools up an explicit ladder - the repo's own tooling, the ecosystem's established tool, or a small repo-fitted script committed under `tools/harden/` for reuse - and treats thresholds as recorded decisions in `docs/decisions.md`, never silently adjusted config.
 When the gauntlet's fixes touched code, phase 1 ends by re-running the spec's `[e2e]` scenarios and overwriting the e2e report, so the evidence phase 2 audits describes the post-fix code.
 Phase 2 reviews the post-fix diff with a read-only panel of concern-focused agents, selected per diff except the always-on simplify lens; the gauntlet checks mechanics, the panel judges meaning.
 Every non-trivial finding is adversarially verified against the repo.
+A BLOCK verdict is not yet a human call: ship runs up to two autonomous remediation rounds, each dispatching fresh-context fix agents at the confirmed blockers, re-hardening the touched files, and re-reviewing at the next index; only a blocker that survives both rounds, or that an agent escalates as needing a spec or decision change, is presented to the user.
 Reads `docs/contracts.md` boundary guarantees as premises before the panel runs, checks spec conformance - including whether `[e2e]`-tagged scenarios have a passing entry in the e2e report and whether logged deviations still satisfy the spec - and reconciles verified findings against `docs/decisions.md` only after judgment, reporting still-holds/reopened/diverged instead of re-litigating settled questions.
 Claude Code, Codex, and opencode use their native parallel subagent facilities. Pi preserves the same independent two-batch panel by launching isolated `pi --print` subprocesses with the current provider, model, and reasoning level.
 Renders `review_N.html` alongside the `review_N.md` file for reviewer handoff.
+Phase 3 commits what the gauntlet fixed, pushes, and opens the pull request automatically - a draft when the review verdict is BLOCK - with an Evidence section that shows the change working: screenshots from the e2e run for a system with a frontend, published to a `pr-evidence` branch so they render inline, or labeled before/after state otherwise, and for every bug fix the reproducing test shown red on the merge base and green on the branch.
+A deterministic check (`pr-evidence.py check`) gates the PR body, so a PR cannot open on a placeholder or a data URI, and the phase then follows required checks to green.
 
 ### commit
 
@@ -90,9 +93,8 @@ final, stores the Epic key in the spec, and creates one Jira Task per change
 set, storing each key under its change set and closing old issues when a
 change set is superseded. `build` moves the Epic to In Progress at start,
 moves each change-set issue through In Progress and Done as the orchestrator
-dispatches and commits it, then asks `push and open the PR?` on every run. A
-yes creates a keyed branch when needed, pushes it, and opens a PR whose title
-starts with the Epic key. A no stops after the e2e report.
+dispatches and commits it. `ship` then pushes the keyed branch and opens a PR
+whose title starts with the Epic key.
 
 One-time Jira administration is required. Install the GitHub for Jira
 integration, then add an automation rule: "when a linked pull request is

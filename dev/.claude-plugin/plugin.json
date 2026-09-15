@@ -1,6 +1,6 @@
 {
   "name": "dev",
-  "version": "3.0.1",
+  "version": "3.1.0",
   "description": "Development workflow skills: scope changes with argued decisions, build across unit/integration/e2e with every scenario proven by tests, ship with a deterministic quality gauntlet and an adversarially verified review, create structured commits that feed a decision ledger, and render pitches or comprehension quizzes.",
   "author": {
     "name": "Tobrun"

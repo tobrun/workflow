@@ -1,11 +1,11 @@
 ---
 name: ship
-description: Run the quality pass that ships a change in two phases - phase 1 is a deterministic harden gauntlet (the repo's own static analysis, security scan, dead code, duplication, dependency rules, coverage-weighted complexity, test flakiness, mutation testing) that loops fresh-context fix agents until every check passes, phase 2 is a read-only adversarially verified review panel over the post-fix diff, writing .dev/{plan-name}/review_N.md. Use after build to finish a change before a PR, or on request for a single phase such as gauntlet only or review only.
+description: Run the quality pass that ships a change in three phases - phase 1 is a deterministic harden gauntlet (the repo's own static analysis, security scan, dead code, duplication, dependency rules, coverage-weighted complexity, test flakiness, mutation testing) that loops fresh-context fix agents until every check passes, phase 2 is a read-only adversarially verified review panel over the post-fix diff, writing .dev/{plan-name}/review_N.md, a BLOCK verdict gets two autonomous fix-and-re-review rounds before it counts as a real blocker, and phase 3 pushes and opens the pull request with visual proof of the change (e2e screenshots for a frontend, before/after state or a red-then-green reproducing test otherwise) gated by a deterministic evidence check. Use after build to finish a change and open its PR, or on request for a single phase such as gauntlet only or review only.
 ---
 
 # Ship
 
-Ship a change in two phases: a deterministic gauntlet that fixes mechanics, then a review panel that judges meaning.
+Ship a change in three phases: a deterministic gauntlet that fixes mechanics, a review panel that judges meaning, then a pull request that carries proof the change works.
 Prompted quality rules soften into guidelines as a context grows; a checker's exit code does not, and judgment belongs to a verified panel, not to one context.
 You are the orchestrator for both phases: run tools, dispatch agents, aggregate, report.
 Never weaken a check to make it pass, and never stand in for the panel - your own reading of the code is not a lens.
@@ -15,9 +15,9 @@ First run `python3 {ship-skill-root}/../../scripts/skill-metrics.py start ship` 
 
 ## Phase selection
 
-Default is phase 1 (gauntlet) then phase 2 (review): the panel reviews the diff as it stands after the gauntlet's fixes, so its findings are about meaning, not mechanics already settled.
-On request, run a single phase: "gauntlet only" (or "harden only") runs phase 1 alone; "review only" runs phase 2 alone - the right mode when mutating fixes are unwanted, such as on someone else's PR.
-The phases differ in contract: phase 1 mutates the repo (fix agents edit code, tools get committed, accepted thresholds land in `docs/decisions.md`); phase 2 is strictly read-only and never edits code or the ledger.
+Default is phase 1 (gauntlet), phase 2 (review), then phase 3 (pull request): the panel reviews the diff as it stands after the gauntlet's fixes, so its findings are about meaning, not mechanics already settled, and the PR carries both verdicts.
+On request, run a single phase: "gauntlet only" (or "harden only") runs phase 1 alone; "review only" runs phase 2 alone - the right mode when mutating fixes are unwanted, such as on someone else's PR. "No PR" or "local only" runs the default flow without phase 3.
+The phases differ in contract: phase 1 mutates the repo (fix agents edit code, tools get committed, accepted thresholds land in `docs/decisions.md`); phase 2 is strictly read-only and never edits code or the ledger, but a BLOCK verdict hands the diff to the remediation loop below, which mutates like phase 1; phase 3 commits, pushes, and opens or updates the PR, never force-pushing.
 
 ## Scope
 
@@ -109,19 +109,35 @@ Write `.dev/{plan-name}/review_N.md` in the shape of [references/report-format.m
 
 Map the report onto `REVIEW_DATA` per [references/data-schema.md](references/data-schema.md) and render [templates/review.html](templates/review.html) to `/tmp/{project-slug}/reports/review_N.html`, opening and publishing per [../../references/reporting.md](../../references/reporting.md) (stable review favicon; title names the plan and review number).
 
+## Blocker remediation
+
+A BLOCK verdict is work before it is a question: run up to two rounds per [references/remediation.md](references/remediation.md), each a fresh-context fix pass over the confirmed blockers, a re-harden of the touched files, and a re-review at the next index.
+PASS or CONCERNS ends the loop; a blocker still standing after round 2, or one an agent escalated as needing a spec or decision change, is a real blocker and the only kind the wrap-up presents as a human call.
+Skipped in review-only mode.
+
+## Phase 3: the pull request
+
+Open the PR automatically, with evidence a reviewer can see before reading the diff, per [references/pull-request.md](references/pull-request.md).
+
+1. Commit what the gauntlet left uncommitted, branch off the default branch if still on it, and push.
+2. Build the Evidence section from the e2e report with `python3 {ship-skill-root}/scripts/pr-evidence.py extract`, publishing frontend screenshots to the `pr-evidence` branch with its `publish` command; without an e2e report, capture the evidence now per the reference - screenshots for a UI, a labeled before/after pair otherwise, and a red-on-base, green-on-branch reproducing test for every bug fix.
+3. Write `.dev/{plan-name}/pr.md` in the reference's body shape and loop `pr-evidence.py check` on it until it passes; the check, not your judgment, decides whether the proof is real enough.
+4. Create the PR (draft when a real blocker survived remediation) or update the one that already exists, then follow its required checks to green per [../../references/ci-parity.md](../../references/ci-parity.md).
+
 ## Wrap up
 
 Summarize whichever phases ran in one chat message, opening with the measured run metrics:
 
 ```bash
-python3 {ship-skill-root}/../../scripts/skill-metrics.py end ship --count violations_found=N --count violations_fixed=N --count violations_surviving=N --count findings_verified=N --count findings_refuted=N
+python3 {ship-skill-root}/../../scripts/skill-metrics.py end ship --count violations_found=N --count violations_fixed=N --count violations_surviving=N --count findings_verified=N --count findings_refuted=N --count remediation_rounds=N --count blockers_cleared=N --count evidence_items=N
 ```
 
 Pass only counters you tallied from tool output and the aggregate script; the table it prints (time, tokens, agents, tool calls, git delta, trend against earlier runs) is pasted verbatim, never retyped.
 For the gauntlet, per tool: violations found, fixed, and surviving (with the human call each is waiting on); name the tools acquired or built this run and where they live; state the scope honestly - "hardened the diff" is not "hardened the repo".
-For the review: the verdict and top findings, linking the `review_N.md` file, local HTML report, and published URL when one was requested and created.
+For the review: the final verdict and top findings, linking every `review_N.md` this run wrote, the local HTML report, and the published URL when one was requested and created; per remediation round, which blockers cleared and which survived.
+For the pull request: its URL, draft or ready, what the Evidence section shows and where it came from, and the state of its required checks.
 Recommend next steps, never invoking them:
 
-- `commit` for the gauntlet's accumulated fixes.
+- `commit` for the gauntlet's accumulated fixes, only when phase 3 did not run.
 - `scope` on this plan directory when the user accepts findings needing real work - remediation is its job, even when no spec exists.
 - As independent optional next steps rather than a mandatory chain: `to-pitch` when the change needs buy-in from someone who wasn't in this conversation, and `to-quiz` when a reviewer wants a comprehension check before merging.

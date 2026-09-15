@@ -37,8 +37,8 @@ SKILL_UI = {
     ),
     "ship": (
         "Ship",
-        "Harden then review a change with verification",
-        "Use $dev:ship to run the quality gauntlet and the verified review over this change.",
+        "Harden, review, then open a PR with proof",
+        "Use $dev:ship to run the quality gauntlet, the verified review, and open the pull request with evidence for this change.",
     ),
     "to-pitch": (
         "To Pitch",

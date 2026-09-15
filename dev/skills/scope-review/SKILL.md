@@ -1,6 +1,6 @@
 ---
 name: scope-review
-description: Review and auto-refine a settled spec before build starts - a fresh-context agent panel checks the plan against the actual repo for infeasible change sets, missing failure paths, semantic contradictions, and untestable scenarios, then verified findings are applied to spec.md by refine agents and the panel re-runs; findings only the user can decide are asked as questions at the end and their answers applied, so a finished run hands build a spec ready to implement. Use after scope settles a spec and before build implements it.
+description: Review and auto-refine a settled spec before build starts - a fresh-context agent panel checks the plan against the actual repo for infeasible change sets, missing failure paths, semantic contradictions, and untestable scenarios, then verified findings are applied to spec.md (and, where they touch settled decisions or cross-boundary invariants, to docs/decisions.md and docs/contracts.md) by refine agents and the panel re-runs; findings only the user can decide are asked as questions at the end and their answers applied and promoted the same way, so a finished run hands build a spec - and ledger - ready to implement, with no separate scope pass needed to promote the changes. Use after scope settles a spec and before build implements it.
 disable-model-invocation: true
 ---
 
@@ -11,7 +11,7 @@ A defect caught here costs a spec edit; the same defect after build costs a re-i
 The few findings only the user can decide are asked as questions at the end of the run, and the answers are applied before it finishes.
 The panel judges the plan against the actual repo, not against the conversation that produced it.
 You are the orchestrator: run tools, dispatch agents, apply the loop, report - your own reading of the spec is not a lens, and findings reach the spec only through verification.
-This skill edits `spec.md` and nothing else: never code, never `docs/decisions.md`, never `docs/contracts.md`.
+This skill edits `spec.md`, and promotes settled changes to `docs/decisions.md` and `docs/contracts.md` per step 5 below - never code, and never any other file.
 
 `scope`'s own phase-5 reviewer hunts while the spec is still being drafted, from the spec file alone.
 This skill is the standalone deeper pass: fresh agents with repo access, adversarial verification, and automatic refinement - worth running when the change is large or risky, or when build will run in a different session.
@@ -54,6 +54,7 @@ Refinable: false premises about the repo (rewrite the entry against the real cod
 Escalations - never auto-applied, queued for the interview instead: anything that would flip a `✓` decision to a rejected alternative, change the user-visible scope or behavior, add or drop a dependency, or contradict the user's recorded intent.
 A refine agent that cannot fix its finding without crossing that line marks it escalated and leaves the spec alone.
 Refinements follow `scope`'s notation: decision entries keep their slugs and marks, change sets keep their numbering, new scenarios carry layer tags.
+A refinement that adds or rewrites a decision entry, or a cross-boundary invariant, is promoted to the ledger immediately per step 5 - it does not wait for the interview.
 
 ## 4. Resolve escalations with the user
 
@@ -61,6 +62,7 @@ After the loop, ask the user each escalation as a decision, one consequential qu
 Each question carries what the panel found, the alternatives with their tradeoffs in the ledger's notation, and a recommendation when one is defensible; the user is deciding, not triaging raw findings.
 Apply each answer immediately with a refine pass: update the decision entry's marks and because clauses, rewrite the affected change sets and `tests:` lines, keep `scope`'s notation, and loop `lint-spec.py` until clean.
 An answer that resolves cleanly in place ends that escalation; verify the applied refinement yourself against the repo rather than re-running a panel for it.
+When the answer settles or flips a decision, or changes a cross-boundary invariant, promote it to the ledger per step 5 as soon as the refine pass lands - do not wait for the run to finish.
 
 Two outcomes defer instead of resolving:
 
@@ -69,7 +71,14 @@ Two outcomes defer instead of resolving:
 
 Verdict: APPROVED when nothing is deferred - every finding was refined or answered; APPROVED WITH DEFERRALS otherwise.
 
-## 5. Panel mechanics
+## 5. Promote to the ledger
+
+Every settled decision entry and cross-boundary invariant that this run added or changed in `spec.md` - from refinement or from an answered escalation - gets promoted the same run, so build never has to wait on a separate `scope` pass for it.
+Apply the promotion test in [../../references/decision-ledger.md](../../references/decision-ledger.md): copy qualifying decisions into `docs/decisions.md` verbatim, dated, sourced to this spec, evidence marks included, and promote recurring rationales to `P-` principles under the same bar.
+Promote cross-boundary invariants to `docs/contracts.md` under the same test, phrased for the relying side - same as `scope` phase 8.
+A decision or invariant that fails the promotion test, or a `? verify:` mark still open, stays in `spec.md` only and is not forced into the ledger.
+
+## 6. Panel mechanics
 
 Lenses live in [references/lenses.md](references/lenses.md): `feasibility`, `completeness`, `consistency`, `testability` - all four, every round.
 Run the batches on the transport selected by [../ship/references/orchestration.md](../ship/references/orchestration.md), which owns transport choice, result-file delivery, and the batch mechanics, with these substitutions:
@@ -87,7 +96,7 @@ python3 {ship-skill-root}/scripts/aggregate-findings.py plan {batch-1 results}
 python3 {ship-skill-root}/scripts/aggregate-findings.py aggregate {batch-1 results} {batch-2 results} --expected {lenses}
 ```
 
-## 6. Write the report
+## 7. Write the report
 
 Write `.dev/{plan-name}/spec-review_N.md` at the next free index, one per run, covering all rounds:
 
@@ -105,6 +114,9 @@ Rounds: {R} - {finding counts per round}
 ### E1 - {lens} - {one-line title}
 Asked: {the question} - Answered: {the user's decision} -> {what the spec says now}
 
+## Promoted to the ledger
+{decision slug or contract entry} -> `docs/decisions.md` | `docs/contracts.md`
+
 ## Deferred
 ### D1 - {lens} - {one-line title}
 {the question still open, and why it exceeded this run: premise invalidated, new effort, or unanswered}
@@ -116,8 +128,8 @@ Asked: {the question} - Answered: {the user's decision} -> {what the spec says n
 ## Wrap up
 
 Open the chat summary with the table from `python3 {scope-review-skill-root}/../../scripts/skill-metrics.py end scope-review --count findings_verified=N --count findings_refuted=N --count refinements_applied=N --count escalated=N`, pasted verbatim.
-Then summarize in the same message: the verdict, what was refined and what the user's answers changed (so the loop's edits stay auditable after the fact), anything deferred with its open question, and a link to the report.
+Then summarize in the same message: the verdict, what was refined and what the user's answers changed (so the loop's edits stay auditable after the fact), what was promoted to `docs/decisions.md` and `docs/contracts.md`, anything deferred with its open question, and a link to the report.
 Recommend next steps, never invoking them:
 
-- `build` when the verdict is APPROVED - the spec was refined, the questions are answered, and implementation can start directly.
-- With deferrals: `scope` for the deferred pieces (its remediation mode reads this report); the rest of the spec is still build-ready when the deferred work is separable.
+- `build` when the verdict is APPROVED, or when it's APPROVED WITH DEFERRALS but the deferred work is separable - the spec and ledger are refined, and implementation can start directly; no separate `scope` pass is needed just to land the decisions or contracts, this run already promoted them.
+- `scope` only for a deferred piece that invalidated the change's premise or opens a genuinely new effort (its remediation mode reads this report) - never for promoting what this run already settled.

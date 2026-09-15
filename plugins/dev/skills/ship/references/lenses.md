@@ -35,6 +35,7 @@ Rate exploitability in this codebase, not theoretical severity.
 Module boundaries, layering, dependency direction, abstraction quality, coupling introduced by the diff.
 Judge coherence against the patterns already established in the surrounding code; deviation from an established convention is a finding, personal style preference is not.
 When the repo keeps `docs/dependencies.md`, treat its edges as settled: a conforming diff needs no boundary debate, and a diff that edits the rules file is reviewed as the decision it is, not as incidental churn.
+Read `docs/architecture.md` first, when the repo keeps one, for orientation on where things live and how they talk ([../../../references/architecture.md](../../../references/architecture.md)): a diff that reshapes a component, flow, or boundary the overview describes without updating it is a finding.
 
 ## tests
 

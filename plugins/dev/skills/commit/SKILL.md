@@ -80,7 +80,7 @@ Execution rules:
 
 ## Step 4: Documentation sync check
 
-Detect whether the code changes drifted from related documentation, and capture durable decisions and contracts, per [references/sync-checks.md](references/sync-checks.md): 4a spec sync, 4b documentation sync, 4c ledger capture.
+Detect whether the code changes drifted from related documentation, and capture durable decisions and contracts, per [references/sync-checks.md](references/sync-checks.md): 4a spec sync, 4b documentation sync, 4c ledger capture, 4d architecture sync.
 Skip this step if the only changes are formatting, comments, or whitespace with no behavioral impact.
 
 ## Step 5: Confirm

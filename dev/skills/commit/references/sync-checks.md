@@ -1,6 +1,6 @@
 # Step 4: Documentation Sync and Ledger Capture
 
-Goal: detect whether code changes have drifted from related documentation, update docs inline, and capture durable decisions and contracts while the why is fresh.
+Goal: detect whether code changes have drifted from related documentation, update docs inline, capture durable decisions and contracts while the why is fresh, and keep the architecture overview current.
 
 ## 4a: Spec sync
 
@@ -54,3 +54,17 @@ For each commit just created:
    - *Maintenance* - check whether any changed file contains a cited guarantee site. Each hit gets a typed verdict: `holds` (the guaranteed behavior is untouched - refresh the citation date), `broken` (the guarantee no longer holds - the commit must restore it or update the contract, and the `relied on by:` sites surface as follow-up work; a broken contract with live reliers is a finding, not a doc edit; a contract whose source is a `D-` slug means the commit is reversing a recorded decision - the ledger entry needs the same update, or the commit is wrong), or `needs-verify` (can't tell from the diff - downgrade the citation to `? verify:` so nothing downstream treats it as checked).
 
 If the ledger or contract registry changed, commit each as its own commit: `docs(decisions): capture <slug(s)> from <scope>` / `docs(contracts): <capture|maintain> <slug(s)> from <scope>`.
+
+## 4d: Architecture sync
+
+The system overview, `docs/architecture.md` ([../../../references/architecture.md](../../../references/architecture.md)), is held to a checker rather than to memory:
+
+```bash
+python3 {commit-skill-root}/../../scripts/architecture-check.py docs/architecture.md --touched {every file in this batch's commits}
+```
+
+- Exit 2 (no overview): run the reference's initial capture - the full system, not the files just committed - and commit it as `docs(architecture): capture the system overview`.
+- Exit 1: fix each violation with a targeted edit - an uncharted file gets its component row (or joins an existing one), a stale path is corrected - and re-run until clean.
+- Exit 0: still read the batch's diff for what the checker cannot see: a flow whose steps changed order or hops, a boundary added or dropped (a new external client, store, or queue), a component whose responsibility moved. Edit the affected step, row, or cell only, and refresh the `Updated` line.
+
+Commit overview edits as their own `docs(architecture): <what changed>` commit; never rewrite a section a batch only touched one row of.

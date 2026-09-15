@@ -4,6 +4,7 @@ Development workflow skills for Claude Code, Codex, opencode, and Pi, built arou
 
 The skills chain loosely rather than as a rigid pipeline: `/scope` interviews for the real problem, argues every design decision against alternatives, and writes a self-contained spec whose change plan carries layer-tagged test scenarios; `/scope-review` puts the settled spec through a fresh-context, adversarially verified agent panel that checks the plan against the actual repo and refines the spec in place, looping without a human and closing with a short interview for the few findings only the user can decide, so a finished run hands `build` a spec ready to implement; `/build` executes the spec's change sets across unit/integration/e2e, proving every scenario with a test that has been seen to fail, in parallel waves where file lists allow, keeping a running implementation-notes log; `/ship` runs a deterministic quality gauntlet - the repo's own static analysis, security scan, dead code, duplication, dependency rules, coverage-weighted complexity, flakiness, mutation testing - looping fix agents until the checkers pass, then verifies the result with a fan-out review panel that checks spec conformance, e2e coverage, and logged deviations; `/commit` groups pending changes into granular commits with structured what/why messages; `/to-pitch` and `/to-quiz` turn finished work into a buy-in doc or a comprehension check.
 The durable context is deliberately small: the code, its tests, the active spec under `.dev/{plan-name}/`, and three repo-tracked registries the skills maintain in the consuming project - `docs/decisions.md` (design decisions with their argued alternatives, read only after a review forms its findings), `docs/contracts.md` (boundary guarantees, read as premises before a review walks the diff), and `docs/dependencies.md` (machine-checkable module dependency rules, enforced by `ship`).
+Alongside them, `docs/architecture.md` is a plain high-level overview of the system - components, flows, boundaries, entry points - captured in full the first time a skill needs it and finds it absent, then kept current by build and commit whenever the structure changes, with a small checker that catches stale paths and files no component covers.
 Every producing skill renders its own output as self-contained HTML under `/tmp/{project-slug}/reports/`. It publishes only when the user requests a shareable link and the host provides an artifact-publishing tool.
 Every skill is explicit-invocation only: Claude Code and Pi use `disable-model-invocation: true`, the generated Codex distribution uses `agents/openai.yaml` with `allow_implicit_invocation: false`, and opencode enforces it with a `permission.skill` rule set to `ask` (see opencode installation below). Skills recommend the next step rather than launching each other.
 
@@ -49,7 +50,7 @@ A deterministic check (`pr-evidence.py check`) gates the PR body, so a PR cannot
 ### commit
 
 Groups all pending changes into granular, logically-separate commits - splitting within a file when needed - with structured messages: a `type(scope):` subject, `What:`/`Why:` body, optional `Considered:`/`Constraint:`/`Directive:`/`Symptoms:` sections, and `Severity:`/`Risk:` metadata trailers.
-After committing, syncs drifted docs and captures durable decisions and contracts from the commit bodies into `docs/decisions.md` and `docs/contracts.md`, which is what keeps the ledger current without excavating git history later.
+After committing, syncs drifted docs, captures durable decisions and contracts from the commit bodies into `docs/decisions.md` and `docs/contracts.md`, and runs the architecture checker over the batch so `docs/architecture.md` stays current with every commit, which is what keeps the registries trustworthy without excavating git history later.
 Pushes by default; say "commit only" to skip the push.
 
 ### to-pitch
@@ -134,7 +135,7 @@ done
 ln -sfn ~/ws/workflow/dev/references ~/.config/opencode/references
 ```
 
-The last symlink keeps the shared references (`jira.md`, `decision-ledger.md`, `contracts.md`) reachable through the `../../references/` links inside the skills.
+The last symlink keeps the shared references (`jira.md`, `decision-ledger.md`, `contracts.md`, `architecture.md`) reachable through the `../../references/` links inside the skills.
 Symlinks mean a `git pull` updates the skills in place; restart opencode afterwards, since skills load at startup.
 
 opencode has no `disable-model-invocation` field (it is ignored harmlessly); skills load through a model-invoked `skill` tool.

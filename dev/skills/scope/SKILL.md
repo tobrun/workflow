@@ -22,6 +22,7 @@ Once the problem holds up, brainstorm alternatives at the problem level, includi
 If the premise doesn't survive, that resolves as a `⊘` not-doing line, not as a failed interview.
 
 The interview is latency-bound by the user, so hide machine work inside it: once the change's rough area is clear, launch background read-only subagents on phase 2's prior-art hunt - existing idioms, helpers, earlier attempts, the areas the change touches - so their results are waiting when the interview closes.
+They start from `docs/architecture.md` ([../../references/architecture.md](../../references/architecture.md)), the high-level overview of the system; when the project has none, the same explorers run its initial capture first, so the spec is argued against an overview instead of a file tree.
 These explorers never read `docs/decisions.md`: the ledger must stay out of context until the phase 5 reconcile, and phase 9 treats an early leak as contamination.
 The same prefetch arms the quiz below with real code to ask about.
 
@@ -84,6 +85,7 @@ When a later section references a decision, echo the resolution in parentheses -
 Record the scope: inputs, outputs, invariants, and error handling.
 An invariant that crosses a boundary - another module will rely on it without seeing the enforcing code - gets drafted in contract notation ([../../references/contracts.md](../../references/contracts.md)) so phase 8 can promote it.
 A change that adds a module or dependency edge, or collides with `docs/dependencies.md`, is a decision with the alternatives named in [../../references/dependency-rules.md](../../references/dependency-rules.md); the chosen resolution edits that file inside a change set, never implicitly.
+Name the components and flows the change adds, removes, or reshapes, in the overview's terms, so build knows what in `docs/architecture.md` its change sets must update.
 Efforts have second-order effects - capture them as nested sub-efforts, each carrying its own decisions back into the research section (rate limiting in scope means Redis setup, which carries config and deploy decisions).
 Record considered non-goals as `⊘` lines with a because clause - things someone weighed and cut, not mere omissions.
 End the scope with a `### Validation` block listing the repo's real typecheck/test/lint/build commands, discovered from `package.json`, a `Makefile`, CI config, or equivalent - never guess `npm test` into a `pytest` repo; ask if you cannot determine them.

@@ -1,0 +1,40 @@
+#!/usr/bin/env python3
+"""Stub `acli` for Jira request tests.
+
+State at $FACTORY_ACLI_STATE: {"auth": true, "site": "acme.atlassian.net", "issues": {"KEY-1": {...issue json...}}}
+"""
+
+import json
+import os
+import sys
+from pathlib import Path
+
+
+def main():
+    argv = sys.argv[1:]
+    log = os.environ.get("FACTORY_STUB_LOG")
+    if log:
+        with open(log, "a", encoding="utf-8") as handle:
+            handle.write(json.dumps({"tool": "acli", "argv": argv}) + "\n")
+    path = os.environ.get("FACTORY_ACLI_STATE")
+    state = json.loads(Path(path).read_text(encoding="utf-8")) if path and Path(path).exists() else {}
+    if argv[:3] == ["jira", "auth", "status"]:
+        if not state.get("auth", True):
+            print("Error: not logged in, run acli jira auth login", file=sys.stderr)
+            return 1
+        print(f"✓ Authenticated\n  Site: {state.get('site', 'acme.atlassian.net')}\n  Email: stub@example.com")
+        return 0
+    if argv[:3] == ["jira", "workitem", "view"]:
+        key = argv[3]
+        issue = state.get("issues", {}).get(key)
+        if issue is None:
+            print(f"Error: work item {key} does not exist or you do not have permission to see it", file=sys.stderr)
+            return 1
+        print(json.dumps(issue))
+        return 0
+    print(f"stub acli: unsupported {argv}", file=sys.stderr)
+    return 64
+
+
+if __name__ == "__main__":
+    sys.exit(main())

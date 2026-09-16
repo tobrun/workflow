@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Factory CLI: resolve this script through symlinks to the plugin root, then run the runner package.
+set -euo pipefail
+
+source="${BASH_SOURCE[0]}"
+while [ -L "$source" ]; do
+  dir="$(cd -P "$(dirname "$source")" && pwd)"
+  source="$(readlink "$source")"
+  case "$source" in
+    /*) ;;
+    *) source="$dir/$source" ;;
+  esac
+done
+root="$(cd -P "$(dirname "$source")/.." && pwd)"
+
+export PYTHONPATH="$root${PYTHONPATH:+:$PYTHONPATH}"
+exec python3 -m runner "$@"

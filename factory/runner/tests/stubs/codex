@@ -1,0 +1,155 @@
+#!/usr/bin/env python3
+"""Stub `codex` for factory runner tests.
+
+Records argv and environment to $FACTORY_STUB_LOG, then plays the step for the
+current stage and attempt from the JSON scenario at $FACTORY_STUB_SCENARIO:
+
+{"build": [{"files": {...}, "run": [[...]], "result": {...} | "omit" | "corrupt",
+            "sleep": 1, "ignore_term": false, "exit": 0, "tokens": 100}, ...]}
+
+The list is indexed by attempt; the last step repeats. Placeholders {plan},
+{report_dir}, {evidence_dir}, {run_id}, {branch}, {stage}, {attempt}, {gh}
+are filled from .dev/factory-run.json and the environment.
+"""
+
+import json
+import os
+import signal
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+
+def emit(event):
+    sys.stdout.write(json.dumps(event) + "\n")
+    sys.stdout.flush()
+
+
+def fill(value, context):
+    if isinstance(value, str):
+        for key, replacement in context.items():
+            value = value.replace("{" + key + "}", str(replacement))
+        return value
+    if isinstance(value, list):
+        return [fill(item, context) for item in value]
+    if isinstance(value, dict):
+        return {fill(k, context): fill(v, context) for k, v in value.items()}
+    return value
+
+
+def option(argv, flag):
+    if flag in argv:
+        index = argv.index(flag)
+        if index + 1 < len(argv):
+            return argv[index + 1]
+    return None
+
+
+def main():
+    argv = sys.argv[1:]
+    log = os.environ.get("FACTORY_STUB_LOG")
+    if log:
+        with open(log, "a", encoding="utf-8") as handle:
+            handle.write(json.dumps({
+                "tool": "codex",
+                "argv": argv,
+                "cwd": os.getcwd(),
+                "stdin_tty": os.isatty(0),
+                "env": {k: v for k, v in os.environ.items() if k.startswith("FACTORY_") or k == "GH_TOKEN"},
+            }) + "\n")
+    if argv[:2] == ["plugin", "list"]:
+        source = os.environ.get("FACTORY_STUB_PLUGIN_SOURCE") or str(Path(__file__).resolve().parents[4] / "plugins" / "factory")
+        print("Marketplace `nurbot`\n")
+        print(f"factory@nurbot                          installed, enabled  0.1.0  {source}")
+        return 0
+    if argv[:1] == ["--version"]:
+        print("codex-cli 0.0.0-stub")
+        return 0
+    if not argv or argv[0] != "exec":
+        print(f"stub codex: unsupported {argv}", file=sys.stderr)
+        return 64
+
+    worktree = Path(option(argv, "-C") or os.getcwd())
+    last_message = option(argv, "-o")
+    if "FACTORY-SMOKE-OK" in argv[1]:
+        skill = argv[1].split("$factory:", 1)[1].split()[0]
+        answer = os.environ.get("FACTORY_STUB_SMOKE_ANSWER", f"FACTORY-SMOKE-OK {skill}")
+        if last_message:
+            Path(last_message).write_text(answer + "\n", encoding="utf-8")
+        return 0
+    run_file = worktree / ".dev" / "factory-run.json"
+    run = json.loads(run_file.read_text(encoding="utf-8")) if run_file.exists() else {}
+    stage = os.environ.get("FACTORY_STAGE", run.get("stage", "unknown"))
+    attempt = int(os.environ.get("FACTORY_ATTEMPT", run.get("attempt", 1)))
+    scenario_path = os.environ.get("FACTORY_STUB_SCENARIO")
+    scenario = json.loads(Path(scenario_path).read_text(encoding="utf-8")) if scenario_path else {}
+    steps = scenario.get(stage) or [{}]
+    step = steps[min(attempt, len(steps)) - 1]
+    context = {
+        "plan": run.get("plan", os.environ.get("FACTORY_PLAN", "")),
+        "report_dir": run.get("report_dir", ""),
+        "evidence_dir": run.get("evidence_dir", ""),
+        "run_id": run.get("run_id", ""),
+        "branch": run.get("branch", ""),
+        "stage": stage,
+        "attempt": attempt,
+        "gh": os.environ.get("FACTORY_GH_BIN", "gh"),
+    }
+
+    if step.get("ignore_term"):
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    emit({"type": "thread.started", "thread_id": f"stub-{stage}-{attempt}"})
+    emit({"type": "turn.started"})
+    emit({"type": "stub.unknown_event", "detail": "ignored by the parser"})
+    if step.get("early_usage"):
+        emit({"type": "turn.completed", "usage": step["early_usage"]})
+    for status in step.get("spawn_agents", []):
+        emit({"type": "item.completed", "item": {"type": "collab_tool_call", "tool": "spawn_agent", "status": status}})
+    if step.get("sleep"):
+        time.sleep(float(step["sleep"]))
+
+    for relative, content in fill(step.get("files", {}), context).items():
+        target = Path(relative) if os.path.isabs(relative) else worktree / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content, encoding="utf-8")
+    for command in fill(step.get("run", []), context):
+        emit({"type": "item.started", "item": {"type": "command_execution", "command": " ".join(command)}})
+        completed = subprocess.run(command, cwd=worktree, capture_output=True, text=True)
+        emit({"type": "item.completed", "item": {"type": "command_execution", "command": " ".join(command),
+                                                   "exit_code": completed.returncode, "status": "completed"}})
+        if completed.returncode != 0:
+            sys.stderr.write(completed.stdout + completed.stderr)
+
+    plan_dir = worktree / ".dev" / context["plan"]
+    result = step.get("result", {})
+    result_path = plan_dir / f"{stage}-result.json"
+    if result == "corrupt":
+        plan_dir.mkdir(parents=True, exist_ok=True)
+        result_path.write_text("{not json", encoding="utf-8")
+    elif result != "omit":
+        payload = {"schema": 2, "stage": stage, "status": "done", "reason": "stub finished", "conditions": []}
+        payload.update(fill(result, context))
+        plan_dir.mkdir(parents=True, exist_ok=True)
+        result_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    message = step.get("message", f"{stage} attempt {attempt} finished")
+    emit({"type": "item.completed", "item": {"type": "agent_message", "text": message}})
+    tokens = int(step.get("tokens", 1000))
+    if step.get("turn_failed"):
+        emit({"type": "turn.failed", "error": {"message": step["turn_failed"]}})
+    elif step.get("usage") == "omit":
+        emit({"type": "turn.completed"})
+    else:
+        emit({"type": "turn.completed", "usage": step.get("usage") or {
+            "input_tokens": tokens, "cached_input_tokens": 0, "output_tokens": tokens // 10}})
+    if last_message:
+        Path(last_message).write_text(message + "\n", encoding="utf-8")
+    if step.get("truncate"):
+        sys.stdout.write('{"type": "item.comp')
+        sys.stdout.flush()
+    return int(step.get("exit", 0))
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -218,6 +218,11 @@ def output_of(receipt: executor.Receipt) -> str:
     return "".join(parts).strip()
 
 
+def full_output(exec_dir: Path) -> str:
+    """Where a failed command's complete output is, since a gate reason carries only its last lines."""
+    return f" [full output: {exec_dir}/stdout.log, stderr.log]"
+
+
 def describe(receipt: executor.Receipt) -> str:
     """How a command ended, in words a retry prompt can act on."""
     if receipt.classification in ("succeeded", "failed"):
@@ -609,6 +614,81 @@ def build_gate(ctx: GateContext) -> GateResult:
     return passed(**data)
 
 
+# Files whose content decides what a setup command installs. Setup reruns only when one of them changes, the
+# contract's setup records change, or the runner changes; a worktree that never ran setup always runs it.
+DEPENDENCY_FILES = ("package.json", "package-lock.json", "npm-shrinkwrap.json", "yarn.lock", "pnpm-lock.yaml",
+                    "bun.lockb", "uv.lock", "pyproject.toml", "poetry.lock", "Pipfile.lock", "requirements.txt",
+                    "Gemfile.lock", "go.sum", "Cargo.lock", "composer.lock", ".nvmrc", ".python-version")
+
+
+def dependency_fingerprint(root: Path) -> dict[str, str]:
+    listing = wt.git("-C", str(root), "ls-files", "-s", check=False)
+    found = {}
+    for line in listing.splitlines():
+        meta, _, path = line.partition("\t")
+        name = path.rsplit("/", 1)[-1]
+        if name in DEPENDENCY_FILES or (name.startswith("requirements") and name.endswith(".txt")):
+            target = root / path
+            found[path] = records.sha256_file(target) if target.is_file() else meta.split()[1]
+    return found
+
+
+def run_setup(ctx: GateContext, contract: dict, data: dict, *, root: Path | None = None,
+              label: str = "setup") -> GateResult | None:
+    """Run the contract's setup commands in a worktree, as the runner, before anything there needs dependencies.
+
+    The run's own worktree checkpoints the result under its dependency fingerprint; a throwaway worktree (the
+    [repro] base) always runs it.
+    """
+    setup = contract.get("setup") or []
+    if not setup:
+        return None
+    root = root or ctx.worktree
+    reusable_here = root == ctx.worktree
+    inputs = {"setup": setup, "dependencies": dependency_fingerprint(root), "worktree": str(root),
+              "environment": contract.get("environment", {}), "runner": ctx.runner_sha()}
+    if reusable_here:
+        reused, decision = checkpoints.reusable(ctx.run_dir, "setup", inputs)
+        checkpoints.note(ctx, "setup", decision)
+        if reused is not None:
+            data["setup"] = {**reused["data"], "reused_from": reused["completed_at"]}
+            return None
+    summary = []
+    for command in setup:
+        stop = ctx.stop_reason()
+        if stop:
+            return stopped(stop, "the setup commands", **data)
+        exec_dir = next_exec_dir(ctx, f"{label}-{command['id']}")
+        mode = commands.boundary(command, contract)
+        try:
+            parts = commands.argv(command, root)
+            cwd = commands.resolve_inside(root, command.get("cwd", "."), "cwd")
+            env = commands.environment(command, contract, ctx.env())
+            wrapped, env = commands.confine(parts, mode, writable=[root, exec_dir], env=env)
+        except commands.CommandError as error:
+            repair = f"; repair: {error.repair}" if error.repair else ""
+            return blocked(f"setup command {command['id']} cannot run: {error}{repair}", retryable=False,
+                           code="contract.unrunnable", **data)
+        receipt = execute(ctx, wrapped, label=f"{label}-{command['id']}", kind="setup", cwd=cwd, env=env,
+                          timeout_cap=commands.timeout_s(command), boundary=mode, exec_dir=exec_dir)
+        summary.append({"id": command["id"], "argv": parts, "boundary": mode, "classification": receipt.classification,
+                        "exit_code": receipt.exit_code, "receipt": str(exec_dir / "receipt.json")})
+        halted = interrupted(ctx, receipt, f"setup command {command['id']}", **data)
+        if halted:
+            return halted
+        if receipt.classification != "succeeded":
+            tail = first_lines(output_of(receipt)[-2000:], 3)
+            data["setup"] = {"commands": summary}
+            return blocked(f"Setup command {command['id']} ({shlex.join(parts)}) {describe(receipt)} in the {mode} "
+                           f"boundary" + (f": {tail}" if tail else "") + full_output(exec_dir),
+                           retryable=False, code="setup.failed", **data)
+    data["setup"] = {"commands": summary}
+    if reusable_here:
+        checkpoints.save(ctx.run_dir, "setup", inputs, revision=wt.head(root), outputs=[], receipt=None,
+                         data=data["setup"])
+    return None
+
+
 def scenario_evidence(ctx: GateContext, data: dict) -> GateResult | None:
     """Every present scenario proven by an execution the runner performed on this revision."""
     from runner import verification
@@ -620,6 +700,9 @@ def scenario_evidence(ctx: GateContext, data: dict) -> GateResult | None:
     except records.RecordError as error:
         return blocked(f"{records.CONTRACT_PATH}: {error} [{error.code}]", retryable=False, code="contract.invalid",
                        **data)
+    setup = run_setup(ctx, contract, data)
+    if setup is not None:
+        return setup
     scenarios = verification.present_scenarios(ctx.run_dir)
     mapping, problem = verification.load_map(ctx, scenarios)
     if problem is not None:
@@ -671,7 +754,7 @@ def run_validation(ctx: GateContext, data: dict) -> GateResult | None:
             parts = commands.argv(command, ctx.worktree)
             cwd = commands.resolve_inside(ctx.worktree, command.get("cwd", "."), "cwd")
             env = commands.environment(command, contract, ctx.env())
-            wrapped = commands.sandbox_wrap(parts, mode, writable=[ctx.worktree, exec_dir])
+            wrapped, env = commands.confine(parts, mode, writable=[ctx.worktree, exec_dir], env=env)
         except commands.CommandError as error:
             repair = f"; repair: {error.repair}" if error.repair else ""
             return blocked(f"validation command {command['id']} cannot run: {error}{repair}", retryable=False,
@@ -686,7 +769,7 @@ def run_validation(ctx: GateContext, data: dict) -> GateResult | None:
         if receipt.classification != "succeeded":
             tail = first_lines(output_of(receipt)[-2000:], 3)
             return blocked(f"Validation command {command['id']} ({shlex.join(parts)}) {describe(receipt)}"
-                           + (f": {tail}" if tail else ""), code="validation.failed", **data)
+                           + (f": {tail}" if tail else "") + full_output(exec_dir), code="validation.failed", **data)
         checkpoints.save(ctx.run_dir, name, inputs, revision=wt.head(ctx.worktree), outputs=[],
                          receipt=str(exec_dir / "receipt.json"), data=summary[-1])
     return None
@@ -744,8 +827,8 @@ def gauntlet_evidence(ctx: GateContext, head: str, data: dict) -> GateResult | N
         mode = commands.boundary(command, contract)
         try:
             parts = commands.argv(command, ctx.worktree)
-            wrapped = commands.sandbox_wrap(parts, mode, writable=[ctx.worktree, exec_dir])
             env = commands.environment(command, contract, ctx.env())
+            wrapped, env = commands.confine(parts, mode, writable=[ctx.worktree, exec_dir], env=env)
             cwd = commands.resolve_inside(ctx.worktree, command.get("cwd", "."), "cwd")
         except commands.CommandError as error:
             return blocked(f"gauntlet check {check_id} cannot run: {error}", code="gauntlet.unrunnable", **data)
@@ -761,7 +844,7 @@ def gauntlet_evidence(ctx: GateContext, head: str, data: dict) -> GateResult | N
         if receipt.classification != "succeeded":
             tail = first_lines(output_of(receipt)[-1500:], 2)
             return blocked(f"gauntlet check {check_id} ({shlex.join(parts)}) {describe(receipt)} on {head[:12]}"
-                           + (f": {tail}" if tail else ""), code="gauntlet.failed", **data)
+                           + (f": {tail}" if tail else "") + full_output(exec_dir), code="gauntlet.failed", **data)
         checkpoints.save(ctx.run_dir, name, inputs, revision=head, outputs=[], receipt=str(exec_dir / "receipt.json"),
                          data=summary[check_id])
     return None

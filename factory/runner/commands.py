@@ -7,8 +7,9 @@ environment, and the sandbox wrapper the executor runs; it never builds a shell 
 
 Boundaries:
   host             the runner's own privileges: whole filesystem, network.
-  workspace-write  writes limited to the worktree, the execution directory, and the
-                   system temporary directories; reads and network stay open. This
+  workspace-write  writes limited to the worktree, the execution directory, the
+                   system temporary directories, and the runner's package-manager
+                   caches (see `tool_caches`); reads and network stay open. This
                    mirrors Codex's workspace-write sandbox with network access, the
                    configuration the factory launches agents with. macOS enforces it
                    with sandbox-exec, Linux with bubblewrap; a host without either
@@ -102,6 +103,51 @@ def boundary(command: dict, contract: dict) -> str:
 def temp_roots() -> list[Path]:
     roots = {Path(os.path.realpath(tempfile.gettempdir())), Path(os.path.realpath("/tmp"))}
     return sorted(roots)
+
+
+# Package managers write their download caches under the user's home, which workspace-write denies; without a
+# writable cache `npm ci`, `npx`, and `uv run` fail with EPERM before doing any work.
+TOOL_CACHES = {"npm_config_cache": "npm", "UV_CACHE_DIR": "uv", "PIP_CACHE_DIR": "pip", "YARN_CACHE_FOLDER": "yarn",
+               # agent-browser keeps its daemon socket and state here instead of ~/.agent-browser.
+               "AGENT_BROWSER_SOCKET_DIR": "agent-browser"}
+# Chrome cannot start its own sandbox inside the OS sandbox, so browser e2e works by default only without it; the
+# OS sandbox still confines the browser's writes.
+SANDBOX_SETTINGS = {"AGENT_BROWSER_ARGS": "--no-sandbox"}
+
+
+def cache_root() -> Path:
+    from runner import config
+    return config.factory_home() / "cache"
+
+
+def tool_caches(env: dict, mode: str) -> tuple[dict, list[Path]]:
+    """(variables to set, extra writable paths) so package managers and browsers work in this boundary by default.
+
+    A cache variable the environment already carries (declared passthrough or `set`) is kept and made writable;
+    the rest point at a shared runner-owned cache under `~/.factory/cache/`. Browser settings apply unless the
+    environment sets them.
+    """
+    if mode != "workspace-write":
+        return {}, []
+    additions, paths = {}, [cache_root()]
+    for name, sub in TOOL_CACHES.items():
+        if env.get(name):
+            paths.append(Path(env[name]))
+        else:
+            additions[name] = str(cache_root() / sub)
+    for path in [*paths, *(Path(additions[name]) for name in TOOL_CACHES if name in additions)]:
+        try:
+            path.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            pass
+    additions.update({name: value for name, value in SANDBOX_SETTINGS.items() if not env.get(name)})
+    return additions, paths
+
+
+def confine(parts: list[str], mode: str, *, writable: list[Path], env: dict) -> tuple[list[str], dict]:
+    """(wrapped argv, environment) for one command in its boundary, with writable package-manager caches."""
+    additions, paths = tool_caches(env, mode)
+    return sandbox_wrap(parts, mode, writable=[*writable, *paths]), {**env, **additions}
 
 
 def sandbox_wrap(parts: list[str], mode: str, *, writable: list[Path]) -> list[str]:

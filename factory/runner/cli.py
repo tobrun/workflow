@@ -1199,8 +1199,8 @@ def repo_checks(home: Path, repo_arg: str, *, remote: str, run_setup: bool, smok
                 mode = commands.boundary(command, contract)
                 try:
                     parts = commands.argv(command, linked)
-                    wrapped = commands.sandbox_wrap(parts, mode, writable=[linked, exec_dir])
                     env = commands.environment(command, contract, dict(os.environ))
+                    wrapped, env = commands.confine(parts, mode, writable=[linked, exec_dir], env=env)
                     cwd = commands.resolve_inside(linked, command.get("cwd", "."), "cwd")
                 except commands.CommandError as error:
                     add(f"setup:{command['id']}", "fail", str(error), error.repair)

@@ -15,8 +15,8 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from runner import (FACTORY_ROOT, conditions, config, dashboard, events, executor, faults, gates, hosts, intent,
-                    notify, pricing, provenance, records, slots, supervise)
+from runner import (FACTORY_ROOT, commands, conditions, config, dashboard, events, executor, faults, gates, hosts,
+                    intent, notify, pricing, provenance, records, slots, supervise)
 from runner import worktree as wt
 from runner.model import (CANCELLED, DONE, PARKED, QUEUED, RUNNING, BudgetExhausted, Run, decide)
 from runner.pipeline import PIPELINE, Stage, gate_context, gate_reserve_s, write_run_context
@@ -216,8 +216,10 @@ class Worker:
         (attempt_dir / "prompt.txt").write_text(prompt, encoding="utf-8")
         try:
             sandbox = self.cfg.sandbox_for(run.data["repo"])
+            # The agent gets the same writable package caches and browser settings as the runner's own commands.
+            sandbox_env, cache_paths = commands.tool_caches(dict(os.environ), sandbox)
             writable = [run.report_dir, run.evidence_dir, run.scratch_dir(stage.name, n),
-                        *wt.sandbox_git_dirs(run.worktree)]
+                        *wt.sandbox_git_dirs(run.worktree), *cache_paths]
             argv = hosts.codex_argv(
                 prompt=prompt, model=stage.model, effort=stage.effort, sandbox=sandbox, worktree=run.worktree,
                 writable=writable, last_message=attempt_dir / "last-message.md",
@@ -235,7 +237,13 @@ class Worker:
                                                            "runner"), None, None)
             return
         env = hosts.attempt_env(run_dir=run.dir, plan=run.plan, stage=stage.name, attempt=n, forward_github_token=True)
+        env.update(sandbox_env)
         stop = self.record_runtime(run, stage, attempt, env)
+        if stop is not None:
+            self.save(run)
+            self.finish(run, stage, attempt, stop, None, None)
+            return
+        stop = self.prepare_dependencies(run, stage, n, attempt)
         if stop is not None:
             self.save(run)
             self.finish(run, stage, attempt, stop, None, None)
@@ -345,6 +353,29 @@ class Worker:
                 outcome.warning = f"{outcome.warning}; {note}" if outcome.warning else note
             outcome = self.on_pass(run, stage, gate, outcome)
         self.finish(run, stage, attempt, outcome, receipt, gate, result)
+
+    def prepare_dependencies(self, run: Run, stage: Stage, n: int, attempt: dict) -> gates.Outcome | None:
+        """Run the contract's setup in the worktree before an agent that builds or verifies code starts.
+
+        Reused while the dependency files are unchanged; a missing or invalid contract is left to the gate to report.
+        """
+        if stage.name not in ("build", "ship"):
+            return None
+        ctx = gate_context(run, stage.name, n)
+        try:
+            ctx.approved = intent.load_approved(run.dir, ctx.intent_sha256)
+            contract = records.load_contract(gates.contract_path(ctx))
+        except (intent.IntentError, records.RecordError):
+            return None
+        data: dict = {}
+        started = time.monotonic()
+        result = gates.run_setup(ctx, contract, data)
+        attempt["setup"] = {**data.get("setup", {}), "seconds": round(time.monotonic() - started, 1),
+                            "decisions": ctx.checkpoint_log}
+        if result is None:
+            return None
+        return gates.Outcome("blocked", f"before launching {stage.name}: {result.reason}", result.retryable, "runner",
+                             code=result.code)
 
     def baseline(self, run: Run, stage: Stage) -> dict:
         """Where this attempt starts, so its gate judges the attempt's complete Git delta."""

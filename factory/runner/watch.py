@@ -11,6 +11,7 @@ import json
 import os
 import shutil
 import sys
+import textwrap
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -199,10 +200,15 @@ def status_block(run: Run, style: Style, tail: StreamTail, now: float, alive: bo
     footer = f"  retries {retries['used']}/{retries['budget']}, {short_tokens(tokens)} tokens{cached}{wait}, {worker}"
     lines.append(footer)
     if run.status in (NEEDS_HUMAN, CANCELLED, PAUSED) and run.data["human"].get("reason"):
-        lines.append("  " + style.bad(clip(run.data["human"]["reason"], width - 3)))
+        # Wrapped, not clipped: the reason is what the operator has to act on.
+        for line in textwrap.wrap(run.data["human"]["reason"], width - 3)[:BLOCKER_LINES]:
+            lines.append("  " + style.bad(line))
     if run.status == RUNNING and tail.latest:
         lines.append("  " + style.dim(clip("> " + tail.latest, width - 3)))
     return lines
+
+
+BLOCKER_LINES = 12
 
 
 def clip(text: str, width: int) -> str:

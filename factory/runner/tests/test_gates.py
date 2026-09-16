@@ -635,10 +635,11 @@ class ValidationTests(GateTestCase):
     def test_command_cap_failure_output_and_receipts_stay_on_disk(self):
         self.contract({"id": "loud", "run": ["sh", "-c", "echo checking widgets; echo widget 3 broke >&2; exit 4"]})
         gate = self.gate()
+        summary = gate.data["validation"][0]
         self.assertEqual(gate.reason,
                          "Validation command loud (sh -c 'echo checking widgets; echo widget 3 broke >&2; exit 4') "
-                         "exited 4: checking widgets; widget 3 broke")
-        summary = gate.data["validation"][0]
+                         "exited 4: checking widgets; widget 3 broke "
+                         f"[full output: {Path(summary['receipt']).parent}/stdout.log, stderr.log]")
         receipt = json.loads(Path(summary["receipt"]).read_text())
         self.assertEqual((receipt["classification"], receipt["exit_code"], receipt["kind"]), ("failed", 4, "validation"))
         self.assertIn("checking widgets", (Path(summary["receipt"]).parent / "stdout.log").read_text())
@@ -1066,7 +1067,7 @@ class ReviewEvidenceTests(ShipGateCase):
         gate = self.gate(baseline={"head": pinned_at})
         self.assertEqual(gate.code, "gauntlet.failed")
         self.assertIn("exited 2 on", gate.reason)
-        self.assertTrue(gate.reason.endswith(": lint found 2 issues"))
+        self.assertRegex(gate.reason, r": lint found 2 issues \[full output: .*gauntlet-static-analysis/stdout\.log, stderr\.log\]$")
         self.assertTrue(gate.data["gauntlet"]["checks"]["static-analysis"]["pinned"])
 
     def test_the_dependency_rule_is_inapplicable_only_without_its_rules_file(self):

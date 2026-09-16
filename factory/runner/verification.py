@@ -54,7 +54,8 @@ def command_parts(ctx, contract: dict, command: dict, exec_dir: Path, *, cwd_roo
     parts = commands.argv(command, cwd_root, placeholders)
     env = commands.environment(command, contract, ctx.env())
     cwd = commands.resolve_inside(cwd_root, command.get("cwd", "."), "cwd")
-    return commands.sandbox_wrap(parts, mode, writable=[cwd_root, exec_dir]), env, cwd, mode
+    wrapped, env = commands.confine(parts, mode, writable=[cwd_root, exec_dir], env=env)
+    return wrapped, env, cwd, mode
 
 
 def results_file(exec_dir: Path, fmt: str) -> Path:
@@ -82,7 +83,7 @@ def execute_tests(ctx, contract: dict, test_ids: list[str], *, label: str, root:
     if not output.is_file():
         tail = gates.first_lines(gates.output_of(receipt)[-1500:], 3)
         return receipt, None, (f"the test runner {gates.describe(receipt)} and wrote no results to its runner-owned "
-                               f"file" + (f": {tail}" if tail else "")), output
+                               f"file" + (f": {tail}" if tail else "") + gates.full_output(exec_dir)), output
     try:
         return receipt, records.parse_test_results(output, tests["results"]), None, output
     except records.RecordError as error:
@@ -199,6 +200,10 @@ def check_repro(ctx, contract: dict, mapping: dict, scenarios: list[dict], data:
             target = base / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(source, target)
+        setup = gates.run_setup(ctx, contract, data, root=base, label="repro-setup")
+        if setup is not None:
+            setup.reason = f"preparing the base revision for [repro] scenarios: {setup.reason}"
+            return setup
         receipt, results, problem, _ = execute_tests(ctx, contract, sorted(set(ids)), label="repro-tests", root=base)
     except (wt.GitError, OSError) as error:
         return gates.blocked(f"could not prepare the base worktree for [repro] scenarios: {error}", code="evidence.repro",
@@ -290,9 +295,13 @@ def check_e2e(ctx, contract: dict, mapping: dict, scenarios: list[dict], data: d
         plan["driver"] = {"argv": commands.argv(driver, ctx.worktree, values),
                           "env": {**commands.environment(driver, contract, ctx.env()), **extra},
                           "cwd": str(commands.resolve_inside(ctx.worktree, driver.get("cwd", "."), "cwd"))}
+        caches, cache_paths = commands.tool_caches(ctx.env(), mode)
+        for record in [*plan["services"], *[s["ready"] for s in plan["services"]], plan["driver"]]:
+            record["env"] = {**caches, **record["env"]}
         plan_path = exec_dir / "services.json"
         plan_path.write_text(json.dumps(plan, indent=2) + "\n", encoding="utf-8")
-        argv = commands.sandbox_wrap(servicehost.bootstrap_argv(plan_path), mode, writable=[ctx.worktree, exec_dir])
+        argv = commands.sandbox_wrap(servicehost.bootstrap_argv(plan_path), mode,
+                                     writable=[ctx.worktree, exec_dir, *cache_paths])
     except commands.CommandError as error:
         for lease in port_leases:
             lease.release()

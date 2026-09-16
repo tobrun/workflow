@@ -50,6 +50,14 @@ The spec's `### Validation` block is its human-readable rendering and must name 
 
 `workspace-write` matches the Codex sandbox the factory launches agents with (`workspace-write` with network access), so a check that passed for the agent behaves the same for the gate.
 A host without the enforcement tool fails the command with a repair step instead of running it unconfined.
+Browser e2e works in `workspace-write` by default, for the runner's commands and the agents alike.
+The runner points `npm_config_cache`, `UV_CACHE_DIR`, `PIP_CACHE_DIR`, `YARN_CACHE_FOLDER`, and `AGENT_BROWSER_SOCKET_DIR` at shared directories under `~/.factory/cache/` (a value already in the environment is kept and made writable), and sets `AGENT_BROWSER_ARGS=--no-sandbox` because Chrome cannot start its own sandbox inside the OS sandbox, which still confines the browser's writes.
+Playwright already launches Chromium that way; another Chrome launcher needs `--no-sandbox` in the driver, or `"boundary": "host"` on that command.
+
+## Setup
+
+The runner runs `setup` in the run's worktree before the build and ship agents start, and again at those gates and in the `[repro]` base worktree.
+It reruns only when a dependency file (`package.json`, lockfiles, `pyproject.toml`, `uv.lock`, `requirements*.txt`, and similar) or the setup records change; a failure parks the run with `setup.failed` and the path to the full output.
 
 ## Checking a repository before a run
 

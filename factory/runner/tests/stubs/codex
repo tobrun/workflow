@@ -56,7 +56,7 @@ def main():
                 "argv": argv,
                 "cwd": os.getcwd(),
                 "stdin_tty": os.isatty(0),
-                "env": {k: v for k, v in os.environ.items() if k.startswith("FACTORY_") or k == "GH_TOKEN"},
+                "env": {k: v for k, v in os.environ.items() if k.startswith(("FACTORY_", "AGENT_BROWSER_")) or k in ("GH_TOKEN", "npm_config_cache")},
             }) + "\n")
     if argv[:2] == ["plugin", "list"]:
         source = os.environ.get("FACTORY_STUB_PLUGIN_SOURCE") or str(Path(__file__).resolve().parents[4] / "plugins" / "factory")

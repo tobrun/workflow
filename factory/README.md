@@ -259,9 +259,9 @@ Model, effort, and timeout defaults live in `runner/pipeline.py`.
 
 Headless prompts open with `$factory:{stage}`.
 Codex loads an installed copy of the plugin from `$CODEX_HOME/plugins/cache/nurbot/factory/{version}/`, not the checkout path `codex plugin list` prints, so an edited checkout can run stale skills under the same version.
-Preflight, `factory doctor`, and every attempt compare a content hash of that copy with `plugins/factory`, and an attempt stops before launch on a mismatch; each attempt's `runtime.json` records the runner, skills identity, host versions, model, contract, effective configuration, and environment names (never values).
+Every attempt compares a content hash of that copy with `plugins/factory`; when the plugin is missing or differs, the attempt reads the generated skill file by path instead, logs `skills.fallback`, and `factory doctor` warns, so a stale install never stops a run. Each attempt's `runtime.json` records the runner, skills identity, host versions, model, contract, effective configuration, and environment names (never values).
 Settings that change what an attempt means (`max_tokens_per_run`, `stop_on_repeated_reason`) are read when the attempt starts, and a change is logged as `config.changed`; slots, polling, heartbeat, and notifications apply immediately.
-If a Codex installation does not resolve that name, set `FACTORY_DIRECT_SKILL_PATH=1` before `factory new` or `factory retry`: prompts then also name the generated skill file under `plugins/factory/skills/{stage}/SKILL.md`.
+To always read the generated skills by path, set `FACTORY_DIRECT_SKILL_PATH=1` before `factory new` or `factory retry`: prompts then name `plugins/factory/skills/{stage}/SKILL.md` instead of `$factory:{stage}`.
 
 ## Testing
 

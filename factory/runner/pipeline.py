@@ -46,12 +46,14 @@ def direct_skill_path() -> bool:
 
 def headless_prompt(stage: str) -> Callable[[Run, int], str]:
     def build(run: Run, n: int) -> str:
-        lines = []
-        if direct_skill_path():
-            lines += [f"Follow the skill at {GENERATED_SKILLS / stage / 'SKILL.md'}.", ""]
+        attempt = next((a for a in run.stage_attempts(stage) if a["n"] == n), {})
+        if direct_skill_path() or (attempt.get("skills") or {}).get("resolution") == "direct-path":
+            lines = [f"Follow the skill at {GENERATED_SKILLS / stage / 'SKILL.md'}.",
+                     "Read it and the references it links from that directory; do not use an installed factory plugin.",
+                     ""]
+        else:
+            lines = [f"$factory:{stage}", ""]
         lines += [
-            f"$factory:{stage}",
-            "",
             f"Factory run {run.id}. Read .dev/factory-run.json first. It names the plan",
             "directory, report directory, evidence directory, and scratch directory.",
             "No human is available in this session. This is attempt "

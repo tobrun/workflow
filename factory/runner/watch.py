@@ -124,6 +124,8 @@ def event_line(run: Run, entry: dict) -> str | None:
         text = f"{stage} committed {str(data.get('commit'))[:8]} ({len(data.get('paths') or [])} path(s))"
     elif name == "stage.warning":
         text = f"warning: {data.get('warning')}"
+    elif name == "skills.fallback":
+        text = f"warning: {data.get('reason')}"
     elif name == "process.exited" and (data.get("timed_out") or data.get("spawn_error")):
         text = f"{stage} process {'timed out' if data.get('timed_out') else 'failed to start'}"
     elif name == "run.cancel_requested":

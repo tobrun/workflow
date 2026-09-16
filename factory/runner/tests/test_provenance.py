@@ -81,30 +81,32 @@ class RuntimeManifestTests(ProvenanceTestCase):
 
 
 class SkillDriftTests(ProvenanceTestCase):
-    def test_a_stale_codex_plugin_cache_stops_the_attempt_before_launch(self):
+    def test_a_stale_codex_plugin_cache_falls_back_to_the_generated_skills_and_continues(self):
         cache = Path(os.environ["CODEX_HOME"]) / "plugins" / "cache" / "nurbot" / "factory" / "0.1.0"
         self.drifted_copy(cache)
+        self.scenario(happy_scenario())
         run = self.queued_run()
         Worker(self.home, run.id, grace=1).run()
         data = json.loads((run.dir / "run.json").read_text())
-        self.assertEqual(data["status"], "needs-human")
+        self.assertEqual(data["status"], "done", data["human"])
         attempt = data["attempts"][0]
-        self.assertEqual(attempt["code"], "runtime.skills_mismatch")
-        self.assertIn(str(cache), attempt["reason"])
-        self.assertEqual([c for c in self.stub_calls("codex") if c["argv"][0] == "exec"], [])
+        self.assertEqual(attempt["skills"]["resolution"], "direct-path")
+        self.assertIn(str(cache), attempt["skills"]["fallback"])
+        prompt = (run.attempt_dir("scope-review", 1) / "prompt.txt").read_text()
+        self.assertTrue(prompt.startswith(f"Follow the skill at {GENERATED / 'skills' / 'scope-review' / 'SKILL.md'}."))
+        self.assertNotIn("$factory:", prompt)
+        fallback = [e for e in events.read(run.dir) if e["event"] == "skills.fallback"]
+        self.assertIn("reads the generated skills", fallback[0]["data"]["reason"])
         runtime = json.loads((run.attempt_dir("scope-review", 1) / "runtime.json").read_text())
         self.assertEqual(runtime["skills"]["installed"]["path"], str(cache))
         self.assertFalse(runtime["skills"]["installed_matches_generated"])
 
-    def test_preflight_and_doctor_name_the_drift(self):
+    def test_preflight_allows_drift_and_doctor_warns(self):
         with mock.patch.dict(os.environ, {"FACTORY_STUB_PLUGIN_SOURCE": str(self.drifted_copy(self.root / "old"))}):
-            code, out, _ = self.call("new", str(make_repo(self.root, "drift")), "Add idempotency", "--yes", "--detach")
-            self.assertEqual(code, 2)
-            self.assertIn(f"Codex would load {self.root / 'old'}, which differs from the generated skills", out)
-            self.assertIn("repair: codex plugin add factory@nurbot", out)
             code, out, _ = self.call("doctor")
-            self.assertEqual(code, 1)
-            self.assertIn("[fail] codex:plugin: Codex would load", out)
+            self.assertIn(f"[warn] codex:plugin: the installed Codex factory plugin ({self.root / 'old'}) differs from "
+                          "the generated skills; attempts read the generated skills by path instead", out)
+            self.assertNotIn("[fail] codex:plugin", out)
 
     def test_source_and_installed_bundles_never_share_a_label(self):
         drifted = self.drifted_copy(self.root / "old")
@@ -112,11 +114,13 @@ class SkillDriftTests(ProvenanceTestCase):
         installed = provenance.skill_bundles(listing)
         with mock.patch.dict(os.environ, {"FACTORY_DIRECT_SKILL_PATH": "1"}):
             direct = provenance.skill_bundles(listing)
-        self.assertEqual(installed["resolution"], "installed-plugin")
-        self.assertEqual(direct["resolution"], "direct-path")
-        self.assertNotEqual(installed["skills_id"], direct["skills_id"])
+        self.assertEqual((installed["resolution"], direct["resolution"]), ("direct-path", "direct-path"))
+        self.assertIn("differs from the generated skills", installed["fallback"])
+        self.assertIsNone(direct["fallback"])
         self.assertEqual(direct["skills_id"], f"sha256:{provenance.tree_sha256(GENERATED)}")
-        self.assertEqual(provenance.skill_bundles("")["skills_id"], "unverified")
+        self.assertEqual(installed["skills_id"], direct["skills_id"])
+        self.assertNotEqual(installed["installed"]["sha256"], installed["generated"]["sha256"])
+        self.assertEqual(provenance.skill_bundles("")["fallback"], "the Codex factory plugin is not installed")
 
 
 class ConfigBoundaryTests(ProvenanceTestCase):

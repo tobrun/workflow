@@ -67,7 +67,7 @@ Park the run instead, with a `blocked` result carrying a typed condition, only f
 | 2 | A found secret | `secret.found` | no |
 | 2 | Anything needing credentials, authentication, or account access the run does not already have | `environment.missing_credentials` | no |
 | 3 | A destructive or irreversible action outside the run branch: rewriting history, force-pushing, deleting data or remote resources | `action.destructive` | no |
-| 4 | No safe command to launch the application for e2e after documented discovery | `launch.unavailable` | no |
+| 4 | No safe command to launch the application for e2e after documented discovery (the runner resolves it itself when its own gate passes) | `launch.unavailable` | no |
 | 5 | A recommended decision you applied that still fails its own verification this attempt | `decision.verification_failed` | yes |
 
 `input.unusable` covers a handed-off input the stage cannot work from at all (no spec, a spec that fails lint before review, no reviewable diff, no `gh`); it is not a decision but it is not retryable either.

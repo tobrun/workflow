@@ -43,6 +43,7 @@ NAMES = frozenset({
     "intent.approved",
     "intent.drift",
     "config.changed",
+    "skills.fallback",
 })
 
 

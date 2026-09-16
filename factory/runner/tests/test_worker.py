@@ -292,7 +292,7 @@ class RetryTests(WorkerTestCase):
         with mock.patch.dict(os.environ, {"FACTORY_CODEX_BIN": str(self.root / "no-codex")}):
             data = self.work(run)
         self.assertEqual(data["status"], "needs-human")
-        self.assertEqual(data["attempts"][0]["code"], "runtime.skills_missing")
+        self.assertIn("no-codex", data["human"]["reason"])
         self.assertEqual(self.stub_calls("codex"), [])
 
     def test_timeout_is_retryable(self):
@@ -410,6 +410,23 @@ class ParkConditionTests(WorkerTestCase):
         with contextlib.redirect_stdout(stdout):
             cli.main(["show", run.id])
         return stdout.getvalue()
+
+    def test_a_launch_problem_the_runners_own_e2e_disproves_does_not_park(self):
+        step = build_step()
+        step["result"] = {"status": "blocked", "reason": "no browser in this sandbox", "conditions": [{
+            "code": "launch.unavailable", "summary": "The required e2e browser could not launch in this host.",
+            "evidence": ["Chrome exited before DevToolsActivePort"]}]}
+        scenario = happy_scenario()
+        scenario["build"] = [step]
+        self.scenario(scenario)
+        run = self.queued_run()
+        data = self.work(run)
+        self.assertEqual(data["status"], "done", data["human"])
+        condition = data["conditions"][0]
+        self.assertEqual((condition["code"], condition["status"], condition["resolution"]["by"]),
+                         ("launch.unavailable", "resolved", "runner"))
+        self.assertIn("the runner's e2e driver passed at the gate", condition["resolution"]["evidence"][0])
+        self.assertEqual(data["retries"]["used"], 0)
 
     def test_r2_unresolved_condition_parks_despite_a_passing_gate(self):
         scenario = happy_scenario()

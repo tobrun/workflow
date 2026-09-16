@@ -212,6 +212,8 @@ class Worker:
             result_file.unlink()
         context_file = write_run_context(run, stage.name, n, interactive=False)
         intent.snapshot_inputs(run, stage.name, n, head=attempt["baseline"]["head"], context_file=context_file)
+        bundles = provenance.skill_bundles()
+        attempt["skills"] = {"resolution": bundles["resolution"], "fallback": bundles.get("fallback")}
         prompt = stage.build_prompt(run, n)
         (attempt_dir / "prompt.txt").write_text(prompt, encoding="utf-8")
         try:
@@ -238,7 +240,7 @@ class Worker:
             return
         env = hosts.attempt_env(run_dir=run.dir, plan=run.plan, stage=stage.name, attempt=n, forward_github_token=True)
         env.update(sandbox_env)
-        stop = self.record_runtime(run, stage, attempt, env)
+        stop = self.record_runtime(run, stage, attempt, env, bundles)
         if stop is not None:
             self.save(run)
             self.finish(run, stage, attempt, stop, None, None)
@@ -329,7 +331,8 @@ class Worker:
         attempt["gate_executions"] = len(ctx.executions)
         (attempt_dir / "gate-executions.json").write_text(json.dumps(ctx.executions, indent=2) + "\n", encoding="utf-8")
         result, result_error = gates.read_result(ctx)
-        blocking, notes = conditions.evaluate(run, stage.name, attempt, None if result_error else result, dict(os.environ))
+        blocking, notes = conditions.evaluate(run, stage.name, attempt, None if result_error else result, dict(os.environ),
+                                              gate)
         outcome = gates.merge(gate, result, result_error, blocking)
         if notes:
             outcome.warning = "; ".join(filter(None, [outcome.warning, *notes]))
@@ -437,7 +440,8 @@ class Worker:
         if run.status in PARKED:
             notify.for_status(run, enabled=self.cfg.notify)
 
-    def record_runtime(self, run: Run, stage: Stage, attempt: dict, env: dict) -> gates.Outcome | None:
+    def record_runtime(self, run: Run, stage: Stage, attempt: dict, env: dict,
+                       bundles: dict | None = None) -> gates.Outcome | None:
         """Write the attempt's runtime manifest; an outcome when the attempt must not launch."""
         contract, contract_sha = None, None
         try:
@@ -447,7 +451,7 @@ class Worker:
             contract = records.load_contract(path) if path else None
         except (intent.IntentError, records.RecordError):
             pass
-        bundles = provenance.skill_bundles()
+        bundles = bundles or provenance.skill_bundles()
         manifest = provenance.attempt_manifest(
             run_id=run.id, stage=stage.name, attempt=attempt["n"], model=stage.model, effort=stage.effort,
             timeout_s=stage.timeout_s, cfg=self.cfg, repo=run.data["repo"], contract=contract,
@@ -462,15 +466,10 @@ class Worker:
             run.event("config.changed", stage.name, attempt["n"], previous=f"{previous['stage']}-{previous['n']}",
                       semantic=attempt["config"]["semantic"], applies="from this attempt; live resource controls "
                       "(slots, polling, heartbeat, notifications) apply immediately")
-        if bundles["resolution"] == "installed-plugin" and bundles["installed_matches_generated"] is False:
-            installed = bundles["installed"]
-            return gates.Outcome("failed", f"the Codex factory plugin Codex would load ({installed['path']}) differs "
-                                 f"from this runner's generated skills ({bundles['generated']['path']}); reinstall it "
-                                 "with `codex plugin add factory@nurbot` (bump the version with -devN if Codex keeps "
-                                 "the old copy), then `factory retry`", False, "runner", code="runtime.skills_mismatch")
-        if not bundles["installed"].get("listed") and bundles["resolution"] == "installed-plugin":
-            return gates.Outcome("failed", "the Codex factory plugin is not installed (factory@nurbot is missing from "
-                                 "`codex plugin list`)", False, "runner", code="runtime.skills_missing")
+        if bundles.get("fallback"):
+            note = (f"{bundles['fallback']}; this attempt reads the generated skills at {bundles['generated']['path']} "
+                    "directly (reinstall with `codex plugin add factory@nurbot` to use the plugin)")
+            run.event("skills.fallback", stage.name, attempt["n"], reason=note, path=bundles["generated"]["path"])
         return None
 
     def record_handoff(self, run: Run, stage: Stage, attempt: dict) -> None:

@@ -127,25 +127,16 @@ def check_gh_auth() -> tuple[str, str] | None:
 
 
 def check_codex_plugin() -> tuple[str, str] | None:
-    """The skills Codex will load must be the ones this runner was built with."""
+    """Codex must run, and the generated skills attempts may fall back to must match factory/."""
     try:
         result = subprocess.run([config.binary("codex"), "plugin", "list"], capture_output=True, text=True,
                                 timeout=60, stdin=subprocess.DEVNULL)
     except (OSError, subprocess.TimeoutExpired) as error:
         return f"codex plugin list failed: {error}", "codex --version"
-    if "factory@nurbot" not in result.stdout:
-        return ("the Codex factory plugin is not installed (factory@nurbot missing from `codex plugin list`)",
-                f"codex plugin marketplace add {FACTORY_ROOT.parent} && codex plugin add factory@nurbot")
     current, detail = provenance.generated_is_current()
     if not current:
         return (f"plugins/factory is out of date with factory/: {gates.first_lines(detail, 2)}",
                 f"python3 {FACTORY_ROOT.parent / 'scripts' / 'build_codex_plugin.py'} --plugin factory")
-    bundles = provenance.skill_bundles(result.stdout)
-    if bundles["resolution"] == "installed-plugin" and bundles["installed_matches_generated"] is False:
-        return (f"Codex would load {bundles['installed']['path']}, which differs from the generated skills in "
-                f"{bundles['generated']['path']}",
-                "codex plugin add factory@nurbot (bump factory/.claude-plugin/plugin.json to a -devN version and "
-                "rebuild if Codex keeps the old copy)")
     return None
 
 
@@ -1013,9 +1004,14 @@ def doctor_checks(home: Path) -> list[dict]:
             None if path else f"install {name} or set FACTORY_{name.upper()}_BIN")
     if which("codex"):
         failure = check_codex_plugin()
-        add("codex:plugin", "fail" if failure else "ok",
-            failure[0] if failure else f"factory@nurbot installed; Codex loads {provenance.skill_bundles()['skills_id']}",
-            failure[1] if failure else None)
+        bundles = provenance.skill_bundles()
+        if failure:
+            add("codex:plugin", "fail", failure[0], failure[1])
+        elif bundles.get("fallback"):
+            add("codex:plugin", "warn", f"{bundles['fallback']}; attempts read the generated skills by path instead",
+                f"codex plugin marketplace add {FACTORY_ROOT.parent} && codex plugin add factory@nurbot")
+        else:
+            add("codex:plugin", "ok", f"factory@nurbot installed; Codex loads {bundles['skills_id']}")
         cached = intent.read_json(home / "capabilities.json") or {}
         for stage in ("scope-review", "build", "ship"):
             model = PIPELINE[stage].model

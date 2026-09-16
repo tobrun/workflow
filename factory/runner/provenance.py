@@ -90,7 +90,14 @@ def skill_bundles(plugin_list: str | None = None) -> dict:
     same = None
     if installed.get("sha256") and generated["sha256"]:
         same = installed["sha256"] == generated["sha256"]
-    direct = os.environ.get("FACTORY_DIRECT_SKILL_PATH", "") not in ("", "0", "false")
+    forced = os.environ.get("FACTORY_DIRECT_SKILL_PATH", "") not in ("", "0", "false")
+    fallback = None
+    if not forced and not installed.get("listed"):
+        fallback = "the Codex factory plugin is not installed"
+    elif not forced and same is False:
+        fallback = f"the installed Codex factory plugin ({installed['path']}) differs from the generated skills"
+    # A missing or stale install never stops a run: agents read the generated skills by path instead.
+    direct = forced or fallback is not None
     resolved = generated if direct else installed
     label = resolved.get("sha256")
     return {
@@ -98,6 +105,7 @@ def skill_bundles(plugin_list: str | None = None) -> dict:
         "installed": installed,
         "installed_matches_generated": same,
         "resolution": "direct-path" if direct else "installed-plugin",
+        "fallback": fallback,
         "skills_id": f"sha256:{label}" if label else "unverified",
     }
 

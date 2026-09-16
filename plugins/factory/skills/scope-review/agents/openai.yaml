@@ -1,0 +1,6 @@
+interface:
+  display_name: "Scope Review"
+  short_description: "Review and refine a factory run's spec"
+  default_prompt: "Use $factory:scope-review to review and refine the settled spec for this factory run."
+policy:
+  allow_implicit_invocation: false

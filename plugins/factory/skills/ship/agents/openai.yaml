@@ -1,0 +1,6 @@
+interface:
+  display_name: "Ship"
+  short_description: "Ship a factory run to a ready PR"
+  default_prompt: "Use $factory:ship to harden, review, and open the pull request for this factory run."
+policy:
+  allow_implicit_invocation: false

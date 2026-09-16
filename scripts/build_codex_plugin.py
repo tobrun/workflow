@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the Codex dev plugin from the Claude-compatible source tree."""
+"""Build the Codex plugins from their Claude-compatible source trees."""
 
 from __future__ import annotations
 
@@ -7,48 +7,114 @@ import argparse
 import json
 import shutil
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parent.parent
-SOURCE = ROOT / "dev"
-DESTINATION = ROOT / "plugins" / "dev"
 
-SKILL_UI = {
-    "commit": (
-        "Commit",
-        "Create granular commits with structured messages",
-        "Use $dev:commit to group the pending changes into granular, well-explained commits.",
+
+@dataclass(frozen=True)
+class PluginConfig:
+    name: str
+    display_name: str
+    short_description: str
+    capabilities: tuple[str, ...]
+    default_prompts: tuple[str, ...]
+    # skill name -> (display name, short description, default prompt)
+    skill_ui: dict[str, tuple[str, str, str]]
+    copied_dirs: tuple[str, ...] = ("skills", "references", "scripts")
+
+    @property
+    def source(self) -> Path:
+        return ROOT / self.name
+
+    @property
+    def destination(self) -> Path:
+        return ROOT / "plugins" / self.name
+
+
+PLUGINS = {
+    "dev": PluginConfig(
+        name="dev",
+        display_name="Dev Workflow",
+        short_description="Scope, build, and ship tested changes.",
+        capabilities=("Interactive", "Write"),
+        default_prompts=(
+            "Scope this change with argued decisions.",
+            "Build the current spec test-first.",
+            "Ship this change with the gauntlet and a verified review.",
+        ),
+        skill_ui={
+            "commit": (
+                "Commit",
+                "Create granular commits with structured messages",
+                "Use $dev:commit to group the pending changes into granular, well-explained commits.",
+            ),
+            "build": (
+                "Build",
+                "Execute a spec test-first through e2e",
+                "Use $dev:build to execute the current spec test-first and verify it end to end.",
+            ),
+            "scope": (
+                "Scope",
+                "Spec a change by arguing its decisions",
+                "Use $dev:scope to spec this change with argued decisions and a change plan.",
+            ),
+            "scope-review": (
+                "Scope Review",
+                "Review and auto-refine a settled spec",
+                "Use $dev:scope-review to review the settled spec with a verified agent panel and refine it in place before building.",
+            ),
+            "ship": (
+                "Ship",
+                "Harden, review, then open a PR with proof",
+                "Use $dev:ship to run the quality gauntlet, the verified review, and open the pull request with evidence for this change.",
+            ),
+            "to-pitch": (
+                "To Pitch",
+                "Turn finished work into a buy-in document",
+                "Use $dev:to-pitch to create a buy-in document for the completed change.",
+            ),
+            "to-quiz": (
+                "To Quiz",
+                "Create a graded change comprehension quiz",
+                "Use $dev:to-quiz to create a comprehension check for the completed change.",
+            ),
+        },
     ),
-    "build": (
-        "Build",
-        "Execute a spec test-first through e2e",
-        "Use $dev:build to execute the current spec test-first and verify it end to end.",
-    ),
-    "scope": (
-        "Scope",
-        "Spec a change by arguing its decisions",
-        "Use $dev:scope to spec this change with argued decisions and a change plan.",
-    ),
-    "scope-review": (
-        "Scope Review",
-        "Review and auto-refine a settled spec",
-        "Use $dev:scope-review to review the settled spec with a verified agent panel and refine it in place before building.",
-    ),
-    "ship": (
-        "Ship",
-        "Harden, review, then open a PR with proof",
-        "Use $dev:ship to run the quality gauntlet, the verified review, and open the pull request with evidence for this change.",
-    ),
-    "to-pitch": (
-        "To Pitch",
-        "Turn finished work into a buy-in document",
-        "Use $dev:to-pitch to create a buy-in document for the completed change.",
-    ),
-    "to-quiz": (
-        "To Quiz",
-        "Create a graded change comprehension quiz",
-        "Use $dev:to-quiz to create a comprehension check for the completed change.",
+    "factory": PluginConfig(
+        name="factory",
+        display_name="Factory",
+        short_description="Run scope-review, build, and ship unattended for a factory run.",
+        capabilities=("Write",),
+        default_prompts=(
+            "Review and refine the settled spec for this factory run.",
+            "Build the spec for this factory run.",
+            "Ship this factory run to a ready pull request.",
+        ),
+        skill_ui={
+            "scope": (
+                "Scope",
+                "Interactively spec a factory run",
+                "Use $factory:scope to spec this factory run's change with argued decisions.",
+            ),
+            "scope-review": (
+                "Scope Review",
+                "Review and refine a factory run's spec",
+                "Use $factory:scope-review to review and refine the settled spec for this factory run.",
+            ),
+            "build": (
+                "Build",
+                "Build a factory run's spec unattended",
+                "Use $factory:build to implement and verify the spec for this factory run.",
+            ),
+            "ship": (
+                "Ship",
+                "Ship a factory run to a ready PR",
+                "Use $factory:ship to harden, review, and open the pull request for this factory run.",
+            ),
+        },
     ),
 }
 
@@ -58,7 +124,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--check",
         action="store_true",
-        help="Fail when plugins/dev differs from a fresh build.",
+        help="Fail when a generated plugin differs from a fresh build.",
+    )
+    parser.add_argument(
+        "--plugin",
+        choices=sorted(PLUGINS),
+        help="Build or check only this plugin (default: all).",
     )
     return parser.parse_args()
 
@@ -74,8 +145,8 @@ def codex_skill(contents: str, skill_name: str) -> str:
     return contents.replace(marker, "", 1)
 
 
-def openai_yaml(skill_name: str) -> str:
-    display_name, short_description, default_prompt = SKILL_UI[skill_name]
+def openai_yaml(config: PluginConfig, skill_name: str) -> str:
+    display_name, short_description, default_prompt = config.skill_ui[skill_name]
     return (
         "interface:\n"
         f"  display_name: {json.dumps(display_name)}\n"
@@ -86,24 +157,24 @@ def openai_yaml(skill_name: str) -> str:
     )
 
 
-def build(destination: Path) -> None:
+def build(config: PluginConfig, destination: Path) -> None:
+    source = config.source
     claude_manifest = json.loads(
-        (SOURCE / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8")
+        (source / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8")
     )
     description = claude_manifest["description"]
     junk = shutil.ignore_patterns(".DS_Store", "__pycache__")
-    shutil.copytree(SOURCE / "skills", destination / "skills", ignore=junk)
-    shutil.copytree(SOURCE / "references", destination / "references", ignore=junk)
-    shutil.copytree(SOURCE / "scripts", destination / "scripts", ignore=junk)
+    for directory in config.copied_dirs:
+        shutil.copytree(source / directory, destination / directory, ignore=junk)
 
     skill_names = sorted(
         path.name for path in (destination / "skills").iterdir() if path.is_dir()
     )
-    unlisted = [name for name in skill_names if name not in SKILL_UI]
-    orphaned = [name for name in SKILL_UI if name not in skill_names]
+    unlisted = [name for name in skill_names if name not in config.skill_ui]
+    orphaned = [name for name in config.skill_ui if name not in skill_names]
     if unlisted or orphaned:
         raise ValueError(
-            f"SKILL_UI out of sync with dev/skills/: "
+            f"skill_ui out of sync with {config.name}/skills/: "
             f"missing entries {unlisted}, stale entries {orphaned}"
         )
 
@@ -117,37 +188,33 @@ def build(destination: Path) -> None:
         agent_dir = skill_root / "agents"
         agent_dir.mkdir(exist_ok=True)
         (agent_dir / "openai.yaml").write_text(
-            openai_yaml(skill_name),
+            openai_yaml(config, skill_name),
             encoding="utf-8",
         )
 
     manifest = {
-        "name": "dev",
+        "name": config.name,
         "version": claude_manifest["version"],
         "description": description,
         "author": claude_manifest["author"],
         "repository": "https://github.com/tobrun/workflow",
         "skills": "./skills/",
         "interface": {
-            "displayName": "Dev Workflow",
-            "shortDescription": "Scope, build, and ship tested changes.",
+            "displayName": config.display_name,
+            "shortDescription": config.short_description,
             "longDescription": description,
             "developerName": claude_manifest["author"]["name"],
             "category": "Developer Tools",
-            "capabilities": ["Interactive", "Write"],
-            "defaultPrompt": [
-                "Scope this change with argued decisions.",
-                "Build the current spec test-first.",
-                "Ship this change with the gauntlet and a verified review.",
-            ],
+            "capabilities": list(config.capabilities),
+            "defaultPrompt": list(config.default_prompts),
         },
     }
     manifest_dir = destination / ".codex-plugin"
     manifest_dir.mkdir(exist_ok=True)
     (manifest_dir / "plugin.json").write_text(json_text(manifest), encoding="utf-8")
     (destination / "README.md").write_text(
-        "# dev for Codex\n\n"
-        "Generated from `dev/` by `scripts/build_codex_plugin.py`. "
+        f"# {config.name} for Codex\n\n"
+        f"Generated from `{config.name}/` by `scripts/build_codex_plugin.py`. "
         "Do not edit this directory directly.\n",
         encoding="utf-8",
     )
@@ -157,15 +224,16 @@ def snapshot(root: Path) -> dict[str, bytes]:
     return {
         path.relative_to(root).as_posix(): path.read_bytes()
         for path in sorted(root.rglob("*"))
-        if path.is_file() and path.name != ".DS_Store"
+        if path.is_file() and path.name != ".DS_Store" and "__pycache__" not in path.parts
     }
 
 
-def check() -> int:
+def check(config: PluginConfig) -> int:
     with tempfile.TemporaryDirectory(prefix="codex-plugin-") as temp:
-        expected = Path(temp) / "dev"
-        build(expected)
-        actual_files = snapshot(DESTINATION) if DESTINATION.is_dir() else {}
+        expected = Path(temp) / config.name
+        build(config, expected)
+        destination = config.destination
+        actual_files = snapshot(destination) if destination.is_dir() else {}
         expected_files = snapshot(expected)
 
     missing = sorted(expected_files.keys() - actual_files.keys())
@@ -176,30 +244,38 @@ def check() -> int:
         if expected_files[path] != actual_files[path]
     )
     if not (missing or extra or changed):
-        print("Codex plugin is up to date.")
+        print(f"Codex plugin {config.name} is up to date.")
         return 0
     for label, paths in (("missing", missing), ("extra", extra), ("changed", changed)):
         for path in paths:
-            print(f"{label}: plugins/dev/{path}")
-    print("Run: python3 scripts/build_codex_plugin.py")
+            print(f"{label}: plugins/{config.name}/{path}")
+    print(f"Run: python3 scripts/build_codex_plugin.py --plugin {config.name}")
     return 1
+
+
+def write(config: PluginConfig) -> None:
+    destination = config.destination
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    # Build in a temporary sibling and swap only after the whole plugin succeeded.
+    with tempfile.TemporaryDirectory(
+        prefix=f".{config.name}-build-", dir=destination.parent
+    ) as temp:
+        built = Path(temp) / config.name
+        build(config, built)
+        previous = Path(temp) / "previous"
+        if destination.exists():
+            destination.rename(previous)
+        built.rename(destination)
+    print(f"Built Codex plugin: {destination}")
 
 
 def main() -> int:
     args = parse_args()
+    selected = [PLUGINS[args.plugin]] if args.plugin else list(PLUGINS.values())
     if args.check:
-        return check()
-
-    DESTINATION.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(
-        prefix=".dev-build-", dir=DESTINATION.parent
-    ) as temp:
-        built = Path(temp) / "dev"
-        build(built)
-        if DESTINATION.exists():
-            shutil.rmtree(DESTINATION)
-        shutil.copytree(built, DESTINATION)
-    print(f"Built Codex plugin: {DESTINATION}")
+        return max(check(config) for config in selected)
+    for config in selected:
+        write(config)
     return 0
 
 

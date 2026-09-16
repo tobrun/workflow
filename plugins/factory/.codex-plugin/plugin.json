@@ -1,0 +1,25 @@
+{
+  "name": "factory",
+  "version": "0.1.0",
+  "description": "Software factory skills: factory-tuned copies of scope, scope-review, build, and ship that read a per-attempt run file, handle questions without a human, and write typed stage results, so a local runner can turn one interactively scoped change request into a ready pull request unattended. Use when running a change through the factory CLI rather than invoking dev skills by hand.",
+  "author": {
+    "name": "Tobrun"
+  },
+  "repository": "https://github.com/tobrun/workflow",
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Factory",
+    "shortDescription": "Run scope-review, build, and ship unattended for a factory run.",
+    "longDescription": "Software factory skills: factory-tuned copies of scope, scope-review, build, and ship that read a per-attempt run file, handle questions without a human, and write typed stage results, so a local runner can turn one interactively scoped change request into a ready pull request unattended. Use when running a change through the factory CLI rather than invoking dev skills by hand.",
+    "developerName": "Tobrun",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Write"
+    ],
+    "defaultPrompt": [
+      "Review and refine the settled spec for this factory run.",
+      "Build the spec for this factory run.",
+      "Ship this factory run to a ready pull request."
+    ]
+  }
+}

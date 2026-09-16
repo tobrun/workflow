@@ -26,7 +26,7 @@
         "A subagent reviewer receives the spec file only, not the conversation, with a hunting job rather than a checklist",
         "The drafted decisions are reconciled against docs/decisions.md only in phase 5, after they were argued fresh",
         "The collision with the recorded not-doing entry is classified (still-holds, diverged, or reopened) and raised rather than silently overridden",
-        "The retrospective reports the four typed lines: contamination, sizing, catalog gaps, familiarity"
+        "The retrospective reports the three typed lines: contamination, sizing, catalog gaps"
       ]
     },
     {

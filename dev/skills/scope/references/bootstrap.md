@@ -64,9 +64,6 @@ Dedupe by slug across areas before writing.
 Mechanical, from the trailer harvest, per the area-header semantics in [../../../references/decision-ledger.md](../../../references/decision-ledger.md): domains are the all-time union of `Risk:` values per area (sticky facts); the level is the max `Severity:` across the **recent window only** - last 90 days of trailer commits - because levels observe recent change, they don't ratchet from history.
 Date each line `(updated <date>, bootstrap)`.
 
-Familiarity lines are not derivable from commits - leave them absent.
-The scope quiz fills them in as areas come up.
-
 ## 5. Write and present
 
 Assemble `docs/decisions.md` from the ledger layout: principles (only if a rationale already recurs across 3+ extracted decisions - the bar doesn't lower for bootstrap), then area sections with risk lines and entries ordered by date.

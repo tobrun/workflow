@@ -34,16 +34,12 @@ If the premise doesn't survive, that resolves as a `⊘` not-doing line, not as 
 The interview is latency-bound by the user, so hide machine work inside it: once the change's rough area is clear, launch background read-only subagents on phase 2's prior-art hunt - existing idioms, helpers, earlier attempts, the areas the change touches - so their results are waiting when the interview closes.
 They start from `docs/architecture.md` ([../../references/architecture.md](../../references/architecture.md)), the high-level overview of the system; when the project has none, the same explorers run its initial capture first, so the spec is argued against an overview instead of a file tree.
 These explorers never read `docs/decisions.md`: the ledger must stay out of context until the phase 5 reconcile, and phase 9 treats an early leak as contamination.
-The same prefetch arms the quiz below with real code to ask about.
 
 Then size the change: **small** - a handful of decisions, an area the user knows, limited blast radius - or **full**, everything else.
 Tell the user which you picked and why; they can override. Small changes run the lighter variants where marked below - the spec file, its argued decisions, scope, and change plan always happen.
 
 **Iterate small.** Bias toward the smallest spec that delivers observable behavior - a slice implemented and looked at teaches more than a bigger plan.
 A big request becomes a first slice specced now, with later slices as `⊘` lines naming what reopens them; reopen the spec per "Starting from review findings" once build and ship land. The ledger carries the decisions across slices, so going small loses nothing argued.
-
-For full-size changes, quiz the user on the code and domain involved: medium to hard, zero jargon, each question carrying enough context to be answerable, enough of them to find where the understanding is thin.
-Afterwards tell them what they understand well, what they don't, and their unknown unknowns - things that would affect their decisions on this task.
 
 ## 2. Catalog the decisions
 
@@ -143,16 +139,14 @@ Copy into `docs/decisions.md` every decision that passes the promotion test in [
 Entries go in verbatim, dated, sourced to this spec, evidence marks included; a `? verify:` never gets silently dropped, and promotion is the cheapest moment to check what's checkable now.
 Promote recurring rationales to `P-` principles per the ledger's bar.
 Cross-boundary invariants from phase 4 promote to `docs/contracts.md` under the same test, phrased for the relying side.
-Update the familiarity line of each area the phase 1 quiz covered.
 
 ## 9. Run retrospective
 
-Audit the run itself. Four checks, each reported as a typed line - silence reads as "never ran":
+Audit the run itself. Three checks, each reported as a typed line - silence reads as "never ran":
 
 - **Contamination** - `clean | contaminated`. Did the ledger enter context before the phase 5 reconcile? If so, name the decisions drafted after exposure: their reconcile outcomes are inherited, and a `still-holds` on them proves nothing.
 - **Sizing** - `held | mis-sized`. Did the small/full call survive? Name the evidence when it didn't.
 - **Catalog gaps** - `none | gap`. What did the reviewer or blind-spot pass find that phase 2 should have caught? A missed *category* is a proposed edit to the phase 2 list - propose it to the user, never apply it silently.
-- **Familiarity** - `matched | adjusted`. Did the decision talk match what the quiz predicted? If not, amend the phase 8 familiarity line and say so.
 
 Then print the measured run metrics with `python3 {scope-skill-root}/../../scripts/skill-metrics.py end scope --count decisions=N --count change_sets=N --count scenarios=N`, pasting its table verbatim.
 Then tell the operator the spec is ready for handoff: once this session exits, the factory runner gates the spec, asks for confirmation, and runs `scope-review`, `build`, and `ship` unattended. Never launch them yourself.

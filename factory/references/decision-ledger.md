@@ -35,7 +35,6 @@ One `⊘` recorded about this notation itself: typed gap kinds (code-checkable v
 ## Layout
 
 Principles at the top, then one section per codebase area.
-Each area opens with a familiarity line.
 
 ```
 # Decisions
@@ -47,7 +46,6 @@ P-no-new-infra: no new infrastructure for an unproven need
 
 ## Auth
 
-familiarity: high - quizzed 2026-08-08
 risk: high - domains: security, data (updated 2026-08-02, review oauth2-providers)
 
 D-session-length: How long do sessions last? (2026-07-14, login-sessions/spec.md)
@@ -72,12 +70,6 @@ Maintained mechanically from commit `Severity:`/`Risk:` trailers by the commit s
 Never ratchet: an area whose risky code was removed must be able to come back down, and the date tells consumers how stale the observation is.
 Commits without severity trailers leave the level untouched.
 A section without a risk line carries no signal - treat it as unassessed, not as safe.
-
-`familiarity: high | medium | low - quizzed <date>`.
-Written by scope's quiz whenever it covers the area; a section without one is treated as low.
-Consumers apply it at presentation time, as a prior on whether anyone ever decided the thing being flagged: an odd value in a high-familiarity area was probably chosen, so present the finding as a question - "was this deliberate?" - not a recommendation.
-The same value in a low-familiarity area was probably never chosen by anyone, so present it as a finding and explain the tradeoff space, because the user couldn't have known there was a decision to make.
-It also sets explanation depth: terse where familiarity is high, more background where it's low.
 
 ## Promoting principles
 

@@ -5,23 +5,57 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  schedule:
+    # Weekly, so platform drift (new runner images, Python patch releases) surfaces without a code change.
+    - cron: "17 5 * * 1"
 
 jobs:
   validate:
-    runs-on: ubuntu-latest
+    name: validate (${{ matrix.os }}, Python ${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        # The declared minimum (factory doctor requires 3.10) and a current release.
+        python: ["3.10", "3.13"]
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
       - name: Install jq and yq
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq jq
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq jq
+          else
+            brew install jq
+          fi
           # Install yq (Python version, not the Go one)
-          pip install yq --quiet
+          python -m pip install yq --quiet
+
+      - name: Configure Git identity for fixture repositories
+        run: |
+          git config --global user.name "factory-ci"
+          git config --global user.email "factory-ci@example.invalid"
 
       - name: Run validation script
+        env:
+          FACTORY_VALIDATE_LOGS: ${{ runner.temp }}/validate-logs
         run: |
           chmod +x scripts/validate.sh
           bash scripts/validate.sh
+
+      - name: Keep test and benchmark logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: validate-logs-${{ matrix.os }}-py${{ matrix.python }}
+          path: ${{ runner.temp }}/validate-logs
+          if-no-files-found: ignore

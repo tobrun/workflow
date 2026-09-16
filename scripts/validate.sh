@@ -7,7 +7,16 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 ERROR_FILE=$(mktemp)
-trap 'rm -f "$ERROR_FILE"' EXIT
+# Test output is kept (not discarded) so a failure can be diagnosed; CI uploads this directory.
+if [ -n "${FACTORY_VALIDATE_LOGS:-}" ]; then
+  LOG_DIR="$FACTORY_VALIDATE_LOGS"
+  mkdir -p "$LOG_DIR"
+  trap 'rm -f "$ERROR_FILE"' EXIT
+else
+  LOG_DIR=$(mktemp -d)
+  # Keep the logs only when a check failed, since the failure messages point at them.
+  trap 'if [ -s "$ERROR_FILE" ]; then echo "Logs kept in $LOG_DIR" >&2; else rm -rf "$LOG_DIR"; fi; rm -f "$ERROR_FILE"' EXIT
+fi
 
 # ---------------------------------------------------------------------------
 # Helper: accumulate error message
@@ -68,6 +77,8 @@ actual_plugin_dirs() {
     [ "${dir:0:1}" = "." ] && continue
     [ "$dir" = "scripts" ] && continue
     [ "$dir" = "todo" ] && continue
+    [ "$dir" = "plugins" ] && continue
+    [ "$dir" = "research" ] && continue
     [ -f "$dir/.claude-plugin/plugin.json" ] && echo "$dir"
   done
 }
@@ -410,7 +421,7 @@ check_13() {
       fail "R13" "$file" \
         "Contains em dash (Unicode U+2014). Use two plain dashes instead."
     fi
-  done < <(find . -not -path './.git/*' -not -path './todo/*' -not -path './research/*' -type f -print0)
+  done < <(find . -not -path './.git/*' -not -path './todo/*' -not -path './research/*' -not -path '*/__pycache__/*' -type f -print0)
 }
 
 # ===========================================================================
@@ -439,15 +450,17 @@ check_skill_length() {
 }
 
 # ===========================================================================
-# R15: every relative markdown link in dev/ resolves to an existing file
+# R15: every relative markdown link under every marketplace source resolves
 # ===========================================================================
 check_links() {
   local broken
-  broken=$(python3 - <<'PYEOF'
-import re, pathlib
+  broken=$(marketplace_source_dirs | python3 -c '
+import re, pathlib, sys
 
 link_re = re.compile(r"\]\(([^)#\s]+)(?:#[^)]*)?\)")
-for path in sorted(pathlib.Path("dev").rglob("*.md")):
+sources = [line.strip() for line in sys.stdin if line.strip()]
+paths = sorted(p for source in sources for p in pathlib.Path(source).rglob("*.md"))
+for path in paths:
     text = path.read_text(encoding="utf-8")
     for target in link_re.findall(text):
         if target.startswith(("http://", "https://", "mailto:", "/")):
@@ -455,8 +468,7 @@ for path in sorted(pathlib.Path("dev").rglob("*.md")):
         resolved = (path.parent / target).resolve()
         if not resolved.exists():
             print(f"{path}: broken link -> {target}")
-PYEOF
-)
+')
   if [ -n "$broken" ]; then
     while IFS= read -r line; do
       fail "R15" "${line%%:*}" "${line#*: }"
@@ -465,73 +477,98 @@ PYEOF
 }
 
 # ===========================================================================
-# C01: Generated Codex distribution is current and structurally valid
+# C01: Generated Codex distributions are current and structurally valid
 # ===========================================================================
 check_codex() {
   local marketplace=".agents/plugins/marketplace.json"
-  local plugin="plugins/dev"
-  local manifest="$plugin/.codex-plugin/plugin.json"
 
   if ! python3 scripts/build_codex_plugin.py --check >/dev/null 2>&1; then
-    fail "C01" "$plugin" \
-      "Generated Codex plugin is stale; run python3 scripts/build_codex_plugin.py"
+    fail "C01" "plugins" \
+      "Generated Codex plugins are stale; run python3 scripts/build_codex_plugin.py"
   fi
 
-  if ! jq -e '
-    .name == "nurbot" and
-    (.plugins | length == 1) and
-    .plugins[0].name == "dev" and
-    .plugins[0].source.source == "local" and
-    .plugins[0].source.path == "./plugins/dev" and
-    .plugins[0].policy.installation == "AVAILABLE" and
-    .plugins[0].policy.authentication == "ON_INSTALL" and
-    (.plugins[0].category | length > 0)
-  ' "$marketplace" >/dev/null 2>&1; then
-    fail "C01" "$marketplace" "Invalid Codex marketplace entry"
+  if ! jq -e '.name == "nurbot" and (.plugins | length > 0)' \
+    "$marketplace" >/dev/null 2>&1; then
+    fail "C01" "$marketplace" "Invalid Codex marketplace"
+    return
   fi
 
-  if ! jq -e '
-    .name == "dev" and
-    (.version | test("^[0-9]+\\.[0-9]+\\.[0-9]+([+-][0-9A-Za-z.-]+)?$")) and
-    (.description | length > 0) and
-    (.author.name | length > 0) and
-    .skills == "./skills/" and
-    (.interface.displayName | length > 0) and
-    (.interface.shortDescription | length > 0) and
-    (.interface.longDescription | length > 0) and
-    (.interface.developerName | length > 0) and
-    (.interface.category | length > 0) and
-    (.interface.capabilities | length > 0) and
-    (.interface.defaultPrompt | length > 0)
-  ' "$manifest" >/dev/null 2>&1; then
-    fail "C01" "$manifest" "Invalid Codex plugin manifest"
+  local claude_names codex_names
+  claude_names=$(jq -r '.plugins[].name' .claude-plugin/marketplace.json | sort)
+  codex_names=$(jq -r '.plugins[].name' "$marketplace" | sort)
+  if [ "$claude_names" != "$codex_names" ]; then
+    fail "C01" "$marketplace" \
+      "Codex plugin names ($(echo $codex_names)) != Claude plugin names ($(echo $claude_names))"
   fi
 
-  for skilldir in "$plugin"/skills/*/; do
-    [ ! -d "$skilldir" ] && continue
-    local skill_name
-    skill_name=$(basename "${skilldir%/}")
-    local skill_md="${skilldir%/}/SKILL.md"
-    local agent_yaml="${skilldir%/}/agents/openai.yaml"
+  local name
+  while IFS= read -r name; do
+    [ -z "$name" ] && continue
+    local plugin="plugins/$name"
+    local manifest="$plugin/.codex-plugin/plugin.json"
 
-    if grep -q '^disable-model-invocation: true$' "$skill_md"; then
-      fail "C01" "$skill_md" \
-        "Codex skill must not contain Claude invocation frontmatter"
+    if ! jq -e --arg name "$name" '
+      .plugins[] | select(.name == $name) |
+      .source.source == "local" and
+      .source.path == ("./plugins/" + $name) and
+      .policy.installation == "AVAILABLE" and
+      .policy.authentication == "ON_INSTALL" and
+      (.category | length > 0)
+    ' "$marketplace" >/dev/null 2>&1; then
+      fail "C01" "$marketplace" "Invalid Codex marketplace entry '$name'"
     fi
-    if [ ! -f "$agent_yaml" ]; then
-      fail "C01" "$agent_yaml" "Missing Codex skill interface metadata"
-    elif ! grep -q '^  allow_implicit_invocation: false$' "$agent_yaml"; then
-      fail "C01" "$agent_yaml" "Skill must remain explicit-invocation only"
+
+    if [ ! -d "$plugin" ]; then
+      fail "C01" "$plugin" "Generated Codex plugin directory not found"
+      continue
     fi
-    if ! grep -Fq "\$dev:$skill_name" "$agent_yaml" 2>/dev/null; then
-      fail "C01" "$agent_yaml" \
-        "Default prompt must name the namespaced Codex skill"
+
+    if ! jq -e --arg name "$name" '
+      .name == $name and
+      (.version | test("^[0-9]+\\.[0-9]+\\.[0-9]+([+-][0-9A-Za-z.-]+)?$")) and
+      (.description | length > 0) and
+      (.author.name | length > 0) and
+      .skills == "./skills/" and
+      (.interface.displayName | length > 0) and
+      (.interface.shortDescription | length > 0) and
+      (.interface.longDescription | length > 0) and
+      (.interface.developerName | length > 0) and
+      (.interface.category | length > 0) and
+      (.interface.capabilities | length > 0) and
+      (.interface.defaultPrompt | length > 0)
+    ' "$manifest" >/dev/null 2>&1; then
+      fail "C01" "$manifest" "Invalid Codex plugin manifest"
     fi
-  done
+
+    for skilldir in "$plugin"/skills/*/; do
+      [ ! -d "$skilldir" ] && continue
+      local skill_name
+      skill_name=$(basename "${skilldir%/}")
+      local skill_md="${skilldir%/}/SKILL.md"
+      local agent_yaml="${skilldir%/}/agents/openai.yaml"
+
+      if grep -q '^disable-model-invocation: true$' "$skill_md"; then
+        fail "C01" "$skill_md" \
+          "Codex skill must not contain Claude invocation frontmatter"
+      fi
+      if [ ! -f "$agent_yaml" ]; then
+        fail "C01" "$agent_yaml" "Missing Codex skill interface metadata"
+      elif ! grep -q '^  allow_implicit_invocation: false$' "$agent_yaml"; then
+        fail "C01" "$agent_yaml" "Skill must remain explicit-invocation only"
+      fi
+      if ! grep -Fq "\$$name:$skill_name" "$agent_yaml" 2>/dev/null; then
+        fail "C01" "$agent_yaml" \
+          "Default prompt must name the namespaced Codex skill"
+      fi
+    done
+  done <<< "$codex_names"
 }
 
 # ===========================================================================
 # P01: Pi package manifest and subprocess review transport are valid
+#
+# Scoped to dev on purpose: Pi uses a flat skill namespace, so factory's
+# scope, build, and ship would collide with dev's. Pi ships dev only.
 # ===========================================================================
 check_pi() {
   local package="package.json"
@@ -578,6 +615,104 @@ check_pi() {
 }
 
 # ===========================================================================
+# F01: factory runner unit, integration, and end-to-end tests pass
+# ===========================================================================
+check_factory_runner() {
+  if [ ! -d factory/runner/tests ]; then
+    fail "F01" "factory/runner/tests" "Factory runner tests not found"
+  elif ! (cd factory && python3 -m unittest discover -s runner/tests -t .) \
+    >"$LOG_DIR/runner-tests.log" 2>&1; then
+    grep -E -A 25 "^(FAIL|ERROR):" "$LOG_DIR/runner-tests.log" | head -120 >&2
+    fail "F01" "factory/runner/tests" \
+      "Runner tests failed (full output: $LOG_DIR/runner-tests.log); run: cd factory && python3 -m unittest discover -s runner/tests -t ."
+  fi
+
+  if [ ! -f scripts/test_factory_runner.sh ]; then
+    fail "F01" "scripts/test_factory_runner.sh" "Factory runner e2e test not found"
+  elif ! bash scripts/test_factory_runner.sh >"$LOG_DIR/runner-e2e.log" 2>&1; then
+    tail -60 "$LOG_DIR/runner-e2e.log" >&2
+    fail "F01" "scripts/test_factory_runner.sh" \
+      "Factory runner e2e test failed (full output: $LOG_DIR/runner-e2e.log); run: bash scripts/test_factory_runner.sh"
+  fi
+}
+
+# ===========================================================================
+# F04: the offline benchmark rejects every negative control and completes every correct task
+# ===========================================================================
+check_factory_bench() {
+  local bench="factory/evals/bench/bench.py" results="$LOG_DIR/bench"
+  [ -f "$bench" ] || { fail "F04" "$bench" "Factory benchmark harness not found"; return; }
+  rm -rf "$results"
+  if ! python3 "$bench" run --mode offline --out "$results" >"$LOG_DIR/bench-run.log" 2>&1; then
+    tail -40 "$LOG_DIR/bench-run.log" >&2
+    fail "F04" "$bench" "Offline benchmark run failed (output: $LOG_DIR/bench-run.log)"
+  elif ! python3 "$bench" report "$results" --require-success --markdown "$LOG_DIR/bench-report.md" \
+    >"$LOG_DIR/bench-report.json" 2>&1; then
+    cat "$LOG_DIR/bench-run.log" "$LOG_DIR/bench-report.md" >&2
+    fail "F04" "$bench" "Offline benchmark found a false green, an accepted negative control, or a failed task"
+  fi
+}
+
+# ===========================================================================
+# F02: every factory stage skill reads the run file and writes its result
+# ===========================================================================
+check_factory_skills() {
+  local stage
+  for stage in scope scope-review build ship; do
+    local sf="factory/skills/$stage/SKILL.md"
+    if [ ! -f "$sf" ]; then
+      fail "F02" "$sf" "Factory stage skill not found"
+      continue
+    fi
+    grep -Fq 'factory-run.json' "$sf" || \
+      fail "F02" "$sf" "Must mention factory-run.json"
+    grep -Fq "$stage-result.json" "$sf" || \
+      fail "F02" "$sf" "Must mention $stage-result.json"
+  done
+}
+
+# ===========================================================================
+# F03: unattended factory material never routes a decision to a person
+# ===========================================================================
+check_factory_unattended() {
+  local found
+  found=$(python3 - <<'PYEOF'
+import pathlib, re, sys
+
+# Phrases that hand a choice to a person. Factory policy decides instead; see
+# factory/references/factory-run.md "Decisions without a human".
+PATTERN = re.compile(
+    r"\b(ask(s|ed|ing)?|confirm(s|ed|ing)?\s+with|wait(s|ing)?\s+for|check(s|ing)?\s+with)\s+(the\s+)?(user|operator|human)s?\b"
+    r"|\b(user|operator|human)\s+(decides|approves|authorizes|chooses|confirms|answers)\b"
+    r"|structured user-input tool|\bhuman call\b|\bconfirm (with|before)\b",
+    re.I,
+)
+for sample in ("ask the user which one", "a human call", "the user decides", "confirm with the operator"):
+    if not PATTERN.search(sample):
+        print(f"scripts/validate.sh: F03 pattern no longer matches {sample!r}")
+        sys.exit(0)
+
+roots = ["factory/skills/scope-review", "factory/skills/build", "factory/skills/ship", "factory/references"]
+for root in roots:
+    for path in sorted(pathlib.Path(root).rglob("*.md")):
+        inside = False
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+            if "<!-- interactive-only -->" in line:
+                inside = True
+            elif "<!-- /interactive-only -->" in line:
+                inside = False
+            elif not inside and PATTERN.search(line):
+                print(f"{path}:{number}: routes a decision to a person; decide under factory policy or mark the block <!-- interactive-only -->")
+PYEOF
+)
+  if [ -n "$found" ]; then
+    while IFS= read -r line; do
+      fail "F03" "${line%%: *}" "${line#*: }"
+    done <<< "$found"
+  fi
+}
+
+# ===========================================================================
 # Main
 # ===========================================================================
 check_01
@@ -598,6 +733,10 @@ check_skill_length
 check_links
 check_codex
 check_pi
+check_factory_runner
+check_factory_skills
+check_factory_unattended
+check_factory_bench
 
 if [ -s "$ERROR_FILE" ]; then
   echo ""

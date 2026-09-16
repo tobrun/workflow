@@ -9,7 +9,7 @@ from pathlib import Path
 
 from runner import cli, events, intent
 from runner.model import Run
-from runner.tests.helpers import (SCENARIO_MAP, SPEC, TESTS_PY, FactoryTestCase, build_step, happy_scenario,
+from runner.tests.helpers import (SCENARIO_MAP, SPEC, TESTS_PY, FactoryTestCase, build_step, git, happy_scenario,
                                   make_repo, review_step, scope_files)
 
 SPEC_WITH_NON_GOAL = SPEC.replace(
@@ -197,6 +197,26 @@ class AttemptSnapshotTests(IntentTestCase):
         self.assertTrue((run_dir / "intent" / "versions" / "1" / "approved.json").is_file())
         self.assertEqual(self.call("cancel", run.id)[0], 0)
         self.wait_status(run_dir, ("cancelled",))
+
+    def test_rescope_after_build_committed_code_judges_only_the_scope_session(self):
+        scenario = happy_scenario()
+        scenario["ship"] = [{"result": {"status": "blocked", "reason": "reviewer wants a different design",
+                                        "conditions": []}}]
+        self.scenario(scenario)
+        run = self.queued_run()
+        from runner.worker import Worker
+        Worker(self.home, run.id, grace=1).run()
+        self.assertEqual(Run.load(run.dir).status, "needs-human")
+        self.assertIn("webhook.py", git(run.worktree, "log", "--name-only", "--format=", run.data["base_sha"] + "..HEAD"))
+        code, out, err = self.call("retry", run.id, "--rescope", "--detach")
+        self.assertEqual(code, 0, out + err)
+        self.claude([scope_files()])
+        code, out, err = self.call("scope", run.id, "--resume", "--yes", "--detach")
+        self.assertEqual(code, 0, out + err)
+        self.assertNotIn("outside its contract", out + err)
+        self.assertIn(Run.load(run.dir).status, ("queued", "running"))
+        self.assertEqual(self.call("cancel", run.id)[0], 0)
+        self.wait_status(run.dir, ("cancelled", "done", "needs-human"))
 
     def test_snapshots_survive_archiving(self):
         self.scenario(happy_scenario())

@@ -205,6 +205,8 @@ def scope_session(home: Path, cfg: config.Config, run: Run, lock: supervise.Work
     if not resuming:
         run.data["scope_session_id"] = str(uuid.uuid4())
     attempt["session_id"] = run.data["scope_session_id"]
+    # The gate judges only what this scope session changes; after a rescope the branch already carries build's commits.
+    attempt["baseline"] = {"head": wt.head(run.worktree), "branch": wt.current_branch(run.worktree)}
     write_run_context(run, "scope", n, interactive=True)
     run.save()
     run.event("scope.launched", "scope", n, session_id=run.data["scope_session_id"], resume=resuming)

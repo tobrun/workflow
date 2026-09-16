@@ -1,0 +1,18 @@
+{
+  "skill": "scope-review",
+  "mode": "comprehension",
+  "note": "Scope-review runs unattended in a factory run; these evals pin factory policy for escalations and the typed deferral kinds the runner's gate parses.",
+  "evals": [
+    {
+      "id": "factory-scope-review-unattended",
+      "prompt": "Answer briefly, from the skill text only. .dev/factory-run.json names plan \"webhook-idempotency\", stage \"scope-review\", interactive false, scratch_dir /home/u/.factory/runs/r1/scratch/scope-review-1. (1) A verified escalation would change the retry timeout from 30s to 60s; repo evidence shows every other client uses 60s. What do you do and what does the report record? (2) A second escalation reveals the premise is wrong: the duplicate webhooks come from a load balancer retry, not the provider. What do you do? (3) A third escalation would flip the settled `✓ Postgres table` decision to the rejected `✗ Redis set`, and the panel recommends the flip because the repo already runs Redis for idempotency keys. Do you defer it or ask anyone? (4) Where do panel scratch files go? (5) What is your last action, and which stage do you launch next?",
+      "assertions": [
+        "Answer 1: apply the recommendation with a refine pass, loop lint-spec.py, and record 'Answered: factory policy (auto-decided) - {recommendation}' under Escalations resolved; nobody is asked",
+        "Answer 2: defer it with a 'Kind: premise' line in its Deferred item; the verdict becomes APPROVED WITH DEFERRALS and the result is blocked with a premise.invalidated condition",
+        "Answer 3: neither - flipping a settled decision is not a reason to defer; apply the recommended flip, record it as auto-decided, and promote the changed decision to docs/decisions.md in the same run",
+        "Answer 4: under the run file's scratch_dir, one round-{R} directory per round, not /tmp/scope-review-{session-id}",
+        "Answer 5: writing .dev/webhook-idempotency/scope-review-result.json with counts.auto_decided; no stage is launched - the runner starts build after its own gate"
+      ]
+    }
+  ]
+}

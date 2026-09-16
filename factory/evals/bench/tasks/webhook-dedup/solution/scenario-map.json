@@ -1,0 +1,15 @@
+{
+  "schema": "factory.scenario-map/1",
+  "scenarios": {
+    "S1": {
+      "layer": "unit",
+      "tests": [
+        "tests/test_webhook.py::WebhookTests::test_repeated_id_ignored"
+      ]
+    },
+    "S2": {
+      "layer": "e2e",
+      "e2e_case": "duplicate-delivery"
+    }
+  }
+}

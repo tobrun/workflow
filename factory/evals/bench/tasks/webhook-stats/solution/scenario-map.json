@@ -1,0 +1,11 @@
+{
+  "schema": "factory.scenario-map/1",
+  "scenarios": {
+    "S1": {
+      "layer": "unit",
+      "tests": [
+        "tests/test_webhook.py::StatsTests::test_counts_processed_and_ignored"
+      ]
+    }
+  }
+}

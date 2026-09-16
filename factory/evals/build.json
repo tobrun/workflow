@@ -1,0 +1,19 @@
+{
+  "skill": "build",
+  "mode": "comprehension",
+  "note": "Build runs unattended in a factory run; its three former ask points must become typed results.",
+  "evals": [
+    {
+      "id": "factory-build-ask-points",
+      "prompt": "Answer briefly, from the skill text only. .dev/factory-run.json names plan \"discount-pricing\", stage \"build\", attempt 2, interactive false, report_dir /home/u/.factory/runs/r2/reports, previous {outcome: blocked, reason: 'Validation command failed: npm test'}. (1) What happens when .dev/discount-pricing/spec.md is missing? (2) No safe launch command exists for the e2e run after trying the documented commands. What do you do? (3) An e2e scenario fails three times on the same root cause. What do you do? (4) Where do the e2e results and their report go, and do you push or open a PR? (5) The spec does not say whether a discount applies before or after tax, and the repo's existing invoice code applies discounts before tax. What do you do? (6) Change sets 1 and 2 are already committed from attempt 1. Where do you start, and what is your last action?",
+      "assertions": [
+        "Answer 1: stop with a blocked result carrying an input.unusable condition; the user is not asked and scope is not invoked",
+        "Answer 2: stop with a blocked result carrying a launch.unavailable condition whose evidence names every discovery attempt",
+        "Answer 3: log the deviation, leave the scenario failed in the report, and finish with a blocked result without a condition, which the runner retries",
+        "Answer 4: the factory.e2e/1 record /home/u/.factory/runs/r2/reports/discount-pricing-e2e.json, rendered to discount-pricing-e2e-report.html in the same directory; never push and never open a PR",
+        "Answer 5: decide it without asking or stopping - apply the discount before tax to match the existing invoice code, log an 'auto-decided:' Deviations line in implementation-notes.md, and keep going",
+        "Answer 6: continue from the committed change sets and implementation notes, fixing the npm test failure rather than redoing finished work; the last action is writing .dev/discount-pricing/build-result.json, and ship is not launched"
+      ]
+    }
+  ]
+}

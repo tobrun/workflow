@@ -1,0 +1,18 @@
+{
+  "skill": "scope",
+  "mode": "comprehension",
+  "note": "Scope stays interactive in a factory run; these evals pin the pieces the runner's scope gate depends on.",
+  "evals": [
+    {
+      "id": "factory-scope-contract",
+      "prompt": "Answer briefly, from the skill text only. The worktree holds .dev/factory-run.json with plan \"webhook-idempotency\", stage \"scope\", interactive true, report_dir /home/u/.factory/runs/r1/reports, request_file /home/u/.factory/runs/r1/request.md, and source {kind: jira, key: PROJ-42}. (0) What do you read before your first interview question, and what does the spec carry for the ticket? (1) What plan directory does the spec go in, and may you choose a better slug? (2) The operator cannot answer a question about expected file sizes. How does that line look in the final spec? (3) Where is the spec HTML rendered? (4) What is your last action, and do you launch scope-review when the spec is settled?",
+      "assertions": [
+        "Answer 0: the run file, then request_file /home/u/.factory/runs/r1/request.md as the user's opening ask; the spec carries `Source: PROJ-42` under its date line",
+        "Answer 1: .dev/webhook-idempotency/ - the run file's plan is fixed and no other slug is picked",
+        "Answer 2: a not-doing line with a because clause naming the condition that reopens it, never a flag mark and never [open], because the factory gate rejects both",
+        "Answer 3: under the run file's report_dir, as webhook-idempotency-spec.html, not /tmp",
+        "Answer 4: writing .dev/webhook-idempotency/scope-result.json; scope-review is never launched - the runner performs the handoff after the operator confirms"
+      ]
+    }
+  ]
+}

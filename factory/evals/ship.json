@@ -1,0 +1,20 @@
+{
+  "skill": "ship",
+  "mode": "comprehension",
+  "note": "Ship runs unattended in a factory run; these evals pin the removed confirmations, run paths, authorship, and the result file the runner's gate cross-checks against GitHub.",
+  "evals": [
+    {
+      "id": "factory-ship-unattended",
+      "prompt": "Answer briefly, from the skill text only. .dev/factory-run.json names run_id \"20260915-1420-webhook-idempotency\", plan \"webhook-idempotency\", stage \"ship\", interactive false, report_dir and evidence_dir under /home/u/.factory/runs/r1/. (1) The diff touches only 2 files. Do you confirm before spending on agents? (2) Where are the review HTML and PR evidence files written? (3) What extra line does the PR body carry, and who authors commits and the PR? (4) A blocker survives both remediation rounds. What does the PR look like and what does the result say? (5) A confirmed blocker can only be fixed by changing the retry contract that docs/contracts.md records, and a gauntlet dependency upgrade breaks the build. What happens to each? (6) A gitleaks scan finds a live API key in the diff. What happens? (7) What is your last action, and do you recommend or invoke commit, to-pitch, or to-quiz?",
+      "assertions": [
+        "Answer 1: no confirmation - a tiny or huge diff runs without asking during a factory run",
+        "Answer 2: review_N.html under report_dir, evidence files under evidence_dir, not /tmp",
+        "Answer 3: a Factory run line naming the run id, each stage's model, and the count of auto-decided decisions; the authenticated human authors everything, with no Co-Authored-By line",
+        "Answer 4: the PR stays draft with the blocker under Open calls; ship-result.json is blocked with no condition (a review blocker is not a park-list item), the blocker listed under the PR's Open calls, and pr_url and draft set",
+        "Answer 5: both are decided, not escalated - the blocker gets the least-changing fix with every reliance site updated and marked auto-decided for the re-review, and the upgrade's breakage is fixed or the newest patched version that builds is taken; both appear in the PR's Auto-decided section",
+        "Answer 6: the gauntlet stops and the run parks: ship-result.json is blocked with a secret.found condition carrying the evidence, because a found secret is on the factory park list",
+        "Answer 7: writing .dev/webhook-idempotency/ship-result.json; no other skill is recommended or invoked - the runner records the PR and ends the run"
+      ]
+    }
+  ]
+}

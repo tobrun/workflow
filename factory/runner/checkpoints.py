@@ -34,6 +34,7 @@ from runner.model import atomic_write, utc_now
 
 SCHEMA = "factory.checkpoint/1"
 DIRECTORY = "checkpoints"
+VERIFIED_SCENARIO_MAP = "verified-scenario-map.json"
 
 
 def tree(worktree: Path) -> str:
@@ -98,3 +99,24 @@ def note(ctx, name: str, decision: str) -> None:
     ctx.attempt_dir.mkdir(parents=True, exist_ok=True)
     atomic_write(ctx.attempt_dir / "subphase.json",
                  json.dumps({"current": name, "decision": decision, "history": ctx.checkpoint_log}, indent=2) + "\n")
+
+
+def save_verified_scenario_map(run_dir: Path | None, mapping: dict, *, revision: str) -> Path | None:
+    """Keep the last runner-proven map outside the agent-writable worktree.
+
+    A ship repair can need to repair a malformed map, but it must not replace a
+    selector that the contract already executed successfully with a selector for
+    another test runner.  The repair prompt points agents at this immutable
+    baseline rather than asking them to rediscover every selector from scratch.
+    """
+    if run_dir is None:
+        return None
+    target = Path(run_dir) / DIRECTORY / VERIFIED_SCENARIO_MAP
+    target.parent.mkdir(parents=True, exist_ok=True)
+    record = {
+        "schema": "factory.verified-scenario-map/1",
+        "revision": revision,
+        "mapping": mapping,
+    }
+    atomic_write(target, json.dumps(record, indent=2) + "\n")
+    return target

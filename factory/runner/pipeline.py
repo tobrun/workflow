@@ -95,6 +95,18 @@ def repair_prompt(run: Run, stage: str, n: int, repair: dict) -> str:
         "Do exactly this:",
         repair["instruction"].strip(),
     ]
+    if "scenario-map.json" in repair["instruction"]:
+        baseline = run.dir / "checkpoints" / "verified-scenario-map.json"
+        lines += [
+            "",
+            "Scenario-map safety:",
+            f"- A last runner-verified map may be available at {baseline}. Read it before editing and preserve its",
+            "  selectors unless the current gate proves a selector is invalid.",
+            "- Every `tests` selector must be accepted by the contract's `tests.run` command. Do not map a selector",
+            "  for another runner directly - for example, a Vitest test name when the contract invokes pytest.",
+            "- `check-tests.py` confirms map structure and file paths only. Run the contract's actual test command with",
+            "  every mapped non-e2e selector and require it to collect and pass before saying the map is repaired.",
+        ]
     checks = repair.get("checks") or []
     if checks:
         lines += ["", "The runner will check afterwards:"] + [f"- {check}" for check in checks]

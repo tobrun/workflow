@@ -306,6 +306,22 @@ class BuildGateTests(GateTestCase):
         from runner import supervise
         self.assertFalse(supervise.process_identity(hosted["pid"])[0], "the gate's browser outlived the driver")
 
+    def test_a_driver_may_declare_the_variables_the_runner_provides(self):
+        # FACTORY_* and AGENT_BROWSER_* are set by the runner for the driver; declaring them as inputs is not a gap.
+        contract = json.loads((self.repo / ".factory" / "contract.json").read_text(encoding="utf-8"))
+        contract["e2e"]["driver"]["env"] = ["FACTORY_REVISION", "FACTORY_E2E_OUT", "AGENT_BROWSER_CDP",
+                                            "FACTORY_BROWSER_CDP_URL"]
+        contract["environment"] = {"required": [], "passthrough": ["FACTORY_REVISION", "AGENT_BROWSER_CDP"]}
+        self.write(".factory/contract.json", json.dumps(contract))
+        self.commit_all("declare runner inputs")
+        self.start = git(self.repo, "rev-parse", "HEAD")
+        self.seal()
+        self.build()
+        with unittest.mock.patch.dict(os.environ, {"FACTORY_BROWSER_BIN": str(STUBS / "chrome")}):
+            gate = self.gate(browser="auto", home=self.home)
+        self.assertTrue(gate.passed, gate.reason)
+        self.assertNotEqual(gate.code, "contract.unrunnable")
+
     def test_r1_names_in_comments_and_an_empty_e2e_record_are_not_evidence(self):
         comment_only = "# test_repeated_id_ignored: WebhookTests covers repeated ids\n"
         empty_driver = E2E_DRIVER_PY.replace('"scenarios": [{', '"scenarios": [], "unused": [{')

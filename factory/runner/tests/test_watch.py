@@ -179,7 +179,7 @@ class WatcherTests(WatchTestCase):
         viewer.verbose = True
         viewer.run()
         plain = ANSI.sub("", viewer.out.getvalue())
-        self.assertIn("| $ pytest -q — exit 1 (failed)", plain)
+        self.assertIn("| $ pytest -q - exit 1 (failed)", plain)
         self.assertNotIn("| $ git add -A", plain)
 
     def test_ctrl_c_detaches_without_touching_the_run(self):
@@ -242,7 +242,7 @@ class WatcherTests(WatchTestCase):
         tail.follow(path)
         text = "\n".join(tail.drain())
         self.assertNotIn("npm test", text)
-        self.assertIn("$ npm run lint — exit 1 (failed)", text)
+        self.assertIn("$ npm run lint - exit 1 (failed)", text)
         self.assertIn("agent: Lint failure is isolated to one new rule.", text)
         self.assertEqual(tail.latest_agent, "agent: Lint failure is isolated to one new rule.")
 

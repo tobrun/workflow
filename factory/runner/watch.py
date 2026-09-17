@@ -74,7 +74,7 @@ class StreamTail:
                 self.latest_agent = compact
                 self.lines.append(compact)
             elif compact.startswith("exit ") and int((event.get("item") or {}).get("exit_code") or 0) != 0:
-                self.lines.append(f"{self.command or 'command'} — {compact}")
+                self.lines.append(f"{self.command or 'command'} - {compact}")
 
     def drain(self) -> list[str]:
         lines, self.lines = self.lines, []

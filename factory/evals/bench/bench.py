@@ -231,8 +231,9 @@ def offline_scenario(task: dict, variant: str) -> dict:
 def offline_environment(root: Path, scenario: dict):
     home = root / "home"
     home.mkdir()
+    # Offline runs measure the runner's gates against scripted stub hosts, which play no foreman.
     (home / "config.json").write_text(json.dumps({"notify": False, "stage_poll_seconds": 0.05,
-                                                  "heartbeat_seconds": 0.2}), encoding="utf-8")
+                                                  "heartbeat_seconds": 0.2, "foreman": "off"}), encoding="utf-8")
     (root / "scenario.json").write_text(json.dumps(scenario), encoding="utf-8")
     (root / "gh-state.json").write_text(json.dumps({"auth": True, "prs": [], "checks": {}, "default_checks": [
         {"name": "ci", "state": "SUCCESS", "bucket": "pass"}]}), encoding="utf-8")

@@ -24,7 +24,8 @@ export PYTHONPATH="$ROOT/factory"
 
 mkdir -p "$FACTORY_HOME"
 printf '[init]\n\tdefaultBranch = main\n[commit]\n\tgpgsign = false\n' > "$GIT_CONFIG_GLOBAL"
-printf '{"notify": false, "stage_poll_seconds": 0.05, "heartbeat_seconds": 0.2, "browser": "off"}\n' > "$FACTORY_HOME/config.json"
+# The stub hosts play stages, not the foreman: this test drives the fixed pipeline under model.decide().
+printf '{"notify": false, "stage_poll_seconds": 0.05, "heartbeat_seconds": 0.2, "browser": "off", "foreman": "off"}\n' > "$FACTORY_HOME/config.json"
 printf '{"auth": true, "prs": [], "checks": {}, "default_checks": [{"name": "ci", "state": "SUCCESS", "bucket": "pass"}]}\n' \
   > "$FACTORY_GH_STATE"
 

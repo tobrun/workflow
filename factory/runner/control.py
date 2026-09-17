@@ -200,7 +200,8 @@ def retry(home: Path, cfg: config.Config, run_dir: Path, *, note: str | None = N
         if note:
             run.data["human"]["note"] = note
         if reset_budget:
-            run.data["retries"]["used"] = 0
+            # A fresh budget is the configured one, in both directions; without the flag a budget only ever narrows.
+            run.data["retries"] = {"used": 0, "budget": cfg.max_retries}
             # The foreman's caps start over too: attempts before this point no longer count, waits reset.
             run.data["caps_base"] = {stage: len(run.stage_attempts(stage)) for stage in HEADLESS}
             run.data["waits"] = {}

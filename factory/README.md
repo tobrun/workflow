@@ -190,7 +190,7 @@ Every retry is a fresh process that reads the previous reason and the artifacts 
 Exhausting the budget cancels the run and keeps the worktree and any draft PR.
 Non-retryable outcomes, such as an invalidated premise or a missing launch command, park the run in `needs-human`.
 `factory retry <id> --note "..."` passes a note to the next attempt.
-An operator retry is still an additional attempt, so it consumes a retry too; when the budget is spent, add `--reset-budget` to restore all five. Lifetime token usage stays in the run record for audit and reporting.
+An operator retry is still an additional attempt, so it consumes a retry too; when the budget is spent, add `--reset-budget` to start over with the configured budget, which is also how a raised `max_retries` reaches an existing run. Lifetime token usage stays in the run record for audit and reporting.
 `factory resume <id>` never starts a second agent next to a surviving one.
 Every attempt runs under a small runner-owned guard process that holds the run's executor lease and the stage slot, records the agent's process identity before the agent may start, and writes an execution receipt.
 When the worker died but the attempt's execution is still running or already finished, the new worker reattaches to it and gates its result, with no extra retry.

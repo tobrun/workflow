@@ -176,6 +176,14 @@ class CancelAndRetryTests(ControlTestCase):
         data = Run.load(run.dir).data
         self.assertEqual(data["retries"]["used"], 1)
 
+    def test_reset_retry_adopts_a_raised_configured_budget(self):
+        run = self.queued_run()
+        run.data.update({"status": "cancelled", "retries": {"used": 2, "budget": 2}})
+        run.save()
+        raised = control.config.parse({"max_retries": 7})
+        outcome = control.retry(self.home, raised, run.dir, reset_budget=True)
+        self.assertEqual(outcome.run.data["retries"], {"used": 0, "budget": 7})
+
     def test_reset_retry_uses_the_configured_cap(self):
         run = self.queued_run()
         run.data.update({"status": "cancelled", "retries": {"used": 5, "budget": 5}})

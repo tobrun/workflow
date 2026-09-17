@@ -483,12 +483,15 @@ def scope_gate(ctx: GateContext) -> GateResult:
 
 
 def validation_block(spec_text: str) -> str:
+    """The body of `### Validation` up to the next heading; a `# comment` inside a code fence is not a heading."""
     lines = spec_text.splitlines()
     for index, line in enumerate(lines):
         if line.strip().lower() == "### validation":
-            body = []
+            body, fenced = [], False
             for rest in lines[index + 1:]:
-                if re.match(r"^#{1,3}\s", rest):
+                if rest.strip().startswith("```"):
+                    fenced = not fenced
+                elif not fenced and re.match(r"^#{1,3}\s", rest):
                     break
                 body.append(rest)
             return "\n".join(body)

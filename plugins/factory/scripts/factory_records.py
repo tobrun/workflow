@@ -782,9 +782,16 @@ TEST_ID = re.compile(r"^\S(?:.{0,510}\S)?$")
 OUTCOMES = ("passed", "failed", "error", "skipped")
 
 
+FILE_ID = re.compile(r"^[^:\s]+\.[A-Za-z0-9]{1,5}$")
+
+
 def test_path(test_id: str) -> str | None:
-    """The file part of a `path::name` test id, when it has one."""
-    return test_id.split("::", 1)[0] if "::" in test_id else None
+    """The file part of a `path::name` test id, or the id itself when it names a whole test file."""
+    if "::" in test_id:
+        return test_id.split("::", 1)[0]
+    if "/" in test_id or FILE_ID.match(test_id):
+        return test_id
+    return None
 
 
 def validate_scenario_map(data: dict, scenarios: list[dict], *, name: str = "scenario-map.json") -> dict:

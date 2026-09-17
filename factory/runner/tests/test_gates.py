@@ -1209,3 +1209,64 @@ class MergeTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ValidationBlockTests(unittest.TestCase):
+    def test_bash_comments_inside_the_fence_do_not_end_the_block(self):
+        spec = ("## Plan\n\n### Validation\n\n```bash\n# ruff-check\nuv run ruff check .\n# pytest\nuv run pytest\n```\n\n"
+                "## Change plan\n\n1. thing\n")
+        block = gates.validation_block(spec)
+        self.assertIn("# ruff-check", block)
+        self.assertIn("# pytest", block)
+        self.assertNotIn("Change plan", block)
+        self.assertNotIn("1. thing", block)
+
+    def test_a_real_heading_still_ends_the_block(self):
+        spec = "### Validation\n\nmake check\n\n## Change plan\n\n1. thing\n"
+        self.assertEqual(gates.validation_block(spec).strip(), "make check")
+
+
+class FileLevelTestIdTests(unittest.TestCase):
+    """A scenario map may name a whole test file; it passes only when every collected test in it passed."""
+
+    RESULTS = {
+        "dashboard_core/tests/test_orgmap.py::test_a": {"outcome": "passed", "detail": ""},
+        "dashboard_core/tests/test_orgmap.py::test_b": {"outcome": "passed", "detail": ""},
+        "datadog/tests/test_client.py::test_ok": {"outcome": "passed", "detail": ""},
+        "datadog/tests/test_client.py::test_bad": {"outcome": "failed", "detail": "assert 1 == 2"},
+        "omr/tests/test_inputs.py::test_skipped": {"outcome": "skipped", "detail": ""},
+    }
+
+    def test_test_path_recognizes_file_ids(self):
+        from runner import records
+        self.assertEqual(records.test_path("a/b/test_x.py::test_y"), "a/b/test_x.py")
+        self.assertEqual(records.test_path("a/b/test_x.py"), "a/b/test_x.py")
+        self.assertEqual(records.test_path("test_x.py"), "test_x.py")
+        self.assertIsNone(records.test_path("SomeSuite"))
+
+    def test_a_file_id_aggregates_its_collected_tests(self):
+        from runner import verification
+        wanted = {"S1": ["dashboard_core/tests/test_orgmap.py"], "S2": ["datadog/tests/test_client.py"],
+                  "S3": ["omr/tests/test_inputs.py"], "S4": ["scripts/tests/test_missing.py"],
+                  "S5": ["dashboard_core/tests/test_orgmap.py::test_a"]}
+        outcomes, failures = verification.scenario_outcomes(wanted, self.RESULTS)
+        self.assertEqual(outcomes["S1"], {"dashboard_core/tests/test_orgmap.py": "passed"})
+        self.assertEqual(outcomes["S2"], {"datadog/tests/test_client.py": "failed"})
+        self.assertEqual(outcomes["S3"], {"omr/tests/test_inputs.py": "skipped"})
+        self.assertEqual(outcomes["S4"], {"scripts/tests/test_missing.py": "not run"})
+        self.assertEqual(outcomes["S5"], {"dashboard_core/tests/test_orgmap.py::test_a": "passed"})
+        self.assertEqual(failures, [
+            "S2: datadog/tests/test_client.py failed: test_bad: assert 1 == 2",
+            "S3: omr/tests/test_inputs.py was skipped (test_skipped)",
+            "S4: scripts/tests/test_missing.py was not executed (no such test, or not collected)",
+        ])
+
+    def test_a_file_id_inside_the_layer_globs_raises_no_layer_warning(self):
+        from runner import verification
+        contract = {"tests": {"run": {"run": ["pytest"]}, "results": "junit",
+                              "layers": {"unit": ["dashboard_core/tests/**"], "integration": ["scripts/tests/**"]}}}
+        mapping = {"scenarios": {"S1": {"layer": "unit", "tests": ["dashboard_core/tests/test_orgmap.py"]},
+                                 "S2": {"layer": "unit", "tests": ["scripts/tests/test_paths.py"]}}}
+        problems = verification.layer_problems(contract, mapping)
+        self.assertEqual(len(problems), 1)
+        self.assertIn("S2 maps scripts/tests/test_paths.py as [unit]", problems[0])

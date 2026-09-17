@@ -134,6 +134,45 @@ def layer_problems(contract: dict, mapping: dict) -> list[str]:
     return problems
 
 
+def resolve_result(test: str, results: dict[str, dict]) -> dict | None:
+    """The outcome for one mapped id: an exact `path::name` result, or every collected test of a whole file.
+
+    A file-level id passes only when the file was collected and every test in it passed; one failure,
+    error, or skip is reported as the file's outcome, so a file cannot pass on partial evidence.
+    """
+    exact = results.get(test)
+    if exact is not None or "::" in test:
+        return exact
+    members = {test_id: outcome for test_id, outcome in results.items() if records.test_path(test_id) == test}
+    if not members:
+        return None
+    ranked = sorted(members.items(), key=lambda item: {"error": 0, "failed": 1, "skipped": 2}.get(item[1]["outcome"], 3))
+    worst_id, worst = ranked[0]
+    if worst["outcome"] == "passed":
+        return {"outcome": "passed", "detail": f"{len(members)} test(s) in the file passed"}
+    return {"outcome": worst["outcome"], "detail": f"{worst_id.split('::', 1)[-1]}" + (f": {worst['detail']}" if worst.get("detail") else "")}
+
+
+def scenario_outcomes(wanted: dict[str, list[str]], results: dict[str, dict]) -> tuple[dict, list[str]]:
+    """Per-scenario outcomes for the mapped ids and the failures they imply, in scenario order."""
+    outcomes_by_scenario: dict = {}
+    failures: list[str] = []
+    for scenario_id, tests in sorted(wanted.items()):
+        outcomes = {}
+        for test in tests:
+            result = resolve_result(test, results)
+            outcome = result["outcome"] if result else "not run"
+            outcomes[test] = outcome
+            if outcome == "not run":
+                failures.append(f"{scenario_id}: {test} was not executed (no such test, or not collected)")
+            elif outcome == "skipped":
+                failures.append(f"{scenario_id}: {test} was skipped" + (f" ({result['detail']})" if result.get("detail") else ""))
+            elif outcome != "passed":
+                failures.append(f"{scenario_id}: {test} {outcome}" + (f": {result['detail']}" if result.get("detail") else ""))
+        outcomes_by_scenario[scenario_id] = outcomes
+    return outcomes_by_scenario, failures
+
+
 def check_tests(ctx, contract: dict, mapping: dict, data: dict):
     from runner import gates
     wanted = {sid: entry["tests"] for sid, entry in mapping["scenarios"].items() if entry["layer"] != "e2e"}
@@ -159,20 +198,8 @@ def check_tests(ctx, contract: dict, mapping: dict, data: dict):
     if problem:
         return gates.blocked(problem, code="evidence.tests_unrun", **data)
     summary: dict = {"results": str(output), "scenarios": {}}
-    failures = []
-    for scenario_id, tests in sorted(wanted.items()):
-        outcomes = {}
-        for test in tests:
-            result = results.get(test)
-            outcome = result["outcome"] if result else "not run"
-            outcomes[test] = outcome
-            if outcome == "not run":
-                failures.append(f"{scenario_id}: {test} was not executed (no such test, or not collected)")
-            elif outcome == "skipped":
-                failures.append(f"{scenario_id}: {test} was skipped")
-            elif outcome != "passed":
-                failures.append(f"{scenario_id}: {test} {outcome}" + (f": {result['detail']}" if result["detail"] else ""))
-        summary["scenarios"][scenario_id] = outcomes
+    outcomes_by_scenario, failures = scenario_outcomes(wanted, results)
+    summary["scenarios"] = outcomes_by_scenario
     summary["runner_exit"] = receipt.exit_code
     data["tests"] = summary
     if failures:

@@ -26,7 +26,7 @@ The protocol between the runner and the stages is in [../../references/factory-r
 | `regate` | Nothing needs an agent: the failure was transient, you resolved a condition, or you fixed a plan file yourself. |
 | `publish` | The ship branch has unpushed commits; the runner fast-forwards the remote branch, then judges ship again. The pull request still needs a review of the final revision. |
 | `wait` | An external fault should clear on its own: an expired token, GitHub unavailable. Name a probe (`env`, `gh_auth`, `url`) and what to do when it passes. |
-| `advance` | The gate passed, or it failed on something you can vouch for and you record an `override` naming the failed code. |
+| `advance` | The gate passed, or it failed on something you can vouch for and you record an `override` naming the failed code. `stage` names the finished stage or the next one. |
 | `park` | Automation cannot safely continue: give the reason and an `operator_action` that is an exact command or step list. |
 | `rescope` | The premise is invalid or the work opens a new effort; the run parks for a rescope. |
 | `cancel` | The request is moot. |

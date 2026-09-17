@@ -509,8 +509,10 @@ def enforce(run: Run, attempt: dict, decision: dict, cfg) -> tuple[str, str | No
         return "park", f"hard stop {stop}: {attempt.get('reason')}", None
     action = decision["action"]
     if action == "advance":
-        if decision.get("stage") != stage:
-            return "", None, f"advance names {decision.get('stage')!r} but the finished attempt is {stage}"
+        # `stage` may name the finished stage or the one to advance to; both mean the same move.
+        if decision.get("stage") not in (stage, next_stage(stage)):
+            return "", None, (f"advance names {decision.get('stage')!r} but the finished attempt is {stage}"
+                              f"{' and the next stage is ' + next_stage(stage) if next_stage(stage) else ''}")
         if outcome == "done":
             return "stage_passed", None, None
         override = decision.get("override")

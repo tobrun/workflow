@@ -251,7 +251,7 @@ The runtime root is `~/.factory`, overridden by `FACTORY_HOME`.
 | `foreman_model`, `foreman_effort` | `openai.gpt-5.6-luna`, `medium` | The foreman session's Codex model and reasoning effort. |
 | `foreman_turn_timeout_s` | `900` | Deadline for one foreman turn; a turn past it falls back to `model.decide()`. |
 | `foreman_turns_per_event` | `2` | Tries per event before the fallback decides. |
-| `foreman_context_tokens` | `400000` | Input tokens after which the session restarts from a fresh digest. |
+| `foreman_context_tokens` | `2000000` | Input tokens one turn may consume across its model calls (Codex sums them, so a turn with many tool calls reads high) before the session restarts from a fresh digest. |
 | `max_stage_attempts` | `6` | Agent attempts per headless stage, whoever decides. |
 | `max_repairs_per_stage` | `3` | Repair attempts per stage. |
 | `max_wait_minutes` | `120` | Total waiting per stage on transient faults. |

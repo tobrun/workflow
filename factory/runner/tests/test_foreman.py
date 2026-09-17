@@ -193,6 +193,13 @@ class CodexModeTests(ForemanTestCase):
         super().setUp()
         self.configure(foreman="codex")
 
+    def test_advance_may_name_the_finished_stage_or_the_next_one(self):
+        self.foreman([advance("build"), advance("build"), advance("ship")])
+        run = self.queued_run()
+        data = self.work(run)
+        self.assertEqual(data["status"], "done", data["human"])
+        self.assertNotIn("foreman.rejected", self.event_names(run))
+
     def test_advance_moves_the_run_through_the_pipeline(self):
         self.foreman(HAPPY_DECISIONS)
         run = self.queued_run()
@@ -824,7 +831,7 @@ class LifecycleTests(ForemanTestCase):
         self.assertEqual(data["foreman"]["restarts"], 2)
         self.assertIn("digest.json", calls[1]["argv"][1])
         restarted = [e for e in events.read(run.dir) if e["event"] == "foreman.restarted"]
-        self.assertIn("context reached", restarted[0]["data"]["reason"])
+        self.assertIn("input tokens across its model calls", restarted[0]["data"]["reason"])
 
     def test_a_failed_resume_restarts_from_the_digest_on_the_second_try(self):
         self.foreman([advance("scope-review"), {"mode": "exit", "exit": 1}, advance("build"), advance("ship")])

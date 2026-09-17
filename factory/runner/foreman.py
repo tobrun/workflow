@@ -408,7 +408,9 @@ def consult(run: Run, cfg: config.Config, event: dict, *, home: Path, grace: flo
                                                    or (turn.receipt and turn.receipt.exit_code not in (0, None))):
             st["restart"] = f"resume of {st.get('session_id')} failed: {turn.reason}"
         elif int(turn.usage.get("input") or 0) > cfg.foreman_context_tokens:
-            st["restart"] = f"context reached {turn.usage.get('input')} input tokens (limit {cfg.foreman_context_tokens})"
+            # Codex sums a turn's input over every model call in it, so this measures a runaway turn, not the context.
+            st["restart"] = (f"turn {turn.n} consumed {turn.usage.get('input')} input tokens across its model calls "
+                             f"(limit {cfg.foreman_context_tokens})")
         elif st["session_turns"] >= MAX_SESSION_TURNS:
             st["restart"] = f"session is {st['session_turns']} turns old"
         elif st["fallbacks"] >= 2 and not st.get("restarted_after_fallbacks"):

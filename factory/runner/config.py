@@ -39,7 +39,7 @@ DEFAULTS = {
     "foreman_effort": "medium",
     "foreman_turn_timeout_s": 900,
     "foreman_turns_per_event": 2,
-    "foreman_context_tokens": 400000,
+    "foreman_context_tokens": 2000000,
     "max_stage_attempts": 6,
     "max_repairs_per_stage": 3,
     "max_wait_minutes": 120,
@@ -84,7 +84,7 @@ class Config:
     foreman_effort: str = "medium"
     foreman_turn_timeout_s: float = 900
     foreman_turns_per_event: int = 2
-    foreman_context_tokens: int = 400000
+    foreman_context_tokens: int = 2000000
     max_stage_attempts: int = 6
     max_repairs_per_stage: int = 3
     max_wait_minutes: float = 120

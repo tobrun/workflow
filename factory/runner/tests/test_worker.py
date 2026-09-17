@@ -549,3 +549,15 @@ class ParkConditionTests(WorkerTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PreloadTests(unittest.TestCase):
+    def test_the_worker_imports_every_runner_module_at_start(self):
+        import sys
+        from runner import worker
+        names = worker.preload()
+        self.assertIn("runner.verification", names)
+        self.assertIn("runner.servicehost", names)
+        self.assertNotIn("runner.tests", names)
+        for name in names:
+            self.assertIn(name, sys.modules, name)

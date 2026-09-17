@@ -929,9 +929,26 @@ def reconcile_orphan(run: Run, cfg: config.Config) -> str:
     return apply_decision(run, open_attempt, cfg, pending)
 
 
+def preload() -> list[str]:
+    """Import every runner module now, so a code change on disk during the run cannot tear this process.
+
+    Several modules import each other lazily inside functions; without this, a worker that started before an
+    edit would combine old modules with new ones at the first gate and crash on a name the old ones lack.
+    """
+    import importlib
+    import pkgutil
+
+    import runner
+    names = sorted(f"runner.{info.name}" for info in pkgutil.iter_modules(runner.__path__) if info.name != "tests")
+    for name in names:
+        importlib.import_module(name)
+    return names
+
+
 def main(run_id: str) -> int:
     home = config.factory_home()
     log(f"worker {os.getpid()} starting for {run_id}")
+    preload()
     try:
         return Worker(home, run_id).run()
     except config.ConfigError as error:

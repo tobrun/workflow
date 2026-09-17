@@ -595,6 +595,27 @@ class RepairTests(ForemanTestCase):
         self.assertIn("repair.scheduled", self.event_names(run))
         self.assertEqual(data["pr"]["url"], "https://github.com/stub/repo/pull/1")
 
+    def test_a_scenario_map_repair_is_told_to_keep_contract_compatible_selectors(self):
+        scenario = happy_scenario()
+        scenario["ship"] = [ship_with_a_stale_result()]
+        self.scenario(scenario)
+        repair = {
+            "action": "repair",
+            "stage": "ship",
+            "repair": {
+                "instruction": "Repair .dev/webhook/scenario-map.json and rerun the complete ship gate.",
+                "checks": ["all mapped tests are collected"],
+            },
+        }
+        self.foreman([advance("scope-review"), advance("build"), repair, advance("ship")])
+        run = self.queued_run()
+        self.work(run)
+        prompt = self.calls("repair")[0]["argv"][1]
+        self.assertIn("verified-scenario-map.json", prompt)
+        self.assertIn("accepted by the contract's `tests.run` command", prompt)
+        self.assertIn("Vitest test name when the contract invokes pytest", prompt)
+        self.assertIn("actual test command", prompt)
+
     def test_repairs_past_the_cap_are_refused(self):
         self.configure(foreman="codex", max_repairs_per_stage=1)
         scenario = happy_scenario()
@@ -1018,8 +1039,8 @@ class DecisionRecordTests(unittest.TestCase):
     def test_each_action_accepts_its_own_fields(self):
         cases = [
             self.decision(action="launch", stage="build", guidance="try again", effort="high", model="m", timeout_s=600),
-            self.decision(action="repair", stage="ship", guidance="g",
-                          repair={"instruction": "fix the result file", "checks": ["schema"], "timeout_minutes": 10}),
+            self.decision(action="repair", stage="ship", guidance="g", effort="high", model="m",
+                          repair={"instruction": "fix the result file", "checks": ["schema"], "timeout_minutes": 120}),
             self.decision(action="regate", stage="ship", resolve_conditions=[{"id": "C1", "evidence": ["e"]}]),
             self.decision(action="publish"),
             self.decision(action="wait", wait={"seconds": 60, "probe": {"kind": "gh_auth"}, "then": "regate"}),

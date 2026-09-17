@@ -23,7 +23,7 @@ The protocol between the runner and the stages is in [../../references/factory-r
 | Action | Use it when |
 | --- | --- |
 | `launch` | The stage needs another attempt, at this stage or an earlier one. Carries `guidance`: what was tried, what the gate requires, and, when attempts oscillate between two complaints, both constraints at once. May set `model`, `effort`, or `timeout_s`. |
-| `repair` | One bounded thing is wrong and the rest is sound: a malformed result file, a scenario map naming tests by the wrong id, a review recorded for a stale revision. A short session does exactly `instruction`, then the full gate judges the stage again. |
+| `repair` | One bounded thing is wrong and the rest is sound: a malformed result file, a scenario map naming tests by the wrong id, a review recorded for a stale revision. A short session does exactly `instruction`, then the full gate judges the stage again. May set `model`, `effort`, or `timeout_minutes` (up to 180). |
 | `regate` | Nothing needs an agent: the failure was transient, you resolved a condition, or you fixed a plan file yourself. |
 | `publish` | The ship branch has unpushed commits; the runner fast-forwards the remote branch, then judges ship again. The pull request still needs a review of the final revision. |
 | `wait` | An external fault should clear on its own: an expired token, GitHub unavailable. Name a probe (`env`, `gh_auth`, `url`) and what to do when it passes. |

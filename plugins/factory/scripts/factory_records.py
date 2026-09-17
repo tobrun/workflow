@@ -1034,8 +1034,8 @@ GATE_CODE = re.compile(r"^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$")
 DECISION_OWNERS: dict[str, tuple[str, ...]] = {
     "stage": ("launch", "repair", "regate", "publish", "advance"),
     "guidance": ("launch", "repair"),
-    "model": ("launch",),
-    "effort": ("launch",),
+    "model": ("launch", "repair"),
+    "effort": ("launch", "repair"),
     "timeout_s": ("launch",),
     "repair": ("repair",),
     "wait": ("wait",),
@@ -1135,7 +1135,7 @@ def validate_decision(data: object, *, name: str = "decision") -> dict:
             check.keys(repair, "decision.repair", ("instruction",), ("checks", "timeout_minutes"))
             _text(check, repair, "instruction", "decision.repair", 4000, required=True)
             _strings(check, repair, "checks", "decision.repair", 8)
-            _bounded_int(check, repair, "timeout_minutes", "decision.repair", 5, 30, required=False)
+            _bounded_int(check, repair, "timeout_minutes", "decision.repair", 5, 180, required=False)
     wait = data.get("wait")
     if wait is not None:
         if not isinstance(wait, dict):

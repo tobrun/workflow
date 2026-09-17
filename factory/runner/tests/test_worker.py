@@ -85,18 +85,21 @@ class HappyPathTests(WorkerTestCase):
         self.assertEqual(context["stage"], "ship")
         self.assertEqual(git(run.worktree, "status", "--porcelain"), "")
 
-    def test_gate_wins_over_a_skill_that_reports_blocked(self):
+    def test_skill_reported_block_prevents_completion_even_when_the_gate_passes(self):
         scenario = happy_scenario()
-        scenario["scope-review"][0]["result"] = {"status": "blocked", "reason": "felt unsure"}
-        scenario["build"][0]["exit"] = 1
+        scenario["scope-review"] = [
+            {**review_step(), "result": {"status": "blocked", "reason": "screenshot parity command failed"}},
+            review_step(index=2),
+        ]
         self.scenario(scenario)
         run = self.queued_run()
         data = self.work(run)
         self.assertEqual(data["status"], "done")
-        self.assertEqual(data["retries"]["used"], 0)
-        warnings = [e["data"]["warning"] for e in events.read(run.dir) if e["event"] == "stage.warning"]
-        self.assertEqual(len(warnings), 2)
-        self.assertIn("skill reported blocked (felt unsure) but the gate passed", warnings[0])
+        self.assertEqual(data["retries"]["used"], 1)
+        first = self.attempts(data, "scope-review")[0]
+        self.assertEqual((first["outcome"], first["source"], first["code"]),
+                         ("blocked", "skill", "result.blocked"))
+        self.assertIn("screenshot parity command failed", first["reason"])
 
     def test_corrupt_result_file_fails_the_gate(self):
         scenario = happy_scenario()
@@ -424,6 +427,9 @@ class ParkConditionTests(WorkerTestCase):
                          ("launch.unavailable", "resolved", "runner"))
         self.assertIn("the runner's e2e driver passed at the gate", condition["resolution"]["evidence"][0])
         self.assertEqual(data["retries"]["used"], 0)
+        build = self.attempts(data, "build")[0]
+        self.assertEqual(build["outcome"], "done")
+        self.assertIn("skill reported blocked on launch.unavailable, which the runner resolved", build["warning"])
 
     def test_r2_unresolved_condition_parks_despite_a_passing_gate(self):
         scenario = happy_scenario()
@@ -508,20 +514,20 @@ class ParkConditionTests(WorkerTestCase):
         prompt = (run.attempt_dir("build", 3) / "prompt.txt").read_text()
         self.assertIn("Open condition C1 premise.invalidated: the provider sends no delivery ids.", prompt)
 
-    def test_an_unknown_condition_code_warns_when_the_gate_passed(self):
+    def test_an_unknown_condition_code_blocks_until_the_skill_writes_a_valid_result(self):
         unknown = build_step()
         unknown["result"] = {"status": "blocked", "reason": "x", "conditions": [{"code": "human.please", "summary": "?"}]}
         scenario = happy_scenario()
-        scenario["build"] = [unknown]
+        scenario["build"] = [unknown, build_step()]
         self.scenario(scenario)
         run = self.queued_run()
         data = self.work(run)
         self.assertEqual(data["status"], "done", data["human"])
         builds = self.attempts(data, "build")
-        self.assertEqual([(b["outcome"], b["code"]) for b in builds], [("done", None)])
-        self.assertIn("the stage result is invalid: build-result.json is malformed", builds[0]["warning"])
-        self.assertIn("unknown condition code 'human.please'", builds[0]["warning"])
-        self.assertEqual(data["retries"]["used"], 0)
+        self.assertEqual([(b["outcome"], b["code"]) for b in builds], [("blocked", "result.invalid"), ("done", None)])
+        self.assertIn("the stage result is invalid: build-result.json is malformed", builds[0]["reason"])
+        self.assertIn("unknown condition code 'human.please'", builds[0]["reason"])
+        self.assertEqual(data["retries"]["used"], 1)
 
     def test_decision_failures_block_until_the_skill_resolves_them(self):
         decision = build_step()

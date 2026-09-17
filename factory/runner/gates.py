@@ -1262,18 +1262,13 @@ class Outcome:
 def merge(gate: GateResult, result: dict | None, result_error: str | None, blocking: list[dict] = ()) -> Outcome:
     """Combine the authoritative gate, the stage's result file, and the run's unresolved park conditions.
 
-    A claimed success never overrides a failed gate. An invalid result fails explicitly. A
-    recognized, unresolved park condition blocks completion even when the gate passed, and
-    its code decides retryability. An ordinary blocked status without a condition stays a warning.
+    A claimed success never overrides a failed gate. A passing gate also cannot override a
+    missing, invalid, blocked, or failed stage result: the result is the skill's completion
+    contract, while the gate independently verifies its evidence. A recognized, unresolved
+    park condition blocks completion even when the gate passed, and its code decides retryability.
     """
     notes = list(gate.warnings)
     invalid = f"the stage result is invalid: {result_error}" if result_error else None
-    if invalid and not gate.passed:
-        return Outcome(gate.outcome, f"{gate.reason}; {invalid}", gate.retryable, "gate", warning=_join(notes),
-                       code=gate.code)
-    if invalid and invalid not in notes:
-        # The gate verified the evidence itself; a result file it cannot read is untidy, not a failure.
-        notes.append(invalid)
     if blocking:
         described = "; ".join(f"{c['code']} ({c['id']}): {c['summary']}" for c in blocking[:3])
         retryable = all(c["retryable"] for c in blocking) and (gate.passed or gate.retryable)
@@ -1281,15 +1276,27 @@ def merge(gate: GateResult, result: dict | None, result_error: str | None, block
         return Outcome("blocked", reason, retryable, "condition", warning=_join(notes), code=blocking[0]["code"],
                        conditions=[c["id"] for c in blocking])
     if gate.passed:
-        if not invalid and result is None:
-            notes.append("skill wrote no result file; gate passed")
-        elif not invalid and result["status"] != "done":
-            notes.append(f"skill reported {result['status']} ({result['reason']}) but the gate passed")
+        if invalid:
+            return Outcome("blocked", invalid, True, "skill", warning=_join(notes), code="result.invalid")
+        if result is None:
+            return Outcome("blocked", "skill wrote no result file", True, "skill", warning=_join(notes),
+                           code="result.missing")
+        if result["status"] != "done":
+            reported = [c for c in result.get("conditions", []) if c.get("resolution", "unresolved") == "unresolved"]
+            if result["status"] == "blocked" and reported and not blocking:
+                # The skill stopped on conditions the runner's own gate has since disproved: the block is moot.
+                codes = ", ".join(sorted({c["code"] for c in reported}))
+                notes.append(f"skill reported blocked on {codes}, which the runner resolved at the gate")
+                return Outcome("done", None, True, "gate", _join(notes))
+            return Outcome(result["status"], f"skill reported {result['status']}: {result['reason']}", True, "skill",
+                           warning=_join(notes), code=f"result.{result['status']}")
         return Outcome("done", None, True, "gate", _join(notes))
     reason = gate.reason
     if result is not None and result["status"] != "done" and result.get("reason") and result["reason"] not in (reason or ""):
         reason = f"{reason} (skill: {result['reason']})"
     return Outcome(gate.outcome, reason, gate.retryable, "gate", warning=_join(notes), code=gate.code)
+    if invalid:
+        reason = f"{reason}; {invalid}"
 
 
 def _join(notes: list[str]) -> str | None:

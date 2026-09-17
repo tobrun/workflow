@@ -201,6 +201,8 @@ def retry(home: Path, cfg: config.Config, run_dir: Path, *, note: str | None = N
             run.data["human"]["note"] = note
         if reset_budget:
             run.data["retries"]["used"] = 0
+        if cfg.max_retries < run.data["retries"]["budget"]:
+            run.data["retries"]["budget"] = cfg.max_retries
         for flag in ("cancel", "pause"):
             (run.dir / flag).unlink(missing_ok=True)
         if rescope and run.stage != "scope":

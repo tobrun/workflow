@@ -400,12 +400,19 @@ class BuildGateTests(GateTestCase):
         self.assertEqual(gate.code, "e2e.missing")
         self.assertIn("the e2e driver exited 3 and wrote no factory.e2e/1 record", gate.reason)
 
-    def test_malformed_result_fails_gate(self):
+    def test_malformed_result_blocks_completion_after_a_passing_gate(self):
         self.build()
         self.write(f".dev/{PLAN}/build-result.json", json.dumps({"schema": 1, "stage": "ship"}))
-        self.assertIn("schema 1 results are no longer read", self.gate().reason)
+        gate = self.gate()
+        self.assertTrue(gate.passed, gate.reason)
+        result, error = gates.read_result(self.ctx("build"))
+        outcome = gates.merge(gate, result, error)
+        self.assertEqual((outcome.outcome, outcome.code), ("blocked", "result.invalid"))
+        self.assertIn("schema 1 results are no longer read", outcome.reason)
         self.write(f".dev/{PLAN}/build-result.json", json.dumps({"schema": 2, "stage": "ship"}))
-        self.assertIn("build-result.json is malformed", self.gate().reason)
+        result, error = gates.read_result(self.ctx("build"))
+        outcome = gates.merge(self.gate(), result, error)
+        self.assertIn("build-result.json is malformed", outcome.reason)
 
 
 class ReproTests(GateTestCase):
@@ -1149,24 +1156,25 @@ class MergeTests(unittest.TestCase):
     credentials = {"id": "C1", "code": "environment.missing_credentials", "summary": "no STRIPE_KEY", "retryable": False}
     decision = {"id": "C2", "code": "decision.verification_failed", "summary": "retry policy failed", "retryable": True}
 
-    def test_gate_and_claims_without_conditions(self):
+    def test_stage_result_is_required_for_a_passing_gate(self):
         outcome = gates.merge(self.ok, self.done, None)
         self.assertEqual((outcome.outcome, outcome.warning), ("done", None))
         outcome = gates.merge(self.bad, self.done, None)
         self.assertEqual((outcome.outcome, outcome.reason, outcome.code), ("blocked", "gate says no", "validation.failed"))
         outcome = gates.merge(self.ok, self.stuck, None)
-        self.assertEqual(outcome.outcome, "done")
-        self.assertIn("but the gate passed", outcome.warning)
-        self.assertIn("no result file", gates.merge(self.ok, None, None).warning)
+        self.assertEqual((outcome.outcome, outcome.source, outcome.code), ("blocked", "skill", "result.blocked"))
+        self.assertEqual(outcome.reason, "skill reported blocked: stuck")
+        missing = gates.merge(self.ok, None, None)
+        self.assertEqual((missing.outcome, missing.source, missing.code), ("blocked", "skill", "result.missing"))
         outcome = gates.merge(self.bad, self.stuck, None)
         self.assertEqual((outcome.retryable, outcome.source), (True, "gate"))
         self.assertIn("skill: stuck", outcome.reason)
         self.assertFalse(gates.merge(self.precondition, self.stuck, None).retryable)
 
-    def test_an_invalid_result_only_warns_when_the_gate_passed(self):
+    def test_invalid_result_prevents_a_passing_gate_from_completing(self):
         outcome = gates.merge(self.ok, None, "unknown condition code 'weird'")
-        self.assertEqual((outcome.outcome, outcome.code, outcome.reason), ("done", None, None))
-        self.assertEqual(outcome.warning, "the stage result is invalid: unknown condition code 'weird'")
+        self.assertEqual((outcome.outcome, outcome.source, outcome.code), ("blocked", "skill", "result.invalid"))
+        self.assertEqual(outcome.reason, "the stage result is invalid: unknown condition code 'weird'")
         outcome = gates.merge(self.bad, None, "malformed")
         self.assertEqual((outcome.outcome, outcome.code), ("blocked", "validation.failed"))
         self.assertIn("the stage result is invalid: malformed", outcome.reason)

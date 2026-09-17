@@ -32,9 +32,11 @@ class PublicationTests(FactoryTestCase):
     def codex_execs(self, stage: str) -> int:
         return len([c for c in self.stub_calls("codex") if c["argv"][0] == "exec" and c["env"]["FACTORY_STAGE"] == stage])
 
-    def test_a_transient_publication_failure_is_retried_by_the_runner_without_another_model_attempt(self):
+    def test_a_transient_publication_failure_is_published_by_the_runner_before_the_next_attempt(self):
+        # The runner pushes and opens the PR itself; the skill's honest `blocked` result still needs one more
+        # attempt to report done, which finds everything published and has nothing left to do.
         scenario = happy_scenario()
-        scenario["ship"] = [ship_without_publication()]
+        scenario["ship"] = [ship_without_publication(), {}]
         self.scenario(scenario)
         state = self.gh()
         state["fail"] = {"pr create": 1}
@@ -43,18 +45,19 @@ class PublicationTests(FactoryTestCase):
         Worker(self.home, run.id, grace=1, sleep=lambda seconds: None).run()
         data = json.loads((run.dir / "run.json").read_text())
         self.assertEqual(data["status"], "done", data["human"])
-        self.assertEqual(self.codex_execs("ship"), 1)
-        self.assertEqual(data["retries"]["used"], 0)
+        self.assertEqual(self.codex_execs("ship"), 2)
+        self.assertEqual([a["code"] for a in data["attempts"] if a["stage"] == "ship"], ["result.blocked", None])
+        self.assertEqual(data["retries"]["used"], 1)
         self.assertEqual([(op["kind"], op["result"], op["tries"]) for op in data["operations"]],
                          [("push", "done", 1), ("pr-create", "done", 2)])
         self.assertEqual(len([m for m in self.gh()["mutations"] if m["op"] == "create"]), 1)
         shown = self.call("show", run.id)
-        self.assertIn("retries    0/5 paid; 1 deterministic operation retry (not charged)", shown)
+        self.assertIn("retries    1/5 paid; 1 deterministic operation retry (not charged)", shown)
         self.assertIn("operation  pr-create done after 2 tries", shown)
 
     def test_a_crash_after_the_pr_is_created_never_creates_a_second_one(self):
         scenario = happy_scenario()
-        scenario["ship"] = [ship_without_publication()]
+        scenario["ship"] = [ship_without_publication(), {}]
         self.scenario(scenario)
         state = self.gh()
         state["fail_after"] = {"pr create": 1}
@@ -71,7 +74,7 @@ class PublicationTests(FactoryTestCase):
         self.assertEqual(data["status"], "done", data["human"])
         self.assertEqual(len([m for m in self.gh()["mutations"] if m["op"] == "create"]), 1)
         self.assertEqual(len(self.gh()["prs"]), 1)
-        self.assertEqual(self.codex_execs("ship"), 1)
+        self.assertEqual(self.codex_execs("ship"), 2)
 
 
 class ReuseTests(FactoryTestCase):

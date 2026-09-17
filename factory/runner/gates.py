@@ -620,7 +620,7 @@ def build_gate(ctx: GateContext) -> GateResult:
     start = ctx.baseline.get("build_start_sha") or ctx.base_sha
     if start and wt.commits_after(ctx.worktree, start) == 0:
         return blocked(f"no commits after {start[:12]}; build committed nothing", code="build.no_commits")
-    dirty = wt.dirty_tracked(ctx.worktree)
+    dirty = [path for path in wt.dirty_tracked(ctx.worktree) if not path.startswith(".dev/")]
     if dirty:
         return blocked(f"tracked worktree is dirty: {', '.join(dirty[:10])}", code="worktree.dirty")
     stop = ctx.stop_reason()
@@ -1164,7 +1164,7 @@ def verify_candidate(ctx: GateContext, number: int, restarts: list[str]) -> Gate
     result = synchronized(ctx, pr, head, data) or published_evidence(ctx, pr, data)
     if result is not None:
         return result
-    dirty = wt.dirty_tracked(ctx.worktree)
+    dirty = [path for path in wt.dirty_tracked(ctx.worktree) if not path.startswith(".dev/")]
     if dirty:
         return blocked(f"tracked worktree is dirty: {', '.join(dirty[:10])}", code="worktree.dirty", **data)
     index, review = highest_index(ctx.plan_dir, "review")
@@ -1207,7 +1207,7 @@ def verify_candidate(ctx: GateContext, number: int, restarts: list[str]) -> Gate
     after = wt.head(ctx.worktree)
     if after != head:
         raise Restart(f"HEAD moved from {head[:12]} to {after[:12]} during verification")
-    dirty = wt.dirty_tracked(ctx.worktree)
+    dirty = [path for path in wt.dirty_tracked(ctx.worktree) if not path.startswith(".dev/")]
     if dirty:
         return blocked(f"verification changed tracked files: {', '.join(dirty[:10])}", code="worktree.dirty", **data)
     ci = required_checks(ctx, pr, head, data)

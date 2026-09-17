@@ -781,6 +781,7 @@ TEST_RESULTS_SCHEMA = "factory.test-results/1"
 RESULTS_MAX_BYTES = 32 * 1024 * 1024
 CASE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
 TEST_ID = re.compile(r"^\S(?:.{0,510}\S)?$")
+TEST_FILE = re.compile(r"\.(py|js|jsx|mjs|cjs|ts|tsx)$")
 OUTCOMES = ("passed", "failed", "error", "skipped")
 
 
@@ -907,7 +908,10 @@ def _junit(path: Path) -> list[tuple[str, dict]]:
     for case in root.iter("testcase"):
         classname, name = case.get("classname") or "", case.get("name") or ""
         file = case.get("file")
-        if "." in classname:
+        if "/" in classname or TEST_FILE.search(classname):
+            # vitest and jest report the test file as the class name, relative to their workspace.
+            test_id = f"{classname}::{name}"
+        elif "." in classname:
             module, _, klass = classname.rpartition(".")
             parts = module.split(".")
             if klass[:1].isupper():

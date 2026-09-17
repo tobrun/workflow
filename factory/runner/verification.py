@@ -134,6 +134,13 @@ def layer_problems(contract: dict, mapping: dict) -> list[str]:
     return problems
 
 
+def _same_file(mapped_path: str, result_path: str | None) -> bool:
+    """A mapped worktree path names the same file as a result path that may be workspace-relative."""
+    if not result_path:
+        return False
+    return mapped_path == result_path or mapped_path.endswith("/" + result_path)
+
+
 def resolve_result(test: str, results: dict[str, dict]) -> dict | None:
     """The outcome for one mapped id: an exact `path::name` result, or every collected test of a whole file.
 
@@ -141,9 +148,20 @@ def resolve_result(test: str, results: dict[str, dict]) -> dict | None:
     error, or skip is reported as the file's outcome, so a file cannot pass on partial evidence.
     """
     exact = results.get(test)
-    if exact is not None or "::" in test:
+    if exact is not None:
         return exact
-    members = {test_id: outcome for test_id, outcome in results.items() if records.test_path(test_id) == test}
+    mapped_path = records.test_path(test)
+    if mapped_path is None:
+        return None
+    if "::" in test:
+        # A runner that works inside a workspace reports paths relative to it: `ui-shell/src/x.test.tsx` in the
+        # map is `src/x.test.tsx` in its results. The name must agree; duplicates are rejected when parsing.
+        name = test.split("::", 1)[1]
+        hits = [outcome for test_id, outcome in results.items() if "::" in test_id
+                and test_id.split("::", 1)[1] == name and _same_file(mapped_path, records.test_path(test_id))]
+        return hits[0] if len(hits) == 1 else None
+    members = {test_id: outcome for test_id, outcome in results.items()
+               if _same_file(mapped_path, records.test_path(test_id))}
     if not members:
         return None
     ranked = sorted(members.items(), key=lambda item: {"error": 0, "failed": 1, "skipped": 2}.get(item[1]["outcome"], 3))
@@ -210,6 +228,7 @@ def check_tests(ctx, contract: dict, mapping: dict, data: dict):
                              code="evidence.tests_failed", **data)
     checkpoints.save(ctx.run_dir, "tests", inputs, revision=wt.head(ctx.worktree), outputs=[output],
                      receipt=str(output.parent.parent / "receipt.json"), data=summary)
+    checkpoints.save_verified_scenario_map(ctx.run_dir, mapping, revision=wt.head(ctx.worktree))
     return None
 
 

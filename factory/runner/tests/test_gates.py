@@ -278,6 +278,16 @@ class BuildGateTests(GateTestCase):
         self.write("README.md", "changed\n")
         self.assertIn("tracked worktree is dirty", self.gate().reason)
 
+    def test_a_dirty_tracked_plan_file_is_not_a_dirty_tree(self):
+        # Plan files are runtime protocol, never evidence: one that slipped into Git may change freely.
+        self.build()
+        git(self.repo, "add", "-f", f".dev/{PLAN}/implementation-notes.md")
+        git(self.repo, "commit", "--quiet", "-m", "notes tracked by mistake")
+        self.write(f".dev/{PLAN}/implementation-notes.md", "# Notes\n\nedited after the commit\n")
+        gate = self.gate()
+        self.assertNotIn("tracked worktree is dirty", gate.reason or "")
+        self.assertTrue(gate.passed, gate.reason)
+
     def test_the_e2e_driver_runs_with_the_hosted_browser_the_agent_had(self):
         driver = E2E_DRIVER_PY.replace(
             'record = {', 'open(os.path.join(out, "browser-env.json"), "w").write(json.dumps('
@@ -360,6 +370,9 @@ class BuildGateTests(GateTestCase):
     def test_results_come_from_a_fresh_run_every_time(self):
         self.build()
         self.assertTrue(self.gate().passed)
+        verified = json.loads((self.run_dir / "checkpoints" / "verified-scenario-map.json").read_text())
+        self.assertEqual(verified["schema"], "factory.verified-scenario-map/1")
+        self.assertEqual(verified["mapping"], SCENARIO_MAP)
         self.build(tests=TESTS_PY.replace("test_repeated_id_ignored", "test_renamed"))
         gate = self.gate()
         self.assertIn("was not executed", gate.reason)
@@ -1260,6 +1273,33 @@ class FileLevelTestIdTests(unittest.TestCase):
             "S3: omr/tests/test_inputs.py was skipped (test_skipped)",
             "S4: scripts/tests/test_missing.py was not executed (no such test, or not collected)",
         ])
+
+    def test_workspace_relative_results_match_worktree_paths(self):
+        from runner import verification
+        results = {"src/PageState.test.tsx::renders": {"outcome": "passed", "detail": ""},
+                   "src/PageState.test.tsx::updates": {"outcome": "failed", "detail": "boom"},
+                   "ai-cost-omr.test.js::stack": {"outcome": "passed", "detail": ""}}
+        wanted = {"S1": ["ui-shell/src/PageState.test.tsx::renders"], "S2": ["ui-shell/src/PageState.test.tsx"],
+                  "S3": ["cloudformation/ai-cost-omr.test.js"], "S4": ["other/PageState.test.tsx::renders"]}
+        outcomes, failures = verification.scenario_outcomes(wanted, results)
+        self.assertEqual(outcomes["S1"], {"ui-shell/src/PageState.test.tsx::renders": "passed"})
+        self.assertEqual(outcomes["S2"], {"ui-shell/src/PageState.test.tsx": "failed"})
+        self.assertEqual(outcomes["S3"], {"cloudformation/ai-cost-omr.test.js": "passed"})
+        self.assertEqual(outcomes["S4"], {"other/PageState.test.tsx::renders": "not run"})
+
+    def test_junit_class_names_that_are_file_paths_stay_file_paths(self):
+        import tempfile
+        from runner import records
+        xml = ('<testsuites><testsuite name="vitest"><testcase classname="src/PageState.test.tsx" name="renders"/>'
+               '<testcase classname="lib/stack-common.test.js" name="builds"/>'
+               '<testcase classname="backend.tests.test_api" name="test_ok"/>'
+               '<testcase classname="backend.tests.test_api.ApiTests" name="test_class"/></testsuite></testsuites>')
+        with tempfile.NamedTemporaryFile("w", suffix=".xml", delete=False) as handle:
+            handle.write(xml)
+        results = records.parse_test_results(Path(handle.name), "junit")
+        self.assertEqual(sorted(results), ["backend/tests/test_api.py::ApiTests::test_class",
+                                           "backend/tests/test_api.py::test_ok",
+                                           "lib/stack-common.test.js::builds", "src/PageState.test.tsx::renders"])
 
     def test_a_file_id_inside_the_layer_globs_raises_no_layer_warning(self):
         from runner import verification

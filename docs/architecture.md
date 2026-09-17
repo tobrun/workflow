@@ -1,0 +1,65 @@
+# Architecture
+
+Purpose: this repository is a monorepo of agent skills and the tooling that ships them.
+Two plugins live here: `dev`, the hand-invoked development workflow (scope, build, ship, commit, and two presentation skills), and `factory`, factory copies of four `dev` skills plus a local Python runner that chains them into an unattended pipeline from one scoped change request to a ready pull request.
+A change request enters through `factory new`, is scoped interactively in Claude, then scope-review, build, and ship run as fresh Codex processes chained through artifacts on disk, with a long-lived foreman session deciding after every attempt what the runner does next.
+Generated Codex distributions under `plugins/` are built from the two source plugins and never edited by hand.
+
+Captured: 2026-09-17 (full, scope) - Updated: 2026-09-17 (initial capture)
+
+## Components
+
+| Component | Responsibility | Lives at | Talks to |
+| --------- | -------------- | -------- | -------- |
+| dev skills | the interactive workflow skills and the references and scripts they share | `dev/skills/`, `dev/references/`, `dev/scripts/` | nothing at runtime; read by Claude, Codex, and Pi hosts |
+| factory skills | unattended copies of scope, scope-review, build, and ship, plus the foreman decision skill | `factory/skills/`, `factory/references/`, `factory/scripts/` | factory runner (through .dev/factory-run.json and {stage}-result.json) |
+| factory runner | the stdlib-only Python CLI and detached worker: run directories, worktrees, stage launches, gates, foreman turns, caps, exports, dashboard | `factory/runner/` | Codex and Claude hosts, git, GitHub through `gh`, Chrome, the runtime root |
+| factory evals | comprehension evals, the offline behavioral benchmark with stub hosts, and the paid foreman eval on captured cases | `factory/evals/` | factory runner modules (imported by path) |
+| generated plugins | the Codex distributions built from `dev/` and `factory/`, with invocation policy in agents/openai.yaml | `plugins/` | Codex plugin marketplace |
+| repo scripts | validation of the whole repository, the plugin generator, and the offline end-to-end runner test | `scripts/` | every other component |
+| research and todo | plans, findings, and reading notes that informed the factory | `research/`, `todo/` | nothing |
+
+## Flows
+
+### A dev skill run
+1. A person invokes `/dev:scope`, `/dev:build`, `/dev:ship`, or `/dev:commit` in Claude Code (or the Codex or Pi equivalent).
+2. The skill (dev skills) reads its SKILL.md and references, writes plan files under .dev/{plan-name}/ in the consuming repository, and recommends the next skill; skills never invoke each other.
+3. `dev/scripts/skill-metrics.py` measures each run and appends a row to the consuming repository's .dev/metrics.jsonl.
+
+### A factory run
+1. `factory new` (factory runner, `factory/runner/cli.py`) creates ~/.factory/runs/{id}/, a git worktree on factory/{plan}, and launches interactive scope in Claude.
+2. At handoff the runner seals the intent (`factory/runner/intent.py`) and starts a detached worker (`factory/runner/worker.py`) that holds worker.lock and is the only writer of run.json.
+3. For each headless stage the worker writes .dev/factory-run.json (`factory/runner/pipeline.py`), launches a fresh Codex process (`factory/runner/executor.py`, `factory/runner/hosts.py`), and judges the result with a deterministic gate (`factory/runner/gates.py`) that re-runs tests, e2e, validation, and gauntlet commands and reads {stage}-result.json.
+4. After every attempt the worker asks the foreman (`factory/runner/foreman.py`) for one typed decision, `enforce()` in `factory/runner/model.py` clamps it to the caps and hard stops, and `apply_decision` turns it into the next transition.
+5. Ship ends with a pull request; `factory outcome`, `factory export`, and `factory gc` record what happened after, export a checksummed bundle, and archive merged runs.
+
+### A foreman turn
+1. The worker writes foreman/digest.json (every attempt, condition, cap, and path) and resumes the run's Codex thread with one event message (`factory/runner/foreman.py`).
+2. The session reads the attempt's gate.json, last-message.md, plan files, and git state, may edit `.dev/` and push, and answers one factory.decision/1 object validated by `factory/scripts/factory_records.py`.
+3. The turn is recorded under foreman/turns/{n}/; a malformed or timed-out turn falls back to `model.decide()`.
+
+### Building the Codex distributions
+1. `scripts/build_codex_plugin.py` copies skills/, references/, and `scripts/` of each source plugin into plugins/{name}/, strips Claude-only frontmatter, and writes agents/openai.yaml.
+2. `scripts/validate.sh` checks structure, links, skill length, unattended wording (F03), the runner tests (F01), and the offline benchmark (F04); `--check` mode of the generator fails when `plugins/` is stale.
+
+## Boundaries
+
+| Boundary | Kind | Owned by | Notes |
+| -------- | ---- | -------- | ----- |
+| ~/.factory runtime root | store | factory runner | runs/, archive/, exports/, slots/, config.json, optional pricing.json; overridden by `FACTORY_HOME` |
+| Codex CLI | external process | factory runner | headless stages, the foreman, and paid evals; stubbed by `factory/runner/tests/stubs/codex` in tests |
+| Claude Code CLI | external process | factory runner | interactive scope only |
+| git and GitHub | external | factory runner | worktrees, pushes, `gh pr` calls; the ship gate verifies the PR head against local HEAD |
+| Chrome | external process | factory runner | one headless browser per build and ship attempt for e2e, over CDP |
+| Jira | external HTTP | dev and factory skills | through `acli`, only when .dev/config.json enables it |
+| consuming repository | store | the skills | `.dev/` plan files, `docs/` ledgers, .factory/contract.json |
+
+## Cross-cutting
+
+Records: every runner-owned file has a schema id and a strict validator in `factory/scripts/factory_records.py`, shared by the skills and the runner.
+Testing: `factory/runner/tests/` runs the runner end to end against stub hosts; paid model calls never run in `scripts/validate.sh`.
+Rules: no em dash anywhere, SKILL.md under roughly 150 lines, every skill `disable-model-invocation: true`, unattended factory material never routes a decision to a person.
+
+## Entry points
+
+`factory/bin/factory` (the CLI, `python3 -m runner`), `scripts/validate.sh`, `scripts/build_codex_plugin.py`, `scripts/test_factory_runner.sh`, `factory/evals/bench/bench.py`, `factory/evals/foreman/run.py`, `dev/scripts/skill-metrics.py`.

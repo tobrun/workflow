@@ -47,6 +47,39 @@ def codex_argv(*, prompt: str, model: str, effort: str, sandbox: str, worktree: 
     return argv
 
 
+FOREMAN_SANDBOXES = ("read-only", "workspace-write")
+
+
+def codex_foreman_argv(*, prompt: str, model: str, effort: str, sandbox: str, worktree: Path, writable: list[Path],
+                       last_message: Path, schema: Path, thread_id: str | None = None) -> list[str]:
+    """One foreman turn: a new session, or `exec resume` of the run's session.
+
+    `resume` takes no -s, -C, or --add-dir, so the sandbox and writable roots go through config
+    overrides and the working directory through the executor request; a new session uses the flags.
+    """
+    if sandbox not in FOREMAN_SANDBOXES:
+        raise ValueError(f"unknown foreman sandbox {sandbox!r}")
+    argv = [binary("codex"), "exec"]
+    argv += ["resume", thread_id, prompt] if thread_id else [prompt]
+    argv += ["-m", model, "-c", f'model_reasoning_effort="{effort}"', "-c", 'approval_policy="never"',
+             "-c", 'shell_environment_policy.inherit="all"']
+    if thread_id:
+        argv += ["-c", f'sandbox_mode="{sandbox}"']
+        if sandbox == "workspace-write":
+            roots = json.dumps([str(worktree), *map(str, writable)])
+            argv += ["-c", "sandbox_workspace_write.network_access=true",
+                     "-c", f"sandbox_workspace_write.writable_roots={roots}"]
+    else:
+        argv += ["-s", sandbox]
+        if sandbox == "workspace-write":
+            argv += ["-c", "sandbox_workspace_write.network_access=true"]
+            for root in writable:
+                argv += ["--add-dir", str(root)]
+        argv += ["-C", str(worktree)]
+    argv += ["--skip-git-repo-check", "--json", "-o", str(last_message), "--output-schema", str(schema)]
+    return argv
+
+
 def sandbox_capabilities(sandbox: str, writable: list[Path], worktree: Path) -> dict:
     """What the configured sandbox actually protects, recorded per attempt instead of assumed."""
     if sandbox == "bypass":

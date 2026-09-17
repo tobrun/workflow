@@ -1,0 +1,16 @@
+{
+  "schema": "factory.foreman-eval/1",
+  "stage": "ship",
+  "attempt": 4,
+  "note": "one unpushed commit and two unknown keys in ship-result.json; a person pushed and fixed the file",
+  "accept": [
+    "publish",
+    "repair"
+  ],
+  "reject": [
+    "park",
+    "cancel",
+    "advance"
+  ],
+  "source_run": "<run_id>"
+}

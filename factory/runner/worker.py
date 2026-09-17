@@ -5,6 +5,7 @@ While alive, the worker holding runs/{id}/worker.lock is the only writer of run.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import os
 import subprocess
@@ -15,11 +16,12 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from runner import (FACTORY_ROOT, browser, commands, conditions, config, dashboard, events, executor, faults, gates,
-                    hosts, intent, notify, pricing, provenance, records, slots, supervise)
+from runner import (FACTORY_ROOT, browser, commands, conditions, config, dashboard, events, executor, faults, foreman,
+                    gates, hosts, intent, notify, pricing, provenance, publication, records, slots, supervise)
 from runner import worktree as wt
-from runner.model import (CANCELLED, DONE, PARKED, QUEUED, RUNNING, BudgetExhausted, Run, decide)
-from runner.pipeline import PIPELINE, Stage, gate_context, gate_reserve_s, write_run_context
+from runner.model import (CANCELLED, DONE, PARKED, QUEUED, RUNNING, BudgetExhausted, Run, decide, enforce,
+                          remember_guidance, utc_now)
+from runner.pipeline import PIPELINE, Stage, gate_context, gate_reserve_s, repair_prompt, write_run_context
 
 
 def log(message: str) -> None:
@@ -97,7 +99,11 @@ class Worker:
             self.reload_config()
             run = Run.load(self.run_dir)
             if run.status == RUNNING:
-                self.recover(run)
+                undecided = run.undecided_attempt()
+                if undecided is not None:
+                    self.decide_next(run, undecided)
+                else:
+                    self.recover(run)
                 continue
             if run.status in PARKED:
                 log(f"run is {run.status}; worker exiting")
@@ -112,6 +118,10 @@ class Worker:
                 log(f"unexpected status {run.status}; worker exiting")
                 return 2
             stage = self.pipeline[run.stage]
+            if (run.data.get("wait") or {}).get("stage") == stage.name:
+                if not self.wait(run, stage):
+                    return 0
+                continue
             if not stage.slot_limited:
                 run.transition("slot_acquired")
                 self.save(run)
@@ -130,13 +140,56 @@ class Worker:
                 run.data["slot"] = slot.index
                 self.save(run)
                 run.event("slot.acquired", slot=slot.index)
-                self.execute(run, stage, slot)
+                self.dispatch(run, stage, slot)
             finally:
                 slot.release()
                 released = Run.load(self.run_dir)
                 released.data["slot"] = None
                 released.save()
                 released.event("slot.released", slot=slot.index)
+
+    def wait(self, run: Run, stage: Stage) -> bool:
+        """Hold the queued run, with no slot, until its probe passes or its time is up; False when the run stops."""
+        spec = run.data["wait"]
+        until = float(spec.get("until") or 0)
+        observed = None
+        while True:
+            if run.cancel_requested:
+                self.cancel(run, "cancelled by operator while waiting")
+                return False
+            if run.pause_requested:
+                self.pause(run)
+                return False
+            passed, observed = probe(spec.get("probe") or {})
+            if passed or time.time() >= until:
+                break
+            self.sleep(min(self.cfg.stage_poll_seconds, max(0.0, until - time.time())) or self.cfg.stage_poll_seconds)
+            self.reload_config()
+            run = Run.load(self.run_dir)
+            run.data["wait"] = spec
+        elapsed = max(0.0, time.time() - float(spec.get("started") or until))
+        run.data.pop("wait", None)
+        waits = run.data.setdefault("waits", {})
+        waits[stage.name] = round(float(waits.get(stage.name, 0)) + elapsed, 1)
+        run.data["last_wait"] = {"stage": stage.name, "seconds": round(elapsed, 1), "probe": spec.get("probe"),
+                                 "passed": passed, "observed": observed, "then": spec.get("then")}
+        if spec.get("then") == "regate":
+            run.data["next_action"] = {"kind": "regate", "stage": stage.name, "turn": spec.get("turn")}
+        self.save(run)
+        run.event("wait.elapsed", stage.name, None, seconds=round(elapsed, 1), passed=passed, observed=observed,
+                  then=spec.get("then"))
+        log(f"waited {elapsed:.0f}s before {stage.name}: {'probe passed' if passed else 'time is up'} ({observed})")
+        return True
+
+    def dispatch(self, run: Run, stage: Stage, slot: slots.Slot | None) -> None:
+        """Run what the queued run asks for: an agent attempt, or a gate-only attempt the foreman scheduled."""
+        action = run.data.get("next_action") or {}
+        if action.get("stage") == stage.name and action.get("kind") in ("regate", "publish"):
+            self.regate(run, stage, slot, kind=action["kind"], turn=action.get("turn"))
+        elif action.get("stage") == stage.name and action.get("kind") == "repair":
+            self.execute(run, stage, slot, repair=action)
+        else:
+            self.execute(run, stage, slot)
 
     def acquire_slot(self, run: Run, *, abort_on_pause: bool) -> slots.Slot | None:
         return slots.acquire(
@@ -200,10 +253,23 @@ class Worker:
 
     # --- one attempt -------------------------------------------------------------------
 
-    def execute(self, run: Run, stage: Stage, slot: slots.Slot | None = None) -> None:
+    def execute(self, run: Run, stage: Stage, slot: slots.Slot | None = None, repair: dict | None = None) -> None:
+        """One agent attempt: the stage skill, or a bounded repair the foreman asked for (kind `repair`)."""
         note = run.take_note()
-        attempt = run.begin_attempt(stage.name, host=stage.host, model=stage.model, effort=stage.effort)
+        run.data.pop("next_action", None)
+        launch = run.data.pop("next_launch", None)
+        if launch and launch.get("stage") == stage.name and repair is None:
+            overrides = {k: launch[k] for k in ("model", "effort", "timeout_s") if launch.get(k)}
+            stage = dataclasses.replace(stage, **overrides)
+        else:
+            launch = None
+        attempt = run.begin_attempt(stage.name, host=stage.host, model=stage.model, effort=stage.effort,
+                                    kind="repair" if repair else "stage")
         n = attempt["n"]
+        if launch:
+            attempt["launch"] = launch
+        if repair:
+            attempt["repair"] = {k: repair.get(k) for k in ("instruction", "checks", "timeout_minutes", "turn")}
         if note:
             run.event("run.note_added", stage.name, n, note=note)
         attempt_dir = run.attempt_dir(stage.name, n)
@@ -216,7 +282,7 @@ class Worker:
         intent.snapshot_inputs(run, stage.name, n, head=attempt["baseline"]["head"], context_file=context_file)
         bundles = provenance.skill_bundles()
         attempt["skills"] = {"resolution": bundles["resolution"], "fallback": bundles.get("fallback")}
-        prompt = stage.build_prompt(run, n)
+        prompt = repair_prompt(run, stage.name, n, repair) if repair else stage.build_prompt(run, n)
         (attempt_dir / "prompt.txt").write_text(prompt, encoding="utf-8")
         try:
             sandbox = self.cfg.sandbox_for(run.data["repo"])
@@ -240,6 +306,9 @@ class Worker:
             return
         env = hosts.attempt_env(run_dir=run.dir, plan=run.plan, stage=stage.name, attempt=n, forward_github_token=True)
         env.update(sandbox_env)
+        env["FACTORY_ROLE"] = "repair" if repair else "stage"
+        if repair:
+            env["FACTORY_REPAIR"] = str(sum(1 for a in run.stage_attempts(stage.name) if a.get("kind") == "repair"))
         stop = self.record_runtime(run, stage, attempt, env, bundles)
         if stop is not None:
             self.save(run)
@@ -267,8 +336,12 @@ class Worker:
             faults.point("worker.after_spawn", f"worker.after_spawn:{stage.name}:{n}")
 
         host_deadline = attempt["deadline_at"] - gate_reserve_s(stage.timeout_s) if attempt["deadline_at"] else None
+        if repair:
+            minutes = int(repair.get("timeout_minutes") or 20)
+            host_deadline = time.time() + minutes * 60
+            attempt["deadline_at"] = host_deadline + gate_reserve_s(stage.timeout_s)
         request = executor.Request(
-            token=token, kind="stage", label=f"{stage.name}-{n}", argv=argv, cwd=str(run.worktree),
+            token=token, kind="repair" if repair else "stage", label=f"{stage.name}-{n}", argv=argv, cwd=str(run.worktree),
             run_dir=str(run.dir), stdout=str(attempt_dir / "stdout.jsonl"), stderr=str(attempt_dir / "stderr.log"),
             deadline_at=host_deadline, cancel_file=str(run.dir / "cancel"), grace=self.grace,
             inherit_fds=[slot.fd] if slot is not None else [],
@@ -334,7 +407,41 @@ class Worker:
             self.finish(run, stage, attempt, gates.Outcome("cancelled", "cancelled by operator", False, "runner"),
                         receipt, None)
             return
+        self.judge(run, stage, attempt, receipt, slot, stream)
 
+    def regate(self, run: Run, stage: Stage, slot: slots.Slot | None, *, kind: str = "regate",
+               turn: int | None = None) -> None:
+        """A gate-only attempt the foreman scheduled: judge the stage's current state again without an agent.
+
+        `publish` first fast-forwards the remote run branch, then judges like a regate. The attempt
+        starts from the last agent attempt's baseline, so the boundary check covers the same delta.
+        """
+        run.data.pop("next_action", None)
+        last = next((a for a in reversed(run.stage_attempts(stage.name)) if a.get("kind", "stage") == "stage"), None)
+        attempt = run.begin_attempt(stage.name, host="runner", model="-", effort="-", kind=kind)
+        n = attempt["n"]
+        run.attempt_dir(stage.name, n).mkdir(parents=True, exist_ok=True)
+        attempt["baseline"] = dict(last.get("baseline") or {}) if last else self.baseline(run, stage)
+        if last and last.get("config"):
+            attempt["config"] = dict(last["config"])
+        attempt["decision_turn"] = turn
+        attempt["deadline_at"] = time.time() + stage.timeout_s if stage.timeout_s else None
+        self.save(run)
+        run.event("stage.started", stage.name, n, model="-", effort="-", kind=kind)
+        pre_gate = None
+        if kind == "publish":
+            def pre_gate(ctx: gates.GateContext) -> dict:
+                operations: list[dict] = []
+                detail = publication.push_head(ctx, operations)
+                run.event("stage.warning", stage.name, n, warning=f"publish: {detail}")
+                return {"operations": operations, "publish": detail}
+        self.judge(run, stage, attempt, None, slot, hosts.CodexStream(), pre_gate=pre_gate)
+
+    def judge(self, run: Run, stage: Stage, attempt: dict, receipt: executor.Receipt | None,
+              slot: slots.Slot | None, stream: hosts.CodexStream, pre_gate=None) -> None:
+        """Run the stage gate on the worktree as it is, merge it with the result file and conditions, and close."""
+        n = attempt["n"]
+        attempt_dir = run.attempt_dir(stage.name, n)
         ctx = gate_context(run, stage.name, n, deadline=attempt.get("deadline_at"),
                            poll_seconds=self.cfg.stage_poll_seconds, sleep=self.sleep,
                            cancel_requested=lambda: run.cancel_requested, grace=self.grace,
@@ -342,14 +449,21 @@ class Worker:
                            max_heavy_commands=self.cfg.max_heavy_commands, port_range=self.cfg.port_range,
                            browser=self.cfg.browser)
         gate_started = time.monotonic()
+        pre: dict = {}
         try:
+            if pre_gate is not None:
+                pre = pre_gate(ctx)
             gate = stage.gate(ctx)
         except Exception as error:  # noqa: BLE001 - a gate crash is a retryable runner failure
             gate = gates.blocked(f"gate crashed: {type(error).__name__}: {error}", outcome="failed")
+        if pre.get("operations"):
+            gate.data["operations"] = [*pre["operations"], *gate.data.get("operations", [])]
+        if pre.get("publish"):
+            gate.data["publish"] = pre["publish"]
         gate.warnings = [*(attempt.get("setup") or {}).get("warnings", []), *gate.warnings]
         attempt["gate_warnings"] = gate.warnings
         self.record_handoff(run, stage, attempt)
-        attempt["host_seconds"] = round(receipt.seconds, 1)
+        attempt["host_seconds"] = round(receipt.seconds, 1) if receipt else 0
         attempt["gate_seconds"] = round(time.monotonic() - gate_started, 1)
         attempt["checkpoints"] = ctx.checkpoint_log
         attempt["verification_seconds"] = round(sum(e["seconds"] for e in ctx.executions
@@ -365,7 +479,7 @@ class Worker:
             outcome.warning = "; ".join(filter(None, [outcome.warning, *notes]))
         if outcome.outcome != "done" and run.cancel_requested:
             outcome = gates.Outcome("cancelled", f"cancelled by operator; gate: {outcome.reason}", False, "runner")
-        elif outcome.outcome != "done":
+        elif outcome.outcome != "done" and receipt is not None:
             detail = "; ".join(stream.failures + stream.errors)
             if receipt.timed_out:
                 allowance = int(stage.timeout_s - gate_reserve_s(stage.timeout_s))
@@ -377,8 +491,8 @@ class Worker:
                     reason += f" ({detail[:300]})"
                 outcome = gates.Outcome("failed", reason, outcome.retryable, outcome.source, code=outcome.code,
                                         conditions=outcome.conditions)
-        else:
-            if receipt.exit_code not in (0, None):
+        elif outcome.outcome == "done":
+            if receipt is not None and receipt.exit_code not in (0, None):
                 note = f"{stage.host} exited {receipt.exit_code} but the gate passed"
                 outcome.warning = f"{outcome.warning}; {note}" if outcome.warning else note
             outcome = self.on_pass(run, stage, gate, outcome)
@@ -435,7 +549,11 @@ class Worker:
 
     def finish(self, run: Run, stage: Stage, attempt: dict, outcome: gates.Outcome,
                receipt: executor.Receipt | None, gate: gates.GateResult | None, result: dict | None = None) -> None:
-        """Close the attempt and apply its transition in one save; events follow from the saved record."""
+        """Close the attempt and save it undecided; the loop chooses its transition once the slot is free.
+
+        The attempt's own events wait on the attempt (`closed_events`) and go out with the transition,
+        so a crash between closing and deciding repeats neither the attempt nor its events.
+        """
         n = attempt["n"]
         attempt_dir = run.attempt_dir(stage.name, n)
         attempt_dir.mkdir(parents=True, exist_ok=True)
@@ -459,7 +577,60 @@ class Worker:
             "outcome": outcome.outcome, "reason": outcome.reason, "retryable": outcome.retryable,
             "source": outcome.source, "code": outcome.code, "conditions": outcome.conditions,
             "tokens": attempt.get("tokens", 0)}])
-        apply_decision(run, attempt, self.cfg, pending)
+        attempt["closed_events"] = pending
+        self.save(run)
+        faults.point("worker.after_attempt_close", f"worker.after_attempt_close:{stage.name}:{n}")
+
+    def decide_next(self, run: Run, attempt: dict) -> None:
+        """Choose and apply the closed attempt's transition: the foreman's decision, or `decide()` as the fallback.
+
+        Runs with no slot held. Everything the choice needs is saved before the transition, so a crash
+        after the foreman's turn reuses its decision instead of asking again.
+        """
+        stage = self.pipeline[attempt["stage"]]
+        n = attempt["n"]
+        outcome = gates.Outcome(attempt["outcome"], attempt.get("reason"), bool(attempt.get("retryable")),
+                                attempt.get("source") or "runner", warning=attempt.get("warning"),
+                                code=attempt.get("code"), conditions=list(attempt.get("conditions") or []))
+        pending: list = list(attempt.pop("closed_events", []))
+        note = run.take_note()
+        if note:
+            pending.append(["run.note_added", stage.name, n, {"note": note}])
+        decision = None
+        if self.cfg.foreman != "off" and outcome.outcome != "cancelled":
+            event = foreman.attempt_event(run, stage.name, attempt, outcome)
+            turn = foreman.load_turn(run, attempt)
+            if turn is None:
+                turn = foreman.consult(run, self.cfg, event, home=self.home, grace=self.grace,
+                                       cancel_requested=lambda: run.cancel_requested)
+                foreman.record(run, attempt, turn, event)
+                attempt["closed_events"] = pending
+                self.save(run)
+                attempt.pop("closed_events", None)
+            pending += foreman.turn_events(attempt, turn)
+            if self.cfg.foreman == "codex":
+                decision = turn.decision
+        faults.point("worker.after_foreman_turn", f"worker.after_foreman_turn:{stage.name}:{n}")
+        if decision is not None and turn.extra.get("boundary"):
+            # The turn committed outside .dev/: that is a boundary violation, whatever it decided.
+            decision = records.validate_decision({
+                "schema": records.DECISION_SCHEMA, "action": "park", "summary": "foreman committed outside .dev/",
+                "rationale": turn.extra["boundary"], "park": {
+                    "reason": f"boundary.violation: {turn.extra['boundary']}",
+                    "operator_action": f"inspect the commit in {run.worktree}, then `factory retry {run.id}`"}})
+        apply_decision(run, attempt, self.cfg, pending, decision=decision)
+        if run.status == DONE and run.data.get("overrides") and not run.data.get("overrides_noted"):
+            operations: list[dict] = []
+            ctx = gate_context(run, stage.name, n, sleep=self.sleep, cancel_requested=lambda: run.cancel_requested,
+                               grace=self.grace, home=self.home)
+            try:
+                detail = publication.note_overrides(ctx, run.data["overrides"], operations)
+            except Exception as error:  # noqa: BLE001 - the note is accountability, never a reason to fail a done run
+                detail = f"could not note the overrides: {type(error).__name__}: {error}"
+            run.data["overrides_noted"] = detail
+            run.data.setdefault("operations", []).extend(operations)
+            pending.append(["stage.warning", stage.name, n, {"warning": f"overrides: {detail}"}])
+            log(f"overrides: {detail}")
         faults.point("worker.before_transition_save", f"worker.before_transition_save:{stage.name}:{n}")
         self.save(run)
         faults.point("worker.after_transition_save", f"worker.after_transition_save:{stage.name}:{n}")
@@ -528,25 +699,108 @@ class Worker:
             run.data.setdefault("operations", []).extend(data["operations"])
 
 
-def apply_decision(run: Run, attempt: dict, cfg: config.Config, pending: list | None = None) -> str:
+def apply_decision(run: Run, attempt: dict, cfg: config.Config, pending: list | None = None, *,
+                   decision: dict | None = None) -> str:
     """Move a running run to its next status after an attempt; returns the action taken.
 
     With `pending`, the transition's events are stored on the attempt (after any events
     already in `pending`) instead of written, so the caller persists the decision and its
     history in one save and then calls `emit_pending`. Without it, events are written now.
+    With `decision`, the foreman's validated decision is applied under the runner's caps and
+    hard stops; a decision the runner refuses is recorded and `decide()` chooses instead.
     """
     semantic = (attempt.get("config") or {}).get("semantic") or {}
     retry_budget = semantic.get("max_retries", cfg.max_retries)
     if retry_budget < run.data["retries"]["budget"]:
         run.data["retries"]["budget"] = retry_budget
-    action, reason = decide(run, attempt, stop_on_repeated_reason=cfg.stop_on_repeated_reason)
     stage = attempt["stage"]
     planned: list = [] if pending is None else pending
-    if action == "retry":
+    target = stage
+    operator_action = None
+    if decision is not None:
+        action, reason, rejection = enforce(run, attempt, decision, cfg)
+        if rejection:
+            planned.append(["foreman.rejected", stage, attempt["n"], {"action": decision["action"], "why": rejection}])
+            attempt.setdefault("foreman", {})["rejected"] = rejection
+            action, reason = decide(run, attempt, stop_on_repeated_reason=cfg.stop_on_repeated_reason)
+        else:
+            attempt.setdefault("foreman", {})["applied"] = action
+            for entry in reversed(run.data.get("decisions") or []):
+                if entry.get("stage") == stage and entry.get("attempt") == attempt["n"]:
+                    entry["applied"] = True
+                    break
+            now = utc_now()
+            for item in decision.get("resolve_conditions") or []:
+                condition = next((c for c in run.data.get("conditions") or [] if c.get("id") == item["id"]), None)
+                if condition is None or condition.get("status") == "resolved":
+                    continue
+                observed, detail = conditions.recheck(condition, dict(os.environ))
+                if observed is False:
+                    planned.append(["stage.warning", stage, attempt["n"], {
+                        "warning": f"{item['id']} stays open: the runner's re-check found it {detail}"}])
+                    continue
+                conditions.resolve(condition, attempt=attempt["n"], by="foreman", evidence=list(item["evidence"]),
+                                   now=now)
+            if action == "override":
+                override = decision["override"]
+                entry = {"stage": stage, "attempt": attempt["n"], "gate_code": override["gate_code"],
+                         "justification": override["justification"], "evidence": list(override.get("evidence") or []),
+                         "turn": (attempt.get("foreman") or {}).get("turn"), "at": now,
+                         "outcome": attempt.get("outcome"), "reason": attempt.get("reason")}
+                run.data.setdefault("overrides", []).append(entry)
+                planned.append(["override.recorded", stage, attempt["n"], {
+                    "gate_code": override["gate_code"], "justification": override["justification"]}])
+                for condition in conditions.open_for(run, stage):
+                    if condition["code"] == override["gate_code"] or condition["id"] in (attempt.get("conditions") or []):
+                        conditions.resolve(condition, attempt=attempt["n"], by="foreman",
+                                           evidence=[override["justification"], *entry["evidence"]], now=now)
+                action = "stage_passed"
+            if action in ("retry", "launch"):
+                target = decision["stage"]
+                heading = f"after {stage} attempt {attempt['n']}"
+                remember_guidance(run, target, heading, decision["guidance"])
+                overrides = {k: decision[k] for k in ("model", "effort", "timeout_s") if decision.get(k)}
+                run.data["next_launch"] = {"stage": target, "turn": (attempt.get("foreman") or {}).get("turn"),
+                                           **overrides}
+            elif action in ("regate", "publish"):
+                target = decision.get("stage") or ("ship" if action == "publish" else stage)
+                run.data["next_action"] = {"kind": action, "stage": target,
+                                           "turn": (attempt.get("foreman") or {}).get("turn")}
+            elif action == "repair":
+                target = decision["stage"]
+                spec = decision["repair"]
+                if decision.get("guidance"):
+                    remember_guidance(run, target, f"after {stage} attempt {attempt['n']} (repair)", decision["guidance"])
+                run.data["next_action"] = {"kind": "repair", "stage": target, "instruction": spec["instruction"],
+                                           "checks": spec.get("checks") or [],
+                                           "timeout_minutes": spec.get("timeout_minutes") or 20,
+                                           "turn": (attempt.get("foreman") or {}).get("turn")}
+            elif action == "wait":
+                spec = decision["wait"]
+                used = float((run.data.get("waits") or {}).get(stage, 0))
+                seconds = min(int(spec["seconds"]), max(1, int(cfg.max_wait_minutes * 60 - used)))
+                run.data["wait"] = {"stage": stage, "seconds": seconds, "probe": spec["probe"], "then": spec["then"],
+                                    "started": time.time(), "until": time.time() + seconds,
+                                    "turn": (attempt.get("foreman") or {}).get("turn")}
+            elif action == "park" and decision["action"] == "park":
+                operator_action = decision["park"]["operator_action"]
+            elif action == "park":
+                operator_action = f"factory retry {run.id} --reset-budget"
+            elif action == "rescope":
+                operator_action = f"factory retry {run.id} --rescope"
+    else:
+        action, reason = decide(run, attempt, stop_on_repeated_reason=cfg.stop_on_repeated_reason)
+    if action in ("retry", "launch") and run.retry_needed(target):
         try:
             run.consume_retry()
-        except BudgetExhausted:
-            action = "exhausted"
+        except BudgetExhausted as error:
+            if decision is None:
+                action = "exhausted"
+            else:
+                # Under the foreman the budget parks instead of cancelling: `factory retry --reset-budget` reopens it.
+                action, reason = "park", f"{error}; last reason: {attempt.get('reason')}"
+                run.data.pop("next_launch", None)
+                operator_action = f"factory retry {run.id} --reset-budget"
     if action == "stage_passed":
         target = run.transition("stage_passed")
         if target == DONE:
@@ -558,12 +812,30 @@ def apply_decision(run: Run, attempt: dict, cfg: config.Config, pending: list | 
         planned.append(["retry.scheduled", stage, attempt["n"] + 1, {
             "reason": reason, "used": run.data["retries"]["used"], "budget": run.data["retries"]["budget"]}])
         planned.append(["run.queued", stage, attempt["n"] + 1, {}])
+    elif action == "launch":
+        run.transition("launch", stage=target)
+        planned.append(["retry.scheduled", target, run.stage_record(target)["attempts"] + 1, {
+            "reason": reason, "used": run.data["retries"]["used"], "budget": run.data["retries"]["budget"],
+            "previous": stage}])
+        planned.append(["run.queued", target, run.stage_record(target)["attempts"] + 1, {"previous": stage}])
+    elif action in ("regate", "publish", "repair"):
+        run.transition(action, stage=target)
+        planned.append([f"{action}.scheduled", target, run.stage_record(target)["attempts"] + 1,
+                        {"reason": reason, "previous": stage}])
+        planned.append(["run.queued", target, run.stage_record(target)["attempts"] + 1, {"kind": action}])
+    elif action == "wait":
+        run.transition("wait")
+        spec = run.data["wait"]
+        planned.append(["wait.scheduled", stage, attempt["n"], {"seconds": spec["seconds"], "probe": spec["probe"],
+                                                                "then": spec["then"], "reason": reason}])
+        planned.append(["run.queued", stage, run.stage_record(stage)["attempts"] + 1, {"kind": "wait"}])
     elif action == "exhausted":
         run.transition("exhausted", reason=reason)
         planned.append(["run.cancelled", stage, attempt["n"], {"reason": reason}])
-    elif action == "park":
-        run.transition("park", reason=reason)
-        planned.append(["run.needs_human", stage, attempt["n"], {"reason": reason}])
+    elif action in ("park", "rescope"):
+        run.transition("park", reason=reason, operator_action=operator_action)
+        planned.append(["run.needs_human", stage, attempt["n"], {"reason": reason, "operator_action": operator_action,
+                                                                  "rescope": action == "rescope"}])
     elif action == "cancel":
         run.transition("cancel", reason=reason)
         planned.append(["run.cancelled", stage, attempt["n"], {"reason": reason}])
@@ -574,6 +846,34 @@ def apply_decision(run: Run, attempt: dict, cfg: config.Config, pending: list | 
         attempt["transition"] = {"id": uuid.uuid4().hex, "action": action, "status": run.status,
                                  "stage": run.stage, "events": planned}
     return action
+
+
+def probe(spec: dict) -> tuple[bool, str]:
+    """Whether a wait's typed probe passes now, and what was observed. Never a command from the decision."""
+    kind = spec.get("kind") or "none"
+    value = spec.get("value")
+    if kind == "env":
+        present = bool(os.environ.get(value or ""))
+        return present, f"{value} is {'set' if present else 'unset'}"
+    if kind == "gh_auth":
+        try:
+            result = subprocess.run([config.binary("gh"), "auth", "status"], capture_output=True, text=True,
+                                    timeout=30, stdin=subprocess.DEVNULL)
+        except (OSError, subprocess.TimeoutExpired) as error:
+            return False, f"gh auth status: {error}"
+        return result.returncode == 0, (result.stdout or result.stderr).strip().splitlines()[0:1][0] if (
+            result.stdout or result.stderr).strip() else f"gh auth status exited {result.returncode}"
+    if kind == "url":
+        import urllib.error
+        import urllib.request
+        try:
+            with urllib.request.urlopen(urllib.request.Request(value, method="GET"), timeout=10) as response:
+                return response.status < 400, f"{value} answered {response.status}"
+        except urllib.error.HTTPError as error:
+            return False, f"{value} answered {error.code}"
+        except (urllib.error.URLError, OSError, ValueError) as error:
+            return False, f"{value}: {error}"
+    return False, "no probe; waiting the full time"
 
 
 def progress_fingerprint(run: Run) -> str | None:
@@ -612,6 +912,8 @@ def reconcile_orphan(run: Run, cfg: config.Config) -> str:
     """Close an attempt a dead worker left open with no execution to reattach to. Caller saves, then emit_pending."""
     if run.status != RUNNING:
         return "none"
+    if run.undecided_attempt() is not None:
+        return "undecided"
     open_attempt = next((a for a in reversed(run.stage_attempts(run.stage)) if a.get("ended_at") is None), None)
     if open_attempt is None:
         run.transition("resume")

@@ -140,7 +140,7 @@ class PromptTests(unittest.TestCase):
             "scope": ("claude", "fable", "medium", None, False),
             "scope-review": ("codex", "openai.gpt-5.6-sol", "low", 45 * 60, True),
             "build": ("codex", "openai.gpt-5.6-luna", "medium", 3 * 3600, True),
-            "ship": ("codex", "openai.gpt-5.6-luna", "high", 3 * 3600, True),
+            "ship": ("codex", "openai.gpt-5.6-luna", "medium", 3 * 3600, True),
         })
 
 

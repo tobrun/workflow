@@ -1,0 +1,15 @@
+{
+  "schema": "factory.foreman-eval/1",
+  "stage": "scope-review",
+  "attempt": 1,
+  "note": "a stale Codex plugin cache refused the launch; nothing about the work was wrong",
+  "accept": [
+    "launch",
+    "regate"
+  ],
+  "reject": [
+    "park",
+    "cancel"
+  ],
+  "source_run": "<run_id>"
+}

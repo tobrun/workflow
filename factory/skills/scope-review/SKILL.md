@@ -23,7 +23,7 @@ First read the run file per "Factory context", then run `python3 {scope-review-s
 
 The factory runner launched this stage as a fresh process; its protocol lives in [../../references/factory-run.md](../../references/factory-run.md).
 
-- Read `.dev/factory-run.json` first: `plan` fixes the plan directory, `scratch_dir` is the panel scratch root, and `previous` names why an earlier attempt did not pass.
+- Read `.dev/factory-run.json` first: `plan` fixes the plan directory, `scratch_dir` is the panel scratch root, and `previous` names why an earlier attempt did not pass. When `guidance` is present, it is the foreman's instruction for this attempt: read all of it before starting, and treat it as the operator note's equal.
 - No human is available: step 4 decides every escalation under the factory policy in that reference.
 - Write `.dev/{plan-name}/scope-review-result.json` as your last action. Never invoke `build`; the runner starts it after its own gate passes.
 

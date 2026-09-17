@@ -60,7 +60,8 @@ class RuntimeManifestTests(ProvenanceTestCase):
                          json.loads((run.dir / "intent" / "approved.json").read_text())["contract_sha256"])
         self.assertEqual(manifest["environment"]["required"], {"FACTORY_TEST_API_KEY": "set"})
         self.assertEqual(manifest["environment"]["github_token"], "forwarded")
-        self.assertEqual(manifest["config"]["semantic"], {"max_retries": 5, "stop_on_repeated_reason": False})
+        self.assertLessEqual({"max_retries": 5, "stop_on_repeated_reason": False, "foreman": "off"}.items(),
+                             manifest["config"]["semantic"].items())
         build = [a for a in data["attempts"] if a["stage"] == "build"][0]
         self.assertEqual(build["runtime"]["skills_id"], manifest["skills"]["skills_id"])
 
@@ -151,7 +152,8 @@ class ConfigBoundaryTests(ProvenanceTestCase):
         from runner import config
         effective = provenance.effective_config(config.load(self.home), str(self.root))
         self.assertEqual(effective["values"]["codex_sandbox"], "bypass")
-        self.assertEqual(effective["semantic"], {"max_retries": 5, "stop_on_repeated_reason": True})
+        self.assertLessEqual({"max_retries": 5, "stop_on_repeated_reason": True, "max_stage_attempts": 6}.items(),
+                             effective["semantic"].items())
 
 
 class ReadinessTests(ProvenanceTestCase):

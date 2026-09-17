@@ -129,6 +129,7 @@ Pi ships `dev` only: Pi uses a flat skill namespace, so the factory's `scope`, `
 | `factory show <id> [--json]` | Show status, stage, retries, blocker, attempts, artifacts, PR, worktree, and exact next command. |
 | `factory logs <id> [--stage name] [--attempt n] [-f] [--raw]` | Render Codex events compactly or stream raw JSONL. |
 | `factory retry <id> [--reset-budget] [--note text] [--rescope] [--detach]` | Queue a new attempt for a `needs-human` or `cancelled` run and watch it; `--reset-budget` restores the retry budget; `--rescope` reopens interactive scope to change the approved intent. |
+| `factory foreman <id> [--turn n] [--json]` | Show the foreman session, its decisions, overrides, and caps; `--turn` prints one turn's prompt, decision, and record. |
 | `factory intent <id> [--json]` | Show the sealed approved intent (request, non-goals, scenario ids), scenarios added later, and each attempt's decision delta. |
 | `factory inputs <id> --stage name [--attempt n] [--file name]` | Show which plan files an attempt started from, how they changed, or print one snapshotted file. |
 | `factory resume <id> [--detach]` | Continue a `paused` run, or recover a queued or running run whose worker died, and watch it. |
@@ -153,7 +154,7 @@ Every command prints the outcome first, then evidence and the next action.
 | `scope` | Claude Code | `fable` | `medium` | yes | none | no |
 | `scope-review` | Codex | `openai.gpt-5.6-sol` | `low` | no | 45 minutes | yes |
 | `build` | Codex | `openai.gpt-5.6-luna` | `medium` | no | 3 hours | yes |
-| `ship` | Codex | `openai.gpt-5.6-luna` | `high` | no | 3 hours | yes |
+| `ship` | Codex | `openai.gpt-5.6-luna` | `medium` | no | 3 hours | yes |
 
 Deterministic gates decide whether a stage is complete, regardless of what the model says.
 A stage's own result file is advisory: when the result and the gate disagree, the gate wins.
@@ -246,6 +247,16 @@ The runtime root is `~/.factory`, overridden by `FACTORY_HOME`.
 | `max_heavy_commands` | `2` | Runner-executed tests, e2e drivers, validation, gauntlet, and setup commands that may run at once across all runs; a lease the command's guard holds, so a worker crash cannot free it early. |
 | `port_range` | `[20000, 29999]` | Ports leased to e2e services and hosted browsers, one holder at a time across concurrent runs. |
 | `browser` | `auto` | Host one headless Chrome per build and ship attempt and per e2e gate, outside the agent's sandbox, and hand it over as `AGENT_BROWSER_CDP` and `FACTORY_BROWSER_CDP_URL`; `off` hosts none. See `factory/references/repo-contract.md`. |
+| `foreman` | `codex` | `codex` lets the run's foreman session decide after every attempt; `shadow` consults it and records its decision without applying it; `off` runs the fixed pipeline under `model.decide()`. See [Foreman](#foreman). |
+| `foreman_model`, `foreman_effort` | `openai.gpt-5.6-luna`, `medium` | The foreman session's Codex model and reasoning effort. |
+| `foreman_turn_timeout_s` | `900` | Deadline for one foreman turn; a turn past it falls back to `model.decide()`. |
+| `foreman_turns_per_event` | `2` | Tries per event before the fallback decides. |
+| `foreman_context_tokens` | `400000` | Input tokens after which the session restarts from a fresh digest. |
+| `max_stage_attempts` | `6` | Agent attempts per headless stage, whoever decides. |
+| `max_repairs_per_stage` | `3` | Repair attempts per stage. |
+| `max_wait_minutes` | `120` | Total waiting per stage on transient faults. |
+| `max_run_hours` | `24` | Wall clock after which a run parks. |
+| `max_overrides_per_run` | `2` | Gate overrides the foreman may record per run. |
 | `stop_on_repeated_reason` | `false` | Park after two consecutive identical retryable blocks at one stage. Independently, a retry that fails with the same failure code and leaves the commit and plan files unchanged always parks as "no progress". |
 | `stage_poll_seconds` | `10` | Slot wait interval. |
 | `heartbeat_seconds` | `30` | Worker heartbeat interval. |
@@ -258,6 +269,31 @@ Sub-agent usage does not appear in the parent's stream and interactive scope usa
 A cost estimate appears only with an explicit, versioned `~/.factory/pricing.json` (`factory.pricing/1`, see `runner/pricing.py`); otherwise it is unknown.
 Each attempt also records queue, agent, gate, verification, and lease-wait seconds.
 Model, effort, and timeout defaults live in `runner/pipeline.py`.
+
+## Foreman
+
+The foreman is one long-lived Codex session per run that decides what the worker does next.
+The worker stays the body: it launches attempts, runs the gates, holds the locks and slots, and is the only writer of `run.json`.
+After every attempt the worker closes it, releases the stage slot, resumes the run's session with a compact event, and reads back one typed decision, `factory.decision/1`, validated by `scripts/factory_records.py`.
+The decision and the transition it causes are saved together, so a crash on either side of a turn neither repeats an attempt nor asks the session twice.
+
+| Decision | What the runner does |
+| --- | --- |
+| `launch` | Queues another attempt of the named stage, this one or an earlier one, with the foreman's `guidance` in `factory-run.json` and optional `model`, `effort`, or `timeout_s` overrides. |
+| `repair` | Runs a short bounded session that does exactly one `instruction`, then the full stage gate. Repairs cost no paid retry. |
+| `regate` | Runs the stage gate again without an agent, reusing checkpoints where the tree is unchanged. |
+| `publish` | Fast-forwards the remote run branch, then judges ship again; the pull request still needs a review of the final revision. |
+| `wait` | Holds the run without a slot until a typed probe passes (`env`, `gh_auth`, `url`) or the time is up, then regates or launches. |
+| `advance` | Moves to the next stage; over a failing gate only with an `override` naming the failed code. |
+| `park`, `rescope`, `cancel` | Parks with an exact `operator_action`, parks for `factory retry --rescope`, or cancels. |
+
+The runner enforces what the session cannot change: `secret.found`, `action.destructive`, and a missing or tampered intent park whatever it decides; the caps (`max_stage_attempts`, `max_repairs_per_stage`, `max_wait_minutes`, `max_run_hours`, `max_overrides_per_run`) park the run when reached; three identical agent attempts in a row park it; two gate-only attempts in a row are refused; a turn that changes files outside `.dev/` is reverted and refused, and one that commits outside `.dev/` parks the run.
+Every override lands in `run.json`, in `factory show`, in an `## Overrides` section of the pull request body, and in `factory report`.
+`factory retry --reset-budget` restarts the caps as well as the retry budget.
+
+With `"foreman": "shadow"` the decision is recorded under `runs/{id}/foreman/turns/{n}/` and in `run.json` (`decisions`) while `model.decide()` still chooses, which is how decisions are collected from real runs at no risk; a shadow turn is read-only, a `codex` turn may edit `.dev/` and push.
+A turn that fails, times out, or answers outside the schema is retried once and then falls back to `model.decide()`, recorded as `foreman.fallback`; a lost session, a changed thread id, a context past `foreman_context_tokens`, or two fallbacks in a row restart the session from a fresh digest.
+`factory foreman <id>` lists the session and its decisions, `--turn N` prints one turn's prompt, decision, and record, and the watch view and `factory show` print each decision as it lands.
 
 ## Skill resolution
 

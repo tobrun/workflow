@@ -16,6 +16,7 @@ deterministic retries are counted apart from the paid retry budget.
 
 from __future__ import annotations
 
+import re
 import sys
 import time
 
@@ -76,6 +77,51 @@ def attempt(ctx, operations: list[dict], kind: str, head: str, body_sha: str | N
     return False, record["details"][-1] if record["details"] else "not attempted"
 
 
+def remote_state(ctx, head: str) -> str:
+    """Where the remote run branch stands against `head`: absent, behind, synchronized, diverged, or unknown."""
+    from runner import gates
+    fetch = gates.execute(ctx, [gates.binary("git"), "-C", str(ctx.worktree), "fetch", "--quiet", ctx.remote,
+                                f"+refs/heads/{ctx.branch}:refs/remotes/{ctx.remote}/{ctx.branch}"],
+                          label="git-fetch", kind="gate-git", timeout_cap=gates.FETCH_TIMEOUT_S)
+    if fetch.classification != "succeeded":
+        missing = "couldn't find remote ref" in gates.output_of(fetch).lower()
+        return "absent" if missing else "unknown"
+    remote = wt.git("-C", str(ctx.worktree), "rev-parse", "--verify", "--quiet",
+                    f"refs/remotes/{ctx.remote}/{ctx.branch}", check=False)
+    if not remote:
+        return "absent"
+    if remote == head:
+        return "synchronized"
+    return "behind" if wt.is_ancestor(ctx.worktree, remote, head) else "diverged"
+
+
+def push_branch(ctx, operations: list[dict], head: str) -> tuple[bool, str]:
+    """Fast-forward the remote run branch to `head`; never another branch, never a force push."""
+    from runner import gates
+
+    def push() -> tuple[bool, str]:
+        receipt = gates.execute(ctx, [gates.binary("git"), "-C", str(ctx.worktree), "push", "--quiet", ctx.remote,
+                                      f"HEAD:refs/heads/{ctx.branch}"], label="git-push", kind="gate-git",
+                                timeout_cap=gates.FETCH_TIMEOUT_S)
+        if receipt.classification == "succeeded" or remote_state(ctx, head) == "synchronized":
+            return True, f"pushed {head[:12]}"
+        return False, f"git push {gates.describe(receipt)}: {gates.first_lines(gates.output_of(receipt), 2)}"
+    return attempt(ctx, operations, "push", head, None, push)
+
+
+def push_head(ctx, operations: list[dict]) -> str:
+    """The foreman's `publish`: push the run branch when it is absent or behind, whatever the review says.
+
+    The pull request itself still waits for `prerequisites`, so nothing unreviewed gets published as ready.
+    """
+    head = wt.head(ctx.worktree)
+    state = remote_state(ctx, head)
+    if state in ("absent", "behind"):
+        done, detail = push_branch(ctx, operations, head)
+        return detail if done else f"push failed: {detail}"
+    return f"remote branch is {state}; nothing to push"
+
+
 def publish(ctx, data: dict) -> None:
     """Publish what is missing; failures fall through to the gate, which reports the precise state."""
     from runner import gates
@@ -89,30 +135,8 @@ def publish(ctx, data: dict) -> None:
     body_text = body.read_text(encoding="utf-8")
     body_sha = records.sha256_bytes(body_text.encode("utf-8"))
 
-    def remote_state() -> str:
-        fetch = gates.execute(ctx, [gates.binary("git"), "-C", str(ctx.worktree), "fetch", "--quiet", ctx.remote,
-                                    f"+refs/heads/{ctx.branch}:refs/remotes/{ctx.remote}/{ctx.branch}"],
-                              label="git-fetch", kind="gate-git", timeout_cap=gates.FETCH_TIMEOUT_S)
-        if fetch.classification != "succeeded":
-            missing = "couldn't find remote ref" in gates.output_of(fetch).lower()
-            return "absent" if missing else "unknown"
-        remote = wt.git("-C", str(ctx.worktree), "rev-parse", "--verify", "--quiet",
-                        f"refs/remotes/{ctx.remote}/{ctx.branch}", check=False)
-        if not remote:
-            return "absent"
-        if remote == head:
-            return "synchronized"
-        return "behind" if wt.is_ancestor(ctx.worktree, remote, head) else "diverged"
-
-    if remote_state() in ("absent", "behind"):
-        def push() -> tuple[bool, str]:
-            receipt = gates.execute(ctx, [gates.binary("git"), "-C", str(ctx.worktree), "push", "--quiet", ctx.remote,
-                                          f"HEAD:refs/heads/{ctx.branch}"], label="git-push", kind="gate-git",
-                                    timeout_cap=gates.FETCH_TIMEOUT_S)
-            if receipt.classification == "succeeded" or remote_state() == "synchronized":
-                return True, f"pushed {head[:12]}"
-            return False, f"git push {gates.describe(receipt)}: {gates.first_lines(gates.output_of(receipt), 2)}"
-        attempt(ctx, operations, "push", head, None, push)
+    if remote_state(ctx, head) in ("absent", "behind"):
+        push_branch(ctx, operations, head)
 
     prs, error = gates.open_prs(ctx)
     if prs == []:
@@ -143,3 +167,38 @@ def publish(ctx, data: dict) -> None:
                 return False, f"gh pr edit failed ({code}): {gates.first_lines(err or out, 2)}"
             attempt(ctx, operations, "pr-edit", head, body_sha, edit)
     data["publication"] = {"runner": "ran" if operations else "nothing to publish"}
+
+
+def note_overrides(ctx, overrides: list[dict], operations: list[dict]) -> str:
+    """Append an Overrides section to pr.md and the open pull request, so every accepted gate failure is public."""
+    from runner import gates
+    body = ctx.plan_dir / "pr.md"
+    if not body.is_file():
+        return "no pr.md to note the overrides in"
+    text = body.read_text(encoding="utf-8")
+    if re.search(r"^##\s+Overrides\s*$", text, re.M) is None:
+        lines = ["", "## Overrides", "", "The factory foreman accepted these stages over a failing gate:", ""]
+        for entry in overrides:
+            lines.append(f"- {entry['stage']} attempt {entry['attempt']}: `{entry['gate_code']}` "
+                         f"({records.bounded(entry.get('reason') or '', 200)}). Justification: "
+                         f"{records.bounded(entry.get('justification') or '', 400)}")
+        text = text.rstrip() + "\n" + "\n".join(lines) + "\n"
+        body.write_text(text, encoding="utf-8")
+    prs, error = gates.open_prs(ctx)
+    if not prs:
+        return f"pr.md notes the overrides; no open pull request to update ({error or 'none open'})"
+    number = prs[0]["number"]
+    view, _ = gates.pr_view(ctx, number)
+    if view and re.search(r"^##\s+Overrides\s*$", view.get("body") or "", re.M):
+        return f"PR #{number} already notes the overrides"
+    head = wt.head(ctx.worktree)
+    body_sha = records.sha256_bytes(text.encode("utf-8"))
+
+    def edit() -> tuple[bool, str]:
+        code, out, err, _ = gates.gh_gate(ctx, ["pr", "edit", str(number), "--body-file", str(body)], "gh-pr-overrides")
+        current, _ = gates.pr_view(ctx, number)
+        if current and re.search(r"^##\s+Overrides\s*$", current.get("body") or "", re.M):
+            return True, f"PR #{number} notes {len(overrides)} override(s)"
+        return False, f"gh pr edit failed ({code}): {gates.first_lines(err or out, 2)}"
+    done, detail = attempt(ctx, operations, "pr-overrides", head, body_sha, edit)
+    return detail if done else f"could not update PR #{number}: {detail}"

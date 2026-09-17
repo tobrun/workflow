@@ -161,6 +161,32 @@ def event_line(run: Run, entry: dict) -> str | None:
         text = f"retry requested at {stage}" + (f" with note: {data['note']}" if data.get("note") else "")
     elif name == "run.needs_human":
         text = f"needs you at {stage}: {data.get('reason')}"
+        if data.get("operator_action"):
+            text += f"; next: {data['operator_action']}"
+    elif name == "foreman.decided":
+        target = f" {data['target']}" if data.get("target") and data["target"] != stage else ""
+        text = f"foreman: {data.get('action')}{target} after {stage} attempt {n}: {data.get('summary')}"
+    elif name == "foreman.fallback":
+        text = (f"foreman turn {data.get('turn')} gave no decision after {stage} attempt {n} "
+                f"({data.get('reason')}); the runner decided")
+    elif name == "foreman.rejected":
+        text = f"foreman's {data.get('action') or 'turn'} refused: {data.get('why')}"
+    elif name == "foreman.started":
+        text = f"foreman session {data.get('session')} started"
+    elif name == "foreman.restarted":
+        text = f"foreman session restarted: {data.get('reason')}"
+    elif name == "override.recorded":
+        text = f"override on {stage} attempt {n}: {data.get('gate_code')}; {data.get('justification')}"
+    elif name in ("regate.scheduled", "publish.scheduled", "repair.scheduled"):
+        previous = data.get("previous")
+        text = f"{name.split('.')[0]} of {stage} scheduled" + (f" after {previous}" if previous and previous != stage
+                                                                  else "")
+    elif name == "wait.scheduled":
+        probe = data.get("probe") or {}
+        what = probe.get("kind", "none") + (f" {probe['value']}" if probe.get("value") else "")
+        text = f"waiting up to {data.get('seconds')}s for {what} before {stage}, then {data.get('then')}"
+    elif name == "wait.elapsed":
+        text = f"waited {data.get('seconds')}s before {stage}: {data.get('observed')}"
     elif name == "run.cancelled":
         text = f"cancelled at {stage}: {data.get('reason')}"
     elif name == "run.done":
@@ -184,13 +210,31 @@ def stage_rows(run: Run, style: Style, tail: StreamTail, now: float) -> list[str
             rows.append(f"  {style.dim('·')} {style.dim(label.rstrip())}")
         elif run.status == RUNNING:
             live = attempts[-1] if attempts and not attempts[-1].get("ended_at") else None
+            undecided = run.undecided_attempt()
+            if live is None and undecided is not None and undecided["stage"] == stage:
+                closed = undecided
+                who = "foreman deciding" if run.data.get("foreman") else "deciding"
+                parts = [f"attempt {closed['n']} {closed.get('outcome')}", who]
+                rows.append(f"  {style.active('▶')} {label}{style.active('running')}  {', '.join(parts)}")
+                continue
             started = parse_ts(live["started_at"]).timestamp() if live else now
-            parts = [f"attempt {live['n'] if live else len(attempts) + 1}", human_duration(now - started)]
+            kind = f" ({live['kind']})" if live and live.get("kind", "stage") != "stage" else ""
+            parts = [f"attempt {live['n'] if live else len(attempts) + 1}{kind}", human_duration(now - started)]
             if tail.tokens:
                 parts.append(f"{short_tokens(tail.tokens)} tokens")
             rows.append(f"  {style.active('▶')} {label}{style.active('running')}  {', '.join(parts)}")
         elif run.status == QUEUED:
-            waiting = f"attempt {len(attempts) + 1}" + (", waiting for a stage slot" if stage != "scope" else "")
+            wait = run.data.get("wait") or {}
+            action = run.data.get("next_action") or {}
+            if wait.get("stage") == stage:
+                probe = wait.get("probe") or {}
+                left = max(0, int(float(wait.get("until") or now) - now))
+                waiting = (f"waiting {human_duration(left)} for {probe.get('kind', 'none')}"
+                           f"{' ' + probe['value'] if probe.get('value') else ''}, then {wait.get('then')}")
+            elif action.get("stage") == stage and action.get("kind"):
+                waiting = f"{action['kind']} next, waiting for a stage slot"
+            else:
+                waiting = f"attempt {len(attempts) + 1}" + (", waiting for a stage slot" if stage != "scope" else "")
             rows.append(f"  {style.active('…')} {label}{style.active('queued')}   {waiting}")
         elif run.status == NEEDS_HUMAN:
             rows.append(f"  {style.bad('!')} {label}{style.bad('needs you')}")
@@ -271,10 +315,19 @@ def status_block(run: Run, style: Style, tail: StreamTail, now: float, alive: bo
     wait = f", waited {waiting:.0f}s for a heavy-command lease" if waiting >= 1 else ""
     footer = f"  retries {retries['used']}/{retries['budget']}, {short_tokens(tokens)} tokens{cached}{wait}, {worker}"
     lines.append(footer)
+    decisions = run.data.get("decisions") or []
+    if decisions:
+        last = decisions[-1]
+        who = "foreman" if last.get("source") == "foreman" else "runner (foreman fell back)"
+        applied = "" if last.get("applied") or last.get("source") != "foreman" else " (recorded, not applied)"
+        lines.append("  " + style.dim(clip(f"{who}: {last.get('action') or 'no decision'}{applied}: "
+                                           f"{last.get('summary') or last.get('reason') or ''}", width - 3)))
     if run.status in (NEEDS_HUMAN, CANCELLED, PAUSED) and run.data["human"].get("reason"):
         # Wrapped, not clipped: the reason is what the operator has to act on.
         for line in textwrap.wrap(run.data["human"]["reason"], width - 3)[:BLOCKER_LINES]:
             lines.append("  " + style.bad(line))
+        if run.data["human"].get("operator_action"):
+            lines.append("  " + style.active(clip("next: " + run.data["human"]["operator_action"], width - 3)))
     lines.extend(attention_lines(run, style, width, all_attempts=all_diagnostics))
     if run.status == RUNNING and (tail.latest_agent or tail.latest):
         insight = tail.latest_agent or tail.latest

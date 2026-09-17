@@ -49,6 +49,7 @@ class RecoveryTestCase(FactoryTestCase):
 
     def codex_execs(self, stage: str | None = None) -> list[dict]:
         return [c for c in self.stub_calls("codex") if c["argv"][:1] == ["exec"]
+                and c["env"].get("FACTORY_ROLE") != "foreman"
                 and (stage is None or c["env"].get("FACTORY_STAGE") == stage)]
 
     def finished_events(self, run: Run, stage: str) -> list[dict]:
@@ -242,9 +243,12 @@ class ExactlyOnceTests(RecoveryTestCase):
         self.start(run, fault="worker.before_transition_save:build:1")
         data = self.wait_dead(run)
         self.assertEqual((data["status"], data["stage"]), ("running", "build"))
-        self.assertIsNone(self.attempts(data, "build")[0]["ended_at"])
+        # The attempt is closed and saved before its transition; only the decision is missing.
+        closed = self.attempts(data, "build")[0]
+        self.assertEqual(closed["outcome"], "done")
+        self.assertNotIn("transition", closed)
         code, out, _ = self.call("resume", run.id, "--detach")
-        self.assertIn("finished while no worker was alive", out)
+        self.assertIn("its next step was never chosen", out)
         data = self.wait_status(run.dir, ("done",), timeout=90)
         for stage in ("scope-review", "build", "ship"):
             self.assertEqual(len(self.codex_execs(stage)), 1, stage)

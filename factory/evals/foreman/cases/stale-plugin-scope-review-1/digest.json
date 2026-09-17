@@ -1,0 +1,178 @@
+{
+  "schema": "factory.digest/1",
+  "generated_at": "2026-09-17T08:12:41Z",
+  "run": {
+    "id": "<run_id>",
+    "repo": "<repo>",
+    "plan": "need-add-support-adding-comments",
+    "branch": "factory/need-add-support-adding-comments",
+    "base": "main",
+    "base_sha": "0c92930c711283417fecc49c5fce92ed1f34fe59",
+    "status": "running",
+    "stage": "scope-review",
+    "created_at": "2026-09-16T08:06:07Z",
+    "request_file": "<run_dir>/request.md",
+    "source": {
+      "kind": "text"
+    }
+  },
+  "attempts": [
+    {
+      "stage": "scope",
+      "n": 1,
+      "kind": "stage",
+      "host": "claude",
+      "model": "fable",
+      "effort": "medium",
+      "outcome": "done",
+      "code": null,
+      "retryable": true,
+      "source": "gate",
+      "reason": null,
+      "fingerprint": null,
+      "tokens": 0,
+      "seconds": 3111,
+      "started_at": "2026-09-16T08:06:08Z",
+      "ended_at": "2026-09-16T08:57:59Z",
+      "conditions": [],
+      "warning": null,
+      "gate_file": null,
+      "last_message_file": null,
+      "stderr_file": null,
+      "prompt_file": null,
+      "decision": null
+    },
+    {
+      "stage": "scope-review",
+      "n": 1,
+      "kind": "stage",
+      "host": "codex",
+      "model": "openai.gpt-5.6-sol",
+      "effort": "low",
+      "outcome": "failed",
+      "code": "runtime.skills_mismatch",
+      "retryable": false,
+      "source": "runner",
+      "reason": "the Codex factory plugin Codex would load (<home>/.codex/plugins/cache/nurbot/factory/0.1.0) differs from this runner's generated skills (<home>/ws/workflow/plugins/factory); reinstall it with `codex plugin add factory@nurbot` (bump the version with -devN if Codex keeps the old copy...",
+      "fingerprint": null,
+      "tokens": 0,
+      "seconds": 0,
+      "started_at": "2026-09-16T08:57:59Z",
+      "ended_at": "2026-09-16T08:57:59Z",
+      "conditions": [],
+      "warning": null,
+      "gate_file": "<run_dir>/attempts/scope-review-1/gate.json",
+      "last_message_file": null,
+      "stderr_file": null,
+      "prompt_file": "<run_dir>/attempts/scope-review-1/prompt.txt",
+      "decision": null
+    }
+  ],
+  "conditions": [],
+  "pr": {
+    "number": null,
+    "url": null,
+    "draft": null,
+    "checks": null,
+    "merged": null
+  },
+  "operations": [],
+  "decisions": [],
+  "overrides": [],
+  "guidance": {},
+  "operator_note": "retry",
+  "git": {
+    "head": "5b87c1482dd49235be1171c28d47d69e2e164958",
+    "branch": "factory/need-add-support-adding-comments",
+    "dirty_tracked": [],
+    "changed": [],
+    "log": [
+      "5b87c14 docs(decisions): refine comments build contracts",
+      "b507b75 docs(decisions): promote the cell-comments spec decisions and contracts",
+      "2135d73 docs(architecture): capture the system overview",
+      "0c92930 Allow OMR savings access to proto state",
+      "268890b Document full staging stack deploy",
+      "720a454 Improve OMR hosting outlook",
+      "28a15aa Fix orphan-version test to age lastWriteAt, not createdAt",
+      "a69edca Format savings collection modules"
+    ],
+    "unpushed": null
+  },
+  "caps": {
+    "stages": {
+      "scope-review": {
+        "stage_attempts": {
+          "used": 1,
+          "max": 6
+        },
+        "repairs": {
+          "used": 0,
+          "max": 3
+        },
+        "wait_minutes": {
+          "used": 0.0,
+          "max": 120
+        }
+      },
+      "build": {
+        "stage_attempts": {
+          "used": 0,
+          "max": 6
+        },
+        "repairs": {
+          "used": 0,
+          "max": 3
+        },
+        "wait_minutes": {
+          "used": 0.0,
+          "max": 120
+        }
+      },
+      "ship": {
+        "stage_attempts": {
+          "used": 0,
+          "max": 6
+        },
+        "repairs": {
+          "used": 0,
+          "max": 3
+        },
+        "wait_minutes": {
+          "used": 0.0,
+          "max": 120
+        }
+      }
+    },
+    "run_hours": {
+      "used": 24.11,
+      "max": 24
+    },
+    "overrides": {
+      "used": 0,
+      "max": 2
+    },
+    "retries": {
+      "used": 4,
+      "budget": 5
+    }
+  },
+  "paths": {
+    "run_dir": "<run_dir>",
+    "worktree": "<worktree>",
+    "plan_dir": "<worktree>/.dev/need-add-support-adding-comments",
+    "report_dir": "<run_dir>/reports",
+    "evidence_dir": "<run_dir>/evidence",
+    "intent_file": null,
+    "events": "<run_dir>/events.jsonl",
+    "results": {
+      "scope-review": "<worktree>/.dev/need-add-support-adding-comments/scope-review-result.json",
+      "build": null,
+      "ship": null
+    }
+  },
+  "policy": {
+    "mode": "codex",
+    "fallback": "model.decide()",
+    "decision_schema": "factory.decision/1"
+  }
+}

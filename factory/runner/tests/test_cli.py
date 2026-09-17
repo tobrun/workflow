@@ -67,8 +67,8 @@ class OutputTests(CliTestCase):
         self.assertEqual(code, 0)
         rows = json.loads(stdout)
         self.assertEqual(sorted(rows[0]), sorted([
-            "archived", "blocker", "branch", "cached_input_tokens", "created_at", "duration", "execution_alive",
-            "gate_seconds", "group", "heartbeat_age", "id", "next", "note", "order", "pr", "queue_seconds", "repo", "retries", "stage", "stale", "status", "tokens", "updated_at", "worker_alive",
+            "archived", "blocker", "branch", "cached_input_tokens", "created_at", "decision", "duration", "execution_alive",
+            "gate_seconds", "group", "heartbeat_age", "id", "next", "note", "order", "overrides", "pr", "queue_seconds", "repo", "retries", "stage", "stale", "status", "tokens", "updated_at", "worker_alive",
         ]))
         code, stdout, _ = self.call("show", run.id, "--json")
         payload = json.loads(stdout)

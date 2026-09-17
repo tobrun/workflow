@@ -1,0 +1,6 @@
+interface:
+  display_name: "Foreman"
+  short_description: "Decide a factory run's next step"
+  default_prompt: "Use $factory:foreman to decide what the factory runner does next for this run."
+policy:
+  allow_implicit_invocation: false

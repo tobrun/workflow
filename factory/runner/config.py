@@ -14,6 +14,8 @@ from pathlib import Path
 SCHEMA = 1
 SANDBOX_MODES = ("workspace-write", "bypass")
 BROWSER_MODES = ("auto", "off")
+FOREMAN_MODES = ("off", "shadow", "codex")
+EFFORTS = ("low", "medium", "high", "xhigh")
 
 DEFAULTS = {
     "schema": SCHEMA,
@@ -29,6 +31,20 @@ DEFAULTS = {
     "port_range": [20000, 29999],
     # "auto" hosts one headless Chrome per build and ship attempt and per e2e gate, reached over CDP; see runner/browser.py.
     "browser": "auto",
+    # The foreman: one long-lived Codex session per run that decides what the worker does next.
+    # "codex" applies its decisions; "shadow" consults it and records the decision without applying it;
+    # "off" keeps the fixed pipeline and model.decide(). Caps below bind whoever decides.
+    "foreman": "codex",
+    "foreman_model": "openai.gpt-5.6-luna",
+    "foreman_effort": "medium",
+    "foreman_turn_timeout_s": 900,
+    "foreman_turns_per_event": 2,
+    "foreman_context_tokens": 400000,
+    "max_stage_attempts": 6,
+    "max_repairs_per_stage": 3,
+    "max_wait_minutes": 120,
+    "max_run_hours": 24,
+    "max_overrides_per_run": 2,
     "repos": {},
 }
 
@@ -63,6 +79,17 @@ class Config:
     max_heavy_commands: int = 2
     port_range: tuple = (20000, 29999)
     browser: str = "auto"
+    foreman: str = "codex"
+    foreman_model: str = "openai.gpt-5.6-luna"
+    foreman_effort: str = "medium"
+    foreman_turn_timeout_s: float = 900
+    foreman_turns_per_event: int = 2
+    foreman_context_tokens: int = 400000
+    max_stage_attempts: int = 6
+    max_repairs_per_stage: int = 3
+    max_wait_minutes: float = 120
+    max_run_hours: float = 24
+    max_overrides_per_run: int = 2
     repos: dict = field(default_factory=dict)
     raw: dict = field(default_factory=dict)
 
@@ -99,6 +126,19 @@ def parse(data: object) -> Config:
             raise ConfigError(f"config.json: '{key}' must be true or false, got {merged[key]!r}")
     if merged["browser"] not in BROWSER_MODES:
         raise ConfigError(f"config.json: 'browser' must be one of {', '.join(BROWSER_MODES)}, got {merged['browser']!r}")
+    if merged["foreman"] not in FOREMAN_MODES:
+        raise ConfigError(f"config.json: 'foreman' must be one of {', '.join(FOREMAN_MODES)}, got {merged['foreman']!r}")
+    if not isinstance(merged["foreman_model"], str) or not merged["foreman_model"].strip():
+        raise ConfigError(f"config.json: 'foreman_model' must be a model name, got {merged['foreman_model']!r}")
+    if merged["foreman_effort"] not in EFFORTS:
+        raise ConfigError(f"config.json: 'foreman_effort' must be one of {', '.join(EFFORTS)}, got {merged['foreman_effort']!r}")
+    for key in ("foreman_turns_per_event", "foreman_context_tokens", "max_stage_attempts", "max_repairs_per_stage"):
+        _positive_number(merged, key, integer=True)
+    for key in ("foreman_turn_timeout_s", "max_wait_minutes", "max_run_hours"):
+        _positive_number(merged, key, integer=False)
+    overrides = merged["max_overrides_per_run"]
+    if isinstance(overrides, bool) or not isinstance(overrides, int) or overrides < 0:
+        raise ConfigError(f"config.json: 'max_overrides_per_run' must be a non-negative integer, got {overrides!r}")
     if not isinstance(merged["repos"], dict):
         raise ConfigError("config.json: 'repos' must be an object keyed by absolute repository path")
     repos: dict = {}
@@ -125,6 +165,17 @@ def parse(data: object) -> Config:
         max_heavy_commands=merged["max_heavy_commands"],
         port_range=tuple(merged["port_range"]),
         browser=merged["browser"],
+        foreman=merged["foreman"],
+        foreman_model=merged["foreman_model"],
+        foreman_effort=merged["foreman_effort"],
+        foreman_turn_timeout_s=merged["foreman_turn_timeout_s"],
+        foreman_turns_per_event=merged["foreman_turns_per_event"],
+        foreman_context_tokens=merged["foreman_context_tokens"],
+        max_stage_attempts=merged["max_stage_attempts"],
+        max_repairs_per_stage=merged["max_repairs_per_stage"],
+        max_wait_minutes=merged["max_wait_minutes"],
+        max_run_hours=merged["max_run_hours"],
+        max_overrides_per_run=merged["max_overrides_per_run"],
         repos=repos,
         raw=data,
     )

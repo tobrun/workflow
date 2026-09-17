@@ -59,12 +59,12 @@ class HappyPathTests(WorkerTestCase):
         self.assertEqual(git(run.worktree, "show", "--name-only", "--format=", "HEAD"), "e2e/run.py\ntests/test_webhook.py\nwebhook.py")
         self.assertIsNone(data.get("slot"))
         names = self.event_names(run)
-        order = ["slot.acquired", "stage.started", "process.spawned", "process.exited", "gate.evaluated",
-                 "stage.finished", "run.queued", "slot.released"]
+        # The slot is released before the closed attempt is decided; its events go out with the transition.
+        order = ["slot.acquired", "stage.started", "process.spawned", "process.exited", "slot.released",
+                 "gate.evaluated", "stage.finished", "run.queued"]
         positions = [names.index(name) for name in order]
         self.assertEqual(positions, sorted(positions))
-        self.assertEqual(names[-1], "slot.released")
-        self.assertIn("run.done", names)
+        self.assertEqual(names[-1], "run.done")
         for stage in ("scope-review", "build", "ship"):
             attempt_dir = run.attempt_dir(stage, 1)
             for name in ("prompt.txt", "stdout.jsonl", "stderr.log", "last-message.md", "gate.json"):

@@ -38,6 +38,11 @@ TRANSITIONS: dict[tuple[str, str], str] = {
     (QUEUED, "slot_acquired"): RUNNING,
     (RUNNING, "stage_passed"): "next",
     (RUNNING, "retry"): QUEUED,
+    (RUNNING, "launch"): QUEUED,
+    (RUNNING, "regate"): QUEUED,
+    (RUNNING, "publish"): QUEUED,
+    (RUNNING, "wait"): QUEUED,
+    (RUNNING, "repair"): QUEUED,
     (RUNNING, "exhausted"): CANCELLED,
     (RUNNING, "park"): NEEDS_HUMAN,
     (NEEDS_HUMAN, "operator_retry"): QUEUED,
@@ -52,6 +57,11 @@ TRANSITIONS: dict[tuple[str, str], str] = {
 }
 for _status in (NEW, SCOPING, QUEUED, RUNNING, PAUSED, NEEDS_HUMAN):
     TRANSITIONS[(_status, "cancel")] = CANCELLED
+
+
+# Codes no decision maker may lift: the foreman parks on them whatever it decided.
+HARD_STOPS = ("secret.found", "action.destructive", "intent.missing", "intent.tampered")
+GUIDANCE_MAX_BYTES = 16 * 1024
 
 
 class InvalidTransition(Exception):
@@ -289,8 +299,12 @@ class Run:
 
     # --- transitions -------------------------------------------------------------
 
-    def transition(self, action: str, *, reason: str | None = None) -> str:
-        """Validate and apply one move from the transition table; returns the new status."""
+    def transition(self, action: str, *, reason: str | None = None, stage: str | None = None,
+                   operator_action: str | None = None) -> str:
+        """Validate and apply one move from the transition table; returns the new status.
+
+        `stage` names the stage a `launch` queues; `operator_action` is the exact repair a park asks for.
+        """
         target = TRANSITIONS.get((self.status, action))
         if target is None:
             raise InvalidTransition(self.status, action)
@@ -299,17 +313,32 @@ class Run:
             target = DONE if following is None else QUEUED
             if following is not None:
                 self.data["stage"] = following
+        if stage is not None:
+            if stage not in STAGES:
+                raise ValueError(f"unknown stage {stage!r}")
+            self.data["stage"] = stage
         self.data["status"] = target
         if target == QUEUED:
             self.data["queued_at"] = utc_now()
         if target == NEEDS_HUMAN:
-            self.data["human"].update({"reason": reason, "since": utc_now()})
+            self.data["human"].update({"reason": reason, "since": utc_now(), "operator_action": operator_action})
         elif target in (QUEUED, SCOPING, DONE):
-            self.data["human"].update({"reason": None, "since": None})
+            self.data["human"].update({"reason": None, "since": None, "operator_action": None})
         elif target in (CANCELLED, PAUSED):
             self.data["human"].update({"reason": reason or ("paused by operator" if target == PAUSED else None),
-                                       "since": utc_now()})
+                                       "since": utc_now(), "operator_action": operator_action})
         return target
+
+    def undecided_attempt(self) -> dict | None:
+        """The closed attempt whose next step is not chosen yet: the run is still running on it."""
+        if self.status != RUNNING or self.stage not in HEADLESS:
+            return None
+        last = self.last_attempt()
+        # Only an attempt of the running stage counts: the interactive scope attempt before it never
+        # carries a transition record, and a stage whose attempt has not begun has nothing to decide.
+        if last and last["stage"] == self.stage and last.get("ended_at") is not None and "transition" not in last:
+            return last
+        return None
 
     def retry_needed(self, stage: str | None = None) -> bool:
         """Attempt 1 of each headless stage is free; every later attempt costs one retry."""
@@ -329,13 +358,15 @@ class Run:
 
     # --- attempts ---------------------------------------------------------------
 
-    def begin_attempt(self, stage: str, *, host: str, model: str, effort: str) -> dict:
+    def begin_attempt(self, stage: str, *, host: str, model: str, effort: str, kind: str = "stage") -> dict:
+        """An attempt of `kind` stage (an agent runs the skill), repair (a bounded agent fix), regate, or publish."""
         record = self.stage_record(stage)
         record["attempts"] += 1
         queued = parse_ts(self.data.get("queued_at"))
         attempt = {
             "stage": stage,
             "n": record["attempts"],
+            "kind": kind,
             "host": host,
             "model": model,
             "effort": effort,
@@ -418,3 +449,140 @@ def decide(run: Run, attempt: dict, *, stop_on_repeated_reason: bool) -> tuple[s
         used, budget = run.data["retries"]["used"], run.data["retries"]["budget"]
         return "exhausted", f"retry budget exhausted ({used}/{budget}); last reason: {reason}"
     return "retry", reason
+
+
+# --- the foreman's decision under the runner's caps ---------------------------------------
+
+def caps_exhausted(run: Run, cfg, target: str) -> str | None:
+    """Why another agent attempt at `target` is not allowed, or None. The runner enforces these, not the session."""
+    base = int((run.data.get("caps_base") or {}).get(target, 0))
+    attempts = [a for a in run.stage_attempts(target)[base:] if a.get("kind", "stage") == "stage"]
+    if len(attempts) >= cfg.max_stage_attempts:
+        return f"cap reached: {target} has used {len(attempts)} of {cfg.max_stage_attempts} stage attempts"
+    started = parse_ts(run.data.get("created_at"))
+    if started is not None:
+        hours = (datetime.now(timezone.utc) - started).total_seconds() / 3600
+        if hours >= cfg.max_run_hours:
+            return f"cap reached: the run is {hours:.1f} hours old, the limit is {cfg.max_run_hours}"
+    recent = attempts[-3:]
+    if len(recent) == 3 and all(a.get("outcome") != "done" and a.get("code") and a.get("fingerprint") for a in recent) \
+            and len({(a["code"], a["fingerprint"]) for a in recent}) == 1:
+        return (f"no progress: {target} attempts {recent[0]['n']}, {recent[1]['n']} and {recent[2]['n']} all failed with "
+                f"{recent[0]['code']} and left the commit and plan files unchanged ({recent[0]['fingerprint'][:12]})")
+    return None
+
+
+def failure_codes(run: Run, attempt: dict) -> set[str]:
+    """The gate code and every open condition code an attempt failed with."""
+    codes = {attempt.get("code")}
+    by_id = {c.get("id"): c for c in run.data.get("conditions") or []}
+    for cid in attempt.get("conditions") or []:
+        condition = by_id.get(cid) or {}
+        if condition.get("status") != "resolved":
+            codes.add(condition.get("code"))
+    return {code for code in codes if code}
+
+
+def hard_stop(run: Run, attempt: dict) -> str | None:
+    """A code on this attempt or its open conditions that no decision may lift."""
+    codes = [attempt.get("code")]
+    by_id = {c.get("id"): c for c in run.data.get("conditions") or []}
+    for cid in attempt.get("conditions") or []:
+        condition = by_id.get(cid) or {}
+        if condition.get("status", "open") != "resolved":
+            codes.append(condition.get("code"))
+    return next((code for code in codes if code in HARD_STOPS), None)
+
+
+def enforce(run: Run, attempt: dict, decision: dict, cfg) -> tuple[str, str | None, str | None]:
+    """Turn a validated foreman decision into a transition action the runner allows.
+
+    Returns (action, reason, rejection). A rejection names why the decision was refused; the caller
+    then falls back to `decide()`. Hard stops and caps win over the decision and never count as rejections.
+    """
+    outcome = attempt.get("outcome")
+    stage = attempt["stage"]
+    if outcome == "cancelled":
+        return "cancel", attempt.get("reason") or "cancelled by operator", None
+    stop = hard_stop(run, attempt)
+    if stop:
+        return "park", f"hard stop {stop}: {attempt.get('reason')}", None
+    action = decision["action"]
+    if action == "advance":
+        if decision.get("stage") != stage:
+            return "", None, f"advance names {decision.get('stage')!r} but the finished attempt is {stage}"
+        if outcome == "done":
+            return "stage_passed", None, None
+        override = decision.get("override")
+        if not override:
+            return "", None, (f"advance needs a done outcome or an override naming the failed code; this attempt "
+                              f"ended {outcome} [{attempt.get('code')}]")
+        used = len(run.data.get("overrides") or [])
+        if used >= cfg.max_overrides_per_run:
+            return "", None, f"override refused: {used} of {cfg.max_overrides_per_run} overrides already used"
+        codes = failure_codes(run, attempt)
+        if override["gate_code"] not in codes:
+            return "", None, (f"override names {override['gate_code']!r} but this attempt failed with "
+                              f"{', '.join(sorted(codes)) or 'no code'}")
+        return "override", None, None
+    if action == "launch":
+        target = decision["stage"]
+        if HEADLESS.index(target) > HEADLESS.index(stage) and outcome != "done":
+            return "", None, f"launch of {target} would skip the failed {stage} gate; advance it or launch {stage} again"
+        cap = caps_exhausted(run, cfg, target)
+        if cap:
+            return "park", f"{cap}; last reason: {attempt.get('reason')}", None
+        return ("retry" if target == stage else "launch"), decision.get("summary"), None
+    if action == "repair":
+        target = decision["stage"]
+        history = run.stage_attempts(target)
+        if not any(a.get("kind", "stage") == "stage" for a in history):
+            return "", None, f"{target} has no attempt to repair; launch it first"
+        base = int((run.data.get("caps_base") or {}).get(target, 0))
+        repairs = sum(1 for a in history[base:] if a.get("kind") == "repair")
+        if repairs >= cfg.max_repairs_per_stage:
+            return "", None, f"{target} already used {repairs} of {cfg.max_repairs_per_stage} repairs; launch it instead"
+        return "repair", decision.get("summary"), None
+    if action in ("regate", "publish"):
+        target = decision.get("stage") or ("ship" if action == "publish" else stage)
+        if action == "publish" and target != "ship":
+            return "", None, "publish applies to ship only: it pushes the run branch and opens the pull request"
+        history = run.stage_attempts(target)
+        if not any(a.get("kind", "stage") == "stage" for a in history):
+            return "", None, f"{target} has no attempt to judge again; launch it first"
+        trailing = 0
+        for prior in reversed(history):
+            if prior.get("kind") in ("regate", "publish"):
+                trailing += 1
+            else:
+                break
+        if trailing >= 2:
+            return "", None, (f"{target} already had {trailing} gate-only attempts in a row since an agent worked on it; "
+                              "launch or repair it instead")
+        return action, decision.get("summary"), None
+    if action == "wait":
+        used = float((run.data.get("waits") or {}).get(stage, 0))
+        remaining = cfg.max_wait_minutes * 60 - used
+        if remaining <= 0:
+            return "park", (f"cap reached: {stage} has waited {used / 60:.1f} of {cfg.max_wait_minutes} minutes; "
+                            f"last reason: {attempt.get('reason')}"), None
+        return "wait", decision.get("summary"), None
+    if action == "park":
+        return "park", decision["park"]["reason"], None
+    if action == "cancel":
+        return "cancel", decision["reason"], None
+    if action == "rescope":
+        return "rescope", decision["reason"], None
+    return "", None, f"action {action!r} is not available yet"
+
+
+def remember_guidance(run: Run, stage: str, heading: str, text: str) -> str:
+    """Append the foreman's guidance for a stage, oldest sections dropped past GUIDANCE_MAX_BYTES."""
+    entries = run.data.setdefault("guidance", {})
+    section = f"## {heading}\n\n{text.strip()}\n"
+    combined = (entries.get(stage) or "").rstrip()
+    combined = f"{combined}\n\n{section}" if combined else section
+    while len(combined.encode("utf-8")) > GUIDANCE_MAX_BYTES and combined.count("\n## ") >= 1:
+        combined = combined[combined.index("\n## ") + 1:]
+    entries[stage] = combined
+    return combined

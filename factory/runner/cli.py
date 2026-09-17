@@ -15,7 +15,8 @@ import time
 import uuid
 from pathlib import Path
 
-from runner import (FACTORY_ROOT, browser, commands, conditions, config, control, dashboard, events, executor, gates,
+from runner import (FACTORY_ROOT, browser, commands, conditions, config, control, dashboard, events, executor, foreman,
+                    gates,
                     hosts, intent, pricing, provenance, records, requests, slots, supervise, watch)
 from runner import worktree as wt
 from runner.model import (CANCELLED, DONE, NEEDS_HUMAN, NEW, PAUSED, QUEUED, RUNNING, SCOPING, InvalidTransition,
@@ -488,6 +489,14 @@ def show_text(home: Path, cfg: config.Config, run: Run) -> None:
     out(f"retries    {data['retries']['used']}/{data['retries']['budget']} paid"
         + (f"; {operation_retries} deterministic operation retr{'y' if operation_retries == 1 else 'ies'} "
            "(not charged)" if operation_retries else ""))
+    if cfg.foreman != "off" or data.get("foreman"):
+        caps = foreman.caps(run, cfg)
+        stage_caps = caps["stages"].get(run.stage) or caps["stages"]["build"]
+        out(f"caps       {run.stage} attempts {stage_caps['stage_attempts']['used']}/{stage_caps['stage_attempts']['max']}, "
+            f"repairs {stage_caps['repairs']['used']}/{stage_caps['repairs']['max']}, "
+            f"wait {stage_caps['wait_minutes']['used']}/{stage_caps['wait_minutes']['max']} min, "
+            f"run {caps['run_hours']['used']}/{caps['run_hours']['max']} h, "
+            f"overrides {caps['overrides']['used']}/{caps['overrides']['max']}")
     latest = run.last_attempt()
     if latest and latest.get("ended_at") is None and run.status == RUNNING:
         current = intent.read_json(run.attempt_dir(latest["stage"], latest["n"]) / "subphase.json")
@@ -510,6 +519,8 @@ def show_text(home: Path, cfg: config.Config, run: Run) -> None:
         out(f"tokens     {data.get('tokens_total', 0)} (categories not recorded for this run)")
     if data["human"].get("reason"):
         out(f"blocker    {data['human']['reason']}")
+    if data["human"].get("operator_action"):
+        out(f"action     {data['human']['operator_action']}")
     if data["human"].get("note"):
         out(f"note       {data['human']['note']}")
     if control.pending_note(run):
@@ -527,6 +538,36 @@ def show_text(home: Path, cfg: config.Config, run: Run) -> None:
         check_text = ", ".join(f"{k} {len(v)}" for k, v in checks.items() if isinstance(v, list)) or "not recorded"
         out(f"pr         #{pr['number']} {pr['url']} ({'draft' if pr.get('draft') else 'ready'}; checks {check_text}; "
             f"merged {pr.get('merged')})")
+    state = data.get("foreman")
+    if state:
+        usage = state.get("usage") or {}
+        out()
+        out(f"foreman    {cfg.foreman} mode, session {state.get('session_id') or 'none'}, {state.get('turns', 0)} turn(s), "
+            f"{state.get('restarts', 0)} restart(s), in {usage.get('input', 0)} / out {usage.get('output', 0)} tokens")
+        if state.get("last"):
+            out(f"           last turn {state['last'].get('turn')}: {state['last'].get('source')}"
+                + (f" ({state['last'].get('reason')})" if state["last"].get("reason") else ""))
+    if data.get("decisions"):
+        out()
+        out("decisions")
+        for decision in data["decisions"][-8:]:
+            if decision.get("source") == "foreman":
+                applied = "applied" if decision.get("applied") else "recorded, not applied"
+                target = decision.get("target")
+                where = f" {target}" if target and target != decision.get("stage") else ""
+                out(f"  {decision['stage']}-{decision['attempt']} turn {decision['turn']}: {decision['action']}{where} "
+                    f"({applied}): {decision.get('summary')}")
+            else:
+                out(f"  {decision['stage']}-{decision['attempt']} turn {decision['turn']}: no decision, the runner chose "
+                    f"({decision.get('reason')})")
+    if data.get("overrides"):
+        out()
+        out("overrides")
+        for entry in data["overrides"]:
+            out(f"  {entry['stage']}-{entry['attempt']} {entry['gate_code']} (turn {entry.get('turn')}): "
+                f"{entry['justification']}")
+        if data.get("overrides_noted"):
+            out(f"  {data['overrides_noted']}")
     if data.get("conditions"):
         out()
         out("conditions")
@@ -556,10 +597,19 @@ def show_text(home: Path, cfg: config.Config, run: Run) -> None:
             timing = (f" (queue {attempt.get('queue_seconds') or 0}s, agent {attempt['host_seconds']:.0f}s, "
                       f"gate {attempt.get('gate_seconds', 0):.0f}s of which verification "
                       f"{attempt.get('verification_seconds', 0):.0f}s and lease wait {attempt.get('lease_wait_seconds', 0):.0f}s)")
-        out(f"  {attempt['stage']}-{attempt['n']}  {attempt.get('outcome') or 'running'}  {duration}{timing}  "
+        kind = f" ({attempt['kind']})" if attempt.get("kind", "stage") != "stage" else ""
+        out(f"  {attempt['stage']}-{attempt['n']}{kind}  {attempt.get('outcome') or 'running'}  {duration}{timing}  "
             f"{attempt['model']}/{attempt['effort']}  tokens {attempt.get('tokens', 0)}")
         if attempt.get("reason"):
             out(f"    {attempt['reason']}" + (f" [{attempt['code']}]" if attempt.get("code") else ""))
+        if attempt.get("foreman"):
+            decision = attempt["foreman"]
+            if decision.get("source") == "foreman":
+                out(f"    foreman turn {decision['turn']}: {decision.get('action')}"
+                    + (f" -> {decision['applied']}" if decision.get("applied") else "")
+                    + (f" (refused: {decision['rejected']})" if decision.get("rejected") else ""))
+            else:
+                out(f"    foreman turn {decision.get('turn')}: no decision ({decision.get('reason')})")
     out()
     out("artifacts")
     for key, value in data["artifacts"].items():
@@ -578,6 +628,69 @@ def cmd_show(args: argparse.Namespace, home: Path, cfg: config.Config) -> int:
         out(json.dumps({"summary": summary, "run": run.data}, indent=2, sort_keys=True))
         return 0
     show_text(home, cfg, run)
+    return 0
+
+
+def cmd_foreman(args: argparse.Namespace, home: Path, cfg: config.Config) -> int:
+    """The foreman session's state and decisions, or one turn's prompt, answer, and record."""
+    run = load_run(home, args.id, include_archive=True)
+    state = run.data.get("foreman") or {}
+    turns_dir = run.dir / foreman.DIR / "turns"
+    if args.turn is not None:
+        turn_dir = turns_dir / str(args.turn)
+        record = intent.read_json(turn_dir / "decision.json")
+        if record is None:
+            out(f"No foreman turn {args.turn} for {run.id}.")
+            return 1
+        if args.json:
+            out(json.dumps(record, indent=2))
+            return 0
+        out(f"Foreman turn {args.turn} of {run.id}: {record.get('source')}"
+            + (f" ({record.get('reason')})" if record.get("reason") else "") + f", {record.get('seconds')}s, "
+            f"{'cold start' if record.get('cold') else 'resumed'} session {record.get('thread_id')}")
+        out()
+        out("prompt")
+        for line in (turn_dir / "prompt.txt").read_text(encoding="utf-8").splitlines() if (turn_dir / "prompt.txt").exists() else []:
+            out(f"  {line}")
+        out()
+        out("decision")
+        out(json.dumps(record.get("decision"), indent=2) if record.get("decision") else "  none")
+        hands = (record.get("extra") or {}).get("hands") or {}
+        if hands.get("touched") or hands.get("committed"):
+            out()
+            out(f"hands      touched {hands.get('touched')}, committed {hands.get('committed')}")
+        return 0
+    if args.json:
+        out(json.dumps({"foreman": state, "decisions": run.data.get("decisions") or [],
+                        "overrides": run.data.get("overrides") or [], "caps": foreman.caps(run, cfg)}, indent=2))
+        return 0
+    if not state:
+        out(f"No foreman session for {run.id} (foreman mode is {cfg.foreman}).")
+        return 0
+    usage = state.get("usage") or {}
+    out(f"Foreman of {run.id}: {cfg.foreman} mode, session {state.get('session_id') or 'none'}, "
+        f"{state.get('turns', 0)} turn(s), {state.get('restarts', 0)} restart(s), "
+        f"in {usage.get('input', 0)} / out {usage.get('output', 0)} tokens.")
+    out()
+    out("decisions")
+    for decision in run.data.get("decisions") or []:
+        if decision.get("source") == "foreman":
+            applied = "applied" if decision.get("applied") else "recorded, not applied"
+            target = decision.get("target")
+            where = f" {target}" if target and target != decision.get("stage") else ""
+            out(f"  turn {decision['turn']:>3}  {decision['stage']}-{decision['attempt']}  {decision['action']}{where} "
+                f"({applied}): {decision.get('summary')}")
+        else:
+            out(f"  turn {decision['turn']:>3}  {decision['stage']}-{decision['attempt']}  no decision: {decision.get('reason')}")
+    if not run.data.get("decisions"):
+        out("  none yet")
+    if run.data.get("overrides"):
+        out()
+        out("overrides")
+        for entry in run.data["overrides"]:
+            out(f"  {entry['stage']}-{entry['attempt']} {entry['gate_code']}: {entry['justification']}")
+    out()
+    out(f"> factory foreman {run.id} --turn N")
     return 0
 
 
@@ -1348,6 +1461,12 @@ def parser() -> argparse.ArgumentParser:
     note.add_argument("id")
     note.add_argument("text")
     note.set_defaults(func=cmd_note)
+
+    boss = sub.add_parser("foreman", help="show the foreman session, its decisions, or one turn in full")
+    boss.add_argument("id")
+    boss.add_argument("--turn", type=int, help="print one turn's prompt, decision, and record")
+    boss.add_argument("--json", action="store_true")
+    boss.set_defaults(func=cmd_foreman)
 
     shown = sub.add_parser("intent", help="show the approved intent, added scenarios, and decision deltas")
     shown.add_argument("id")

@@ -19,6 +19,8 @@ Read it first, before any branch, commit, or `/tmp` heuristic.
   "attempt": 2,
   "previous": {"outcome": "blocked", "reason": "Validation command unit (pytest -q) exited 1"},
   "operator_note": "The flaky test was fixed upstream",
+  "guidance": "## after build attempt 1\n\nKeep unit tests under omr-ui/src/**; name each mapped test by its collected id.",
+  "history": [{"n": 1, "kind": "stage", "outcome": "blocked", "code": "evidence.wrong_layer", "reason": "S43 maps ..."}],
   "conditions": [{"id": "C1", "code": "environment.missing_credentials", "summary": "STRIPE_KEY is not available",
                   "evidence": ["sandbox returned 401"], "requires_env": ["STRIPE_KEY"], "raised": "build attempt 1"}],
   "intent_file": "/home/user/.factory/runs/.../intent/approved.json",
@@ -43,6 +45,7 @@ Read it first, before any branch, commit, or `/tmp` heuristic.
 - Stage paths are enforced on that delta: `scope` may change `docs/` and `.factory/contract.json`, `scope-review` only `docs/decisions.md` and `docs/contracts.md`, and `build` and `ship` anything except `.factory/contract.json`.
 - Write only in the worktree, `report_dir`, `evidence_dir`, and `scratch_dir`: the run directory holds runner-owned records, and the common Git directory's config, hooks, and excludes are outside the sandbox grant.
 - `previous` may be `null` and `operator_note` may be `null`.
+- `guidance` is the foreman's instruction for this attempt, accumulated across attempts under `## after ...` headings; when present, read all of it before starting, it names what earlier attempts did and what the gate requires instead. `history` lists this stage's earlier attempts with their outcome and code. Both are `null` or empty on a first attempt.
 - `conditions` lists the park conditions still open for this stage; see "Park conditions" below.
 - `intent_file` is the sealed approved intent: the request, non-goals, and scenarios with their ids (`S1`, ...). `scenarios_file` also lists scenarios added after the handoff. Both are read-only; approved scenario text and `⊘` non-goals in `spec.md` must not change.
 - `request_file` is the full change request as Markdown; `source.kind` is `text`, `file` (with `path`), or `jira` (with `key`, `url`, `summary`).
@@ -121,6 +124,15 @@ The runner re-checks every stage from files, Git, commands, reports, and GitHub 
 For `ship` that means one exact revision: the PR's head, the refreshed remote branch, and local HEAD must be the same commit; the runner re-runs the mapped tests, the e2e driver, the gauntlet commands, and validation on it; the review and gauntlet records must name it; the published Evidence must match `pr.md`; and the contract's required checks must finish green for it. If the PR moves while the runner verifies, verification starts over.
 A `done` result that fails the gate is not done, and the gate's reason is what the next attempt receives.
 So the result file never replaces the skill's own deterministic loops: run `lint-spec.py`, `check-tests.py`, the Validation block, and `pr-evidence.py check` to clean before claiming `done`.
+
+## The foreman
+
+With `"foreman": "codex"` in `~/.factory/config.json`, one long-lived Codex session per run decides what the runner does after every attempt: launch a stage again with guidance, repair one thing, judge the gate again, publish, wait for a transient fault, advance, park with an exact operator action, rescope, or cancel.
+Its skill is `skills/foreman/SKILL.md` and its decision record is `factory.decision/1` in `scripts/factory_records.py`.
+For a stage skill nothing changes except the `guidance` and `history` fields above and the way a failure comes back: a retry may arrive as a `repair` attempt, a short prompt asking for exactly one fix followed by the full gate, and the stage may be launched again after a later stage found a problem in its output.
+
+The foreman may accept a stage over a failing gate by recording an override; the runner keeps every override in `run.json`, prints it in `factory show`, adds an `## Overrides` section to the pull request body, and counts it in `factory report`.
+It never lifts `secret.found`, `action.destructive`, or a missing or tampered intent, and it cannot exceed the runner's caps: stage attempts, repairs, waiting time, run hours, and overrides.
 
 ## Examples
 

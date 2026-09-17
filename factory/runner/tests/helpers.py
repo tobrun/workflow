@@ -352,7 +352,9 @@ class FactoryTestCase(unittest.TestCase):
     """Isolated FACTORY_HOME, stub binaries, and a repo with a bare origin per test."""
 
     # No hosted browser by default: a test that wants one sets "browser": "auto" and FACTORY_BROWSER_BIN to the stub.
-    fast_config = {"notify": False, "stage_poll_seconds": 0.05, "heartbeat_seconds": 0.2, "browser": "off"}
+    # The foreman is off unless a test scripts it: the fixed pipeline and model.decide() are what most tests exercise.
+    fast_config = {"notify": False, "stage_poll_seconds": 0.05, "heartbeat_seconds": 0.2, "browser": "off",
+                   "foreman": "off"}
 
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory(prefix="factory-test-")
@@ -363,6 +365,7 @@ class FactoryTestCase(unittest.TestCase):
         self.log = self.root / "stub-log.jsonl"
         self.scenario_path = self.root / "scenario.json"
         self.claude_path = self.root / "claude.json"
+        self.foreman_path = self.root / "foreman.json"
         self.gh_state = self.root / "gh-state.json"
         self.gh_state.write_text(json.dumps({"auth": True, "prs": [], "checks": {},
                                              "default_checks": [{"name": "ci", "state": "SUCCESS", "bucket": "pass"}]}),
@@ -375,6 +378,7 @@ class FactoryTestCase(unittest.TestCase):
             "FACTORY_STUB_LOG": str(self.log),
             "FACTORY_STUB_SCENARIO": str(self.scenario_path),
             "FACTORY_CLAUDE_SCENARIO": str(self.claude_path),
+            "FACTORY_STUB_FOREMAN": str(self.foreman_path),
             "FACTORY_GH_STATE": str(self.gh_state),
             "FACTORY_ACLI_BIN": str(STUBS / "acli"),
             "FACTORY_ACLI_STATE": str(self.root / "acli-state.json"),
@@ -432,6 +436,13 @@ class FactoryTestCase(unittest.TestCase):
 
     def claude(self, launches: list) -> None:
         self.claude_path.write_text(json.dumps(launches), encoding="utf-8")
+
+    def foreman(self, steps: list) -> None:
+        """Script the stub foreman: one entry per turn, the last repeating (see stubs/codex)."""
+        self.foreman_path.write_text(json.dumps(steps), encoding="utf-8")
+
+    def configure(self, **overrides: object) -> None:
+        (self.home / "config.json").write_text(json.dumps({**self.fast_config, **overrides}), encoding="utf-8")
 
     def stub_calls(self, tool: str) -> list[dict]:
         if not self.log.exists():

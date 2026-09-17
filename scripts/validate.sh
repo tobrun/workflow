@@ -692,7 +692,8 @@ for sample in ("ask the user which one", "a human call", "the user decides", "co
         print(f"scripts/validate.sh: F03 pattern no longer matches {sample!r}")
         sys.exit(0)
 
-roots = ["factory/skills/scope-review", "factory/skills/build", "factory/skills/ship", "factory/references"]
+roots = ["factory/skills/scope-review", "factory/skills/build", "factory/skills/ship", "factory/skills/foreman",
+         "factory/references"]
 for root in roots:
     for path in sorted(pathlib.Path(root).rglob("*.md")):
         inside = False

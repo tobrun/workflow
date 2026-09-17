@@ -16,7 +16,7 @@ If there is no `spec.md` or its change plan is empty, stop with a `blocked` resu
 
 The factory runner launched this stage as a fresh process; its protocol lives in [../../references/factory-run.md](../../references/factory-run.md).
 
-- Read `.dev/factory-run.json` first: `plan` fixes the plan directory, `report_dir` holds the e2e report, `scratch_dir` holds anything temporary, and `previous` names why an earlier attempt did not pass. On a retry, continue from the committed change sets and `implementation-notes.md`; never redo finished work.
+- Read `.dev/factory-run.json` first: `plan` fixes the plan directory, `report_dir` holds the e2e report, `scratch_dir` holds anything temporary, and `previous` names why an earlier attempt did not pass. On a retry, continue from the committed change sets and `implementation-notes.md`; never redo finished work. When `guidance` is present, it is the foreman's instruction for this attempt: read all of it before starting, and treat it as the operator note's equal.
 - No human is available: decide every open question yourself under the factory policy in that reference - take the recommended option, log it as an `auto-decided:` deviation, and keep going. Stop only for that reference's fixed park list.
 - The run branch is already checked out. Commit each completed change set on it; never push and never open a PR.
 - Write `.dev/{plan-name}/build-result.json` as your last action, with `next: "ship"`. Never invoke `ship`; the runner starts it after its own gate passes.

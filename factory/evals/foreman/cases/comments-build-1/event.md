@@ -1,0 +1,6 @@
+Factory run <run_id>: event attempt.finished.
+build attempt 1 (stage) ended blocked [launch.unavailable]: launch.unavailable (C1): agent-browser cannot create its required socket directory; gate: S38 maps omr-ui/src/comments/cellKey.test.ts::encodes separators, hashes and unicode without collisions as [unit], but the contract's unit tests live in omr/tests/**, backend/tests/**, dashboard_core/tests/**; S39 maps omr-ui/src/comments/CommentableCell.test.tsx::is a plain td without a provider as [unit]...
+Files: gate <run_dir>/attempts/build-1/gate.json; last_message <run_dir>/attempts/build-1/last-message.md; stderr <run_dir>/attempts/build-1/stderr.log; result <worktree>/.dev/need-add-support-adding-comments/build-result.json
+Operator note: ...
+Caps: build attempts 1/6, repairs 0/3, wait 0.0/120 min, run 18.17/24 h, overrides 0/2, retries 2/2.
+Reply with exactly one factory.decision/1 JSON object.

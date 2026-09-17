@@ -18,7 +18,7 @@ First read the run file per "Factory context", then run `python3 {ship-skill-roo
 
 The factory runner launched this stage as a fresh process after `build` passed its gate; its protocol lives in [../../references/factory-run.md](../../references/factory-run.md).
 
-- Read `.dev/factory-run.json` first: `plan` fixes the plan directory, `report_dir` holds the e2e and review reports, `evidence_dir` holds PR evidence, `scratch_dir` is the agent scratch root, and `previous` names why an earlier attempt did not pass - on a retry, start from the existing `review_N.md`, `pr.md`, and PR rather than redoing them.
+- Read `.dev/factory-run.json` first: `plan` fixes the plan directory, `report_dir` holds the e2e and review reports, `evidence_dir` holds PR evidence, `scratch_dir` is the agent scratch root, and `previous` names why an earlier attempt did not pass - on a retry, start from the existing `review_N.md`, `pr.md`, and PR rather than redoing them. When `guidance` is present, it is the foreman's instruction for this attempt: read all of it before starting, and treat it as the operator note's equal.
 - No human is available: never confirm anything. Every judgment call from the gauntlet, the panel, or the PR is a decision you make under the factory policy in that reference - take the recommended option, list it in the PR's Auto-decided section, and keep going; only that reference's fixed park list becomes a typed condition.
 - The run branch is already checked out and every commit and the PR stay authored by the authenticated human: no `Co-Authored-By` lines, no model attribution.
 - Write `.dev/{plan-name}/ship-result.json` as your last action, with `pr_url`, `draft`, and each park-list item as a typed entry in `conditions`.

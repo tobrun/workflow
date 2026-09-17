@@ -25,6 +25,8 @@ __all__ = [
     "SCENARIO_MAP_SCHEMA", "TEST_RESULTS_SCHEMA", "validate_scenario_map", "load_scenario_map", "parse_test_results",
     "test_path", "REVIEW_SCHEMA", "GAUNTLET_SCHEMA", "GAUNTLET_CHECKS", "SPEC_REVIEW_LENSES", "load_review",
     "load_gauntlet",
+    "DECISION_SCHEMA", "DECISION_ACTIONS", "DECISION_STAGES", "DECISION_EFFORTS", "PROBE_KINDS", "WAIT_THEN",
+    "DECISION_OWNERS", "DECISION_REQUIRED", "validate_decision", "load_decision", "decision_json_schema",
 ]
 
 E2E_SCHEMA = "factory.e2e/1"
@@ -1012,3 +1014,235 @@ def load_gauntlet(path: Path) -> dict:
             check.add("gauntlet.checks", f"{name} must appear exactly once (found {seen.count(name)})")
     check.raise_if_any()
     return data
+
+
+# --- foreman decisions ------------------------------------------------------------------------
+
+DECISION_SCHEMA = "factory.decision/1"
+DECISION_ACTIONS = ("launch", "repair", "regate", "publish", "wait", "advance", "park", "rescope", "cancel")
+DECISION_STAGES = ("scope-review", "build", "ship")
+DECISION_EFFORTS = ("low", "medium", "high", "xhigh")
+PROBE_KINDS = ("env", "gh_auth", "url", "none")
+WAIT_THEN = ("regate", "launch")
+DECISION_MAX_BYTES = 64 * 1024
+GATE_CODE = re.compile(r"^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$")
+# The fields each action may carry; the same field on another action is a malformed decision.
+DECISION_OWNERS: dict[str, tuple[str, ...]] = {
+    "stage": ("launch", "repair", "regate", "publish", "advance"),
+    "guidance": ("launch", "repair"),
+    "model": ("launch",),
+    "effort": ("launch",),
+    "timeout_s": ("launch",),
+    "repair": ("repair",),
+    "wait": ("wait",),
+    "override": ("advance",),
+    "resolve_conditions": ("launch", "repair", "regate", "publish", "advance"),
+    "park": ("park",),
+    "reason": ("cancel", "rescope"),
+}
+DECISION_REQUIRED: dict[str, tuple[str, ...]] = {
+    "launch": ("stage", "guidance"),
+    "repair": ("stage", "repair"),
+    "regate": ("stage",),
+    "publish": (),
+    "wait": ("wait",),
+    "advance": ("stage",),
+    "park": ("park",),
+    "rescope": ("reason",),
+    "cancel": ("reason",),
+}
+DECISION_TEXT = {"summary": 120, "rationale": 600, "guidance": 8000, "reason": 600, "model": 100}
+
+
+def _without_nulls(value: object) -> object:
+    """The output schema makes every field present, so null is how the model leaves one out."""
+    if isinstance(value, dict):
+        return {k: _without_nulls(v) for k, v in value.items() if v is not None}
+    return value
+
+
+def _text(check: _Checker, obj: dict, key: str, where: str, limit: int, *, required: bool = False) -> None:
+    if key not in obj:
+        if required:
+            check.add(f"{where}.{key}", "required")
+        return
+    value = obj[key]
+    if not isinstance(value, str) or not value.strip():
+        check.add(f"{where}.{key}", "must be a non-empty string")
+    elif len(value) > limit:
+        check.add(f"{where}.{key}", f"longer than {limit} characters")
+
+
+def _strings(check: _Checker, obj: dict, key: str, where: str, limit: int) -> list:
+    value = obj.get(key, [])
+    if not isinstance(value, list) or not all(isinstance(v, str) and v.strip() for v in value):
+        check.add(f"{where}.{key}", "must be a list of non-empty strings")
+        return []
+    if len(value) > limit:
+        check.add(f"{where}.{key}", f"more than {limit} entries")
+    return value
+
+
+def _bounded_int(check: _Checker, obj: dict, key: str, where: str, low: int, high: int, *, required: bool) -> None:
+    if key not in obj:
+        if required:
+            check.add(f"{where}.{key}", "required")
+        return
+    value = obj[key]
+    if not _is_int(value) or not low <= value <= high:
+        check.add(f"{where}.{key}", f"must be an integer between {low} and {high}")
+
+
+def validate_decision(data: object, *, name: str = "decision") -> dict:
+    """A factory.decision/1 record: one typed action with only the fields that action owns."""
+    if not isinstance(data, dict):
+        raise RecordError("record.invalid", f"{name}: must be a JSON object")
+    data = _without_nulls(data)
+    if data.get("schema") != DECISION_SCHEMA:
+        raise RecordError("record.unsupported_version",
+                          f"{name}: schema must be {DECISION_SCHEMA!r}, got {data.get('schema')!r}")
+    check = _Checker(name)
+    check.keys(data, "decision", ("schema", "action", "summary", "rationale"), tuple(DECISION_OWNERS))
+    action = data.get("action")
+    if action not in DECISION_ACTIONS:
+        check.add("decision.action", f"must be one of {', '.join(DECISION_ACTIONS)}")
+        check.raise_if_any()
+    _text(check, data, "summary", "decision", DECISION_TEXT["summary"], required=True)
+    _text(check, data, "rationale", "decision", DECISION_TEXT["rationale"], required=True)
+    for key, owners in DECISION_OWNERS.items():
+        if key in data and action not in owners:
+            check.add(f"decision.{key}", f"not allowed on action {action!r}")
+    for key in DECISION_REQUIRED[action]:
+        if key not in data:
+            check.add(f"decision.{key}", f"required on action {action!r}")
+    if "stage" in data and data["stage"] not in DECISION_STAGES:
+        check.add("decision.stage", f"must be one of {', '.join(DECISION_STAGES)}")
+    _text(check, data, "guidance", "decision", DECISION_TEXT["guidance"])
+    _text(check, data, "reason", "decision", DECISION_TEXT["reason"])
+    _text(check, data, "model", "decision", DECISION_TEXT["model"])
+    if "effort" in data and data["effort"] not in DECISION_EFFORTS:
+        check.add("decision.effort", f"must be one of {', '.join(DECISION_EFFORTS)}")
+    _bounded_int(check, data, "timeout_s", "decision", 60, MAX_COMMAND_TIMEOUT_S, required=False)
+    repair = data.get("repair")
+    if repair is not None:
+        if not isinstance(repair, dict):
+            check.add("decision.repair", "must be an object")
+        else:
+            check.keys(repair, "decision.repair", ("instruction",), ("checks", "timeout_minutes"))
+            _text(check, repair, "instruction", "decision.repair", 4000, required=True)
+            _strings(check, repair, "checks", "decision.repair", 8)
+            _bounded_int(check, repair, "timeout_minutes", "decision.repair", 5, 30, required=False)
+    wait = data.get("wait")
+    if wait is not None:
+        if not isinstance(wait, dict):
+            check.add("decision.wait", "must be an object")
+        else:
+            check.keys(wait, "decision.wait", ("seconds", "probe", "then"))
+            _bounded_int(check, wait, "seconds", "decision.wait", 30, 7200, required=True)
+            if wait.get("then") not in WAIT_THEN:
+                check.add("decision.wait.then", f"must be one of {', '.join(WAIT_THEN)}")
+            probe = wait.get("probe")
+            if not isinstance(probe, dict):
+                check.add("decision.wait.probe", "must be an object")
+            else:
+                check.keys(probe, "decision.wait.probe", ("kind",), ("value",))
+                kind = probe.get("kind")
+                value = probe.get("value")
+                if kind not in PROBE_KINDS:
+                    check.add("decision.wait.probe.kind", f"must be one of {', '.join(PROBE_KINDS)}")
+                elif kind == "env" and (not isinstance(value, str) or not ENV_NAME.match(value)):
+                    check.add("decision.wait.probe.value", "an env probe names an environment variable")
+                elif kind == "url" and (not isinstance(value, str) or not value.startswith(("http://", "https://"))):
+                    check.add("decision.wait.probe.value", "a url probe needs an http(s) URL")
+                elif kind in ("gh_auth", "none") and value is not None:
+                    check.add("decision.wait.probe.value", f"a {kind} probe takes no value")
+    override = data.get("override")
+    if override is not None:
+        if not isinstance(override, dict):
+            check.add("decision.override", "must be an object")
+        else:
+            check.keys(override, "decision.override", ("gate_code", "justification"), ("evidence",))
+            code = override.get("gate_code")
+            if not isinstance(code, str) or not GATE_CODE.match(code):
+                check.add("decision.override.gate_code", "must be a gate or condition code such as 'evidence.wrong_layer'")
+            _text(check, override, "justification", "decision.override", 1200, required=True)
+            _strings(check, override, "evidence", "decision.override", 10)
+    resolves = data.get("resolve_conditions")
+    if resolves is not None:
+        if not isinstance(resolves, list) or len(resolves) > 20:
+            check.add("decision.resolve_conditions", "must be a list of at most 20 resolutions")
+        else:
+            for index, item in enumerate(resolves):
+                where = f"decision.resolve_conditions[{index}]"
+                if not isinstance(item, dict):
+                    check.add(where, "must be an object")
+                    continue
+                check.keys(item, where, ("id", "evidence"))
+                if not isinstance(item.get("id"), str) or not CONDITION_ID.match(item["id"]):
+                    check.add(f"{where}.id", "names the runner's condition id, such as 'C1'")
+                if not _strings(check, item, "evidence", where, 10):
+                    check.add(f"{where}.evidence", "a resolution needs evidence")
+    park = data.get("park")
+    if park is not None:
+        if not isinstance(park, dict):
+            check.add("decision.park", "must be an object")
+        else:
+            check.keys(park, "decision.park", ("reason", "operator_action"))
+            _text(check, park, "reason", "decision.park", 600, required=True)
+            _text(check, park, "operator_action", "decision.park", 600, required=True)
+    check.raise_if_any()
+    return data
+
+
+def load_decision(path: Path) -> dict:
+    data = load_json_file(path, max_bytes=DECISION_MAX_BYTES)
+    return validate_decision(data, name=Path(path).name)
+
+
+def decision_json_schema() -> dict:
+    """The JSON Schema for `codex exec --output-schema`: every field present, unused ones null.
+
+    Bounds and cross-field rules stay in `validate_decision`; the schema only fixes the shape, so
+    it is valid under strict structured-output rules (all properties required, no extras).
+    """
+    def obj(props: dict) -> dict:
+        return {"type": "object", "properties": props, "required": list(props), "additionalProperties": False}
+
+    def nullable(kind: str) -> dict:
+        return {"type": [kind, "null"]}
+
+    def enum(values: tuple, *, null: bool = False) -> dict:
+        if null:
+            return {"type": ["string", "null"], "enum": [*values, None]}
+        return {"type": "string", "enum": list(values)}
+
+    def optional(schema: dict) -> dict:
+        return {"anyOf": [schema, {"type": "null"}]}
+
+    strings = {"type": "array", "items": {"type": "string"}}
+    return {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "title": DECISION_SCHEMA,
+        **obj({
+            "schema": {"type": "string", "enum": [DECISION_SCHEMA]},
+            "action": enum(DECISION_ACTIONS),
+            "summary": {"type": "string"},
+            "rationale": {"type": "string"},
+            "stage": enum(DECISION_STAGES, null=True),
+            "guidance": nullable("string"),
+            "model": nullable("string"),
+            "effort": enum(DECISION_EFFORTS, null=True),
+            "timeout_s": nullable("integer"),
+            "repair": optional(obj({"instruction": {"type": "string"}, "checks": strings,
+                                    "timeout_minutes": nullable("integer")})),
+            "wait": optional(obj({"seconds": {"type": "integer"},
+                                  "probe": obj({"kind": enum(PROBE_KINDS), "value": nullable("string")}),
+                                  "then": enum(WAIT_THEN)})),
+            "override": optional(obj({"gate_code": {"type": "string"}, "justification": {"type": "string"},
+                                      "evidence": strings})),
+            "resolve_conditions": {"type": ["array", "null"], "items": obj({"id": {"type": "string"},
+                                                                            "evidence": strings})},
+            "park": optional(obj({"reason": {"type": "string"}, "operator_action": {"type": "string"}})),
+            "reason": nullable("string"),
+        }),
+    }

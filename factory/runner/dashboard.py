@@ -57,6 +57,16 @@ def blocker(run: Run) -> str | None:
     return None
 
 
+def last_decision(run: Run) -> str | None:
+    decisions = run.data.get("decisions") or []
+    if not decisions:
+        return None
+    last = decisions[-1]
+    if last.get("source") != "foreman":
+        return f"foreman fell back: {last.get('reason')}"
+    return f"foreman {last.get('action')}: {last.get('summary')}"
+
+
 def next_command(run: Run, alive: bool, stale: bool) -> str | None:
     rid = run.id
     if run.status == "scoping":
@@ -70,7 +80,7 @@ def next_command(run: Run, alive: bool, stale: bool) -> str | None:
     if run.status == "paused":
         return f"factory resume {rid}"
     if run.status == "needs-human":
-        return f'factory retry {rid} --note "..."'
+        return run.data["human"].get("operator_action") or f'factory retry {rid} --note "..."'
     if run.status == "cancelled":
         exhausted = run.budget_remaining() <= 0 and run.stage in ("scope-review", "build", "ship")
         return f"factory retry {rid}" + (" --reset-budget" if exhausted else "")
@@ -111,6 +121,8 @@ def summarize(run_dir: Path, run: Run | None, error: str | None, *, heartbeat_se
         "retries": f"{run.data['retries']['used']}/{run.data['retries']['budget']}",
         "blocker": blocker(run),
         "note": run.data["human"].get("note"),
+        "decision": last_decision(run),
+        "overrides": len(run.data.get("overrides") or []),
         "pr": run.data["pr"] if run.data["pr"].get("url") else None,
         "updated_at": run.data["updated_at"],
         "created_at": run.data["created_at"],
@@ -256,7 +268,7 @@ TEMPLATE_TAIL = """
         status.appendChild(el("span", "pill " + group[0], r.stale ? r.status + (r.execution_alive ? " (worker down, execution alive)" : " (worker down)") : r.status));
         tr.appendChild(status);
         tr.appendChild(el("td", "nowrap", r.retries || "-"));
-        var blocker = el("td", "blocker", r.blocker || r.note || "-");
+        var blocker = el("td", "blocker", r.blocker || r.decision || r.note || "-");
         if (r.next && group[0] === "needs") blocker.appendChild(el("span", "next", r.next));
         tr.appendChild(blocker);
         var pr = el("td", "nowrap");

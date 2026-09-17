@@ -135,7 +135,9 @@ def host_versions() -> dict:
 
 
 # Settings that change what an attempt means are read once per attempt; resource controls stay live.
-SEMANTIC_SETTINGS = ("max_retries", "stop_on_repeated_reason")
+SEMANTIC_SETTINGS = ("max_retries", "stop_on_repeated_reason", "foreman", "foreman_model", "foreman_effort",
+                     "max_stage_attempts", "max_repairs_per_stage", "max_wait_minutes", "max_run_hours",
+                     "max_overrides_per_run")
 LIVE_SETTINGS = ("max_concurrent_stages", "stage_poll_seconds", "heartbeat_seconds", "notify")
 
 

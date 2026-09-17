@@ -16,7 +16,7 @@ from datetime import datetime
 from pathlib import Path
 
 from runner import config, dashboard, executor, notify, supervise
-from runner.model import (CANCELLED, DONE, NEEDS_HUMAN, PAUSED, QUEUED, RUNNING, SCOPING, BudgetExhausted, Run,
+from runner.model import (HEADLESS, CANCELLED, DONE, NEEDS_HUMAN, PAUSED, QUEUED, RUNNING, SCOPING, BudgetExhausted, Run,
                           SchemaError, atomic_write)
 from runner.worker import emit_pending, reconcile_orphan, spawn_worker
 
@@ -201,6 +201,9 @@ def retry(home: Path, cfg: config.Config, run_dir: Path, *, note: str | None = N
             run.data["human"]["note"] = note
         if reset_budget:
             run.data["retries"]["used"] = 0
+            # The foreman's caps start over too: attempts before this point no longer count, waits reset.
+            run.data["caps_base"] = {stage: len(run.stage_attempts(stage)) for stage in HEADLESS}
+            run.data["waits"] = {}
         if cfg.max_retries < run.data["retries"]["budget"]:
             run.data["retries"]["budget"] = cfg.max_retries
         for flag in ("cancel", "pause"):
@@ -281,7 +284,7 @@ def resume(home: Path, cfg: config.Config, run_dir: Path) -> Outcome:
             raise ControlError(f"{run.id} is {run.status}; resume continues paused runs and recovers queued or "
                                f"running ones (see `factory show {run.id}`)")
         refresh(home, cfg)
-        if run.status != QUEUED and action != "reattached":
+        if run.status != QUEUED and action not in ("reattached", "undecided"):
             notify.for_status(run, enabled=cfg.notify)
             return Outcome(run, lines + [f"{run.id} is {run.status} at {run.stage}: {run.data['human'].get('reason')}"],
                            code=1)
@@ -289,8 +292,11 @@ def resume(home: Path, cfg: config.Config, run_dir: Path) -> Outcome:
         lock.release()
     pid = start_worker(home, run)
     verb = "Continued" if action == "unpaused" else "Resumed"
+    if action == "undecided":
+        lines.append(f"The last {run.stage} attempt finished but its next step was never chosen; the new worker "
+                     "decides it without another attempt.")
     detail = " (orphaned attempt recorded as failed)" if action not in ("none", "requeued", "unpaused",
-                                                                         "reattached") else ""
+                                                                         "reattached", "undecided") else ""
     lines += [f"{verb} {run.id} at {run.stage}; worker {pid} started{detail}.",
               f"retries {run.data['retries']['used']}/{run.data['retries']['budget']}"]
     return Outcome(run, lines, started=True)

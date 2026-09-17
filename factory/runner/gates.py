@@ -1295,11 +1295,11 @@ def merge(gate: GateResult, result: dict | None, result_error: str | None, block
                            warning=_join(notes), code=f"result.{result['status']}")
         return Outcome("done", None, True, "gate", _join(notes))
     reason = gate.reason
+    if invalid:
+        reason = f"{reason}; {invalid}"
     if result is not None and result["status"] != "done" and result.get("reason") and result["reason"] not in (reason or ""):
         reason = f"{reason} (skill: {result['reason']})"
     return Outcome(gate.outcome, reason, gate.retryable, "gate", warning=_join(notes), code=gate.code)
-    if invalid:
-        reason = f"{reason}; {invalid}"
 
 
 def _join(notes: list[str]) -> str | None:

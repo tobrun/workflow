@@ -46,6 +46,17 @@ NAMES = frozenset({
     "skills.fallback",
     "browser.hosted",
     "browser.unavailable",
+    "foreman.started",
+    "foreman.decided",
+    "foreman.fallback",
+    "foreman.restarted",
+    "foreman.rejected",
+    "regate.scheduled",
+    "publish.scheduled",
+    "wait.scheduled",
+    "wait.elapsed",
+    "repair.scheduled",
+    "override.recorded",
 })
 
 

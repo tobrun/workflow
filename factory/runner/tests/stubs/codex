@@ -46,6 +46,55 @@ def option(argv, flag):
     return None
 
 
+def foreman_turn(argv):
+    """Play one foreman turn from $FACTORY_STUB_FOREMAN: a list indexed by $FACTORY_TURN, last step repeating.
+
+    A step is a decision object (merged over schema, summary, rationale defaults), the string "invalid",
+    "garbage", or "timeout", or an object with "mode", "exit", "sleep", "thread_id", "files", or "run".
+    """
+    resume = argv[:2] == ["exec", "resume"]
+    last_message = option(argv, "-o")
+    turn = int(os.environ.get("FACTORY_TURN", "1"))
+    path = os.environ.get("FACTORY_STUB_FOREMAN")
+    steps = json.loads(Path(path).read_text(encoding="utf-8")) if path and Path(path).exists() else []
+    step = steps[min(turn, len(steps)) - 1] if steps else {"action": "park", "park": {
+        "reason": "stub foreman has no scenario", "operator_action": "write a foreman scenario"}}
+    if isinstance(step, str):
+        step = {"mode": step}
+    mode = step.get("mode")
+    thread = step.get("thread_id") or (argv[2] if resume else "stub-foreman")
+    emit({"type": "thread.started", "thread_id": thread})
+    emit({"type": "turn.started"})
+    if mode == "timeout":
+        time.sleep(float(step.get("sleep", 30)))
+    cwd = Path(os.getcwd())
+    for relative, content in step.get("files", {}).items():
+        target = Path(relative) if os.path.isabs(relative) else cwd / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content, encoding="utf-8")
+    for command in step.get("run", []):
+        completed = subprocess.run(command, cwd=cwd, capture_output=True, text=True)
+        emit({"type": "item.completed", "item": {"type": "command_execution", "command": " ".join(command),
+                                                   "exit_code": completed.returncode, "status": "completed"}})
+    if mode == "invalid":
+        text = json.dumps({"schema": "factory.decision/1", "action": "fly", "summary": "s", "rationale": "r"})
+    elif mode == "garbage":
+        text = "I think we should just retry."
+    else:
+        decision = {"schema": "factory.decision/1", "summary": "stub decision", "rationale": "stub rationale"}
+        body = step.get("decision") or {k: v for k, v in step.items()
+                                        if k not in ("mode", "exit", "sleep", "thread_id", "files", "run", "tokens")}
+        decision.update(body)
+        text = json.dumps(decision)
+    emit({"type": "item.completed", "item": {"type": "agent_message", "text": text}})
+    tokens = int(step.get("tokens", 500))
+    emit({"type": "turn.completed", "usage": {"input_tokens": tokens, "cached_input_tokens": 0,
+                                               "output_tokens": tokens // 10}})
+    if last_message and mode != "exit":
+        Path(last_message).write_text(text + "\n", encoding="utf-8")
+    return int(step.get("exit", 0))
+
+
 def main():
     argv = sys.argv[1:]
     log = os.environ.get("FACTORY_STUB_LOG")
@@ -69,6 +118,8 @@ def main():
     if not argv or argv[0] != "exec":
         print(f"stub codex: unsupported {argv}", file=sys.stderr)
         return 64
+    if os.environ.get("FACTORY_ROLE") == "foreman":
+        return foreman_turn(argv)
 
     worktree = Path(option(argv, "-C") or os.getcwd())
     last_message = option(argv, "-o")
@@ -84,8 +135,13 @@ def main():
     attempt = int(os.environ.get("FACTORY_ATTEMPT", run.get("attempt", 1)))
     scenario_path = os.environ.get("FACTORY_STUB_SCENARIO")
     scenario = json.loads(Path(scenario_path).read_text(encoding="utf-8")) if scenario_path else {}
-    steps = scenario.get(stage) or [{}]
-    step = steps[min(attempt, len(steps)) - 1]
+    if os.environ.get("FACTORY_ROLE") == "repair":
+        # A repair plays "{stage}-repair", indexed by the repair ordinal; without one it writes a clean result.
+        steps = scenario.get(f"{stage}-repair") or [{}]
+        step = steps[min(int(os.environ.get("FACTORY_REPAIR", "1")), len(steps)) - 1]
+    else:
+        steps = scenario.get(stage) or [{}]
+        step = steps[min(attempt, len(steps)) - 1]
     context = {
         "plan": run.get("plan", os.environ.get("FACTORY_PLAN", "")),
         "report_dir": run.get("report_dir", ""),

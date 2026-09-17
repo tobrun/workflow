@@ -53,7 +53,8 @@ chains them into an unattended pipeline.
   The one sanctioned invoker is `factory/runner/`: it launches each factory stage as a fresh process and chains stages through artifacts on disk, so factory skills still never invoke each other.
 - `factory/skills/` are intentional, divergent copies of `dev` skills; do not sync them back or forward mechanically, and keep `dev` behavior unchanged when changing them.
 - Every factory stage `SKILL.md` must mention `factory-run.json` and its own `{stage}-result.json`.
-- Unattended factory material (`factory/skills/{scope-review,build,ship}/` and `factory/references/`) never routes a decision to a person: it takes the recommended option under the policy in `factory/references/factory-run.md` and parks only for that file's fixed list.
+- Unattended factory material (`factory/skills/{scope-review,build,ship,foreman}/` and `factory/references/`) never routes a decision to a person: it takes the recommended option under the policy in `factory/references/factory-run.md` and parks only for that file's fixed list.
+  `factory/skills/foreman/` is not a stage: it is the one long-lived Codex session the runner resumes after every attempt to choose the next step (`factory/runner/foreman.py`, decision record `factory.decision/1` in `factory/scripts/factory_records.py`); its parks carry an exact `operator_action`, and the runner alone enforces hard stops and caps.
   Text only interactive `scope` uses goes between `<!-- interactive-only -->` markers; `validate.sh` F03 enforces this.
 - In `factory/runner/`, the detached worker holding `worker.lock` is the only writer of `run.json`.
   Operator controls (`runner/control.py`, shared by the CLI and the attached view) leave intent files for a live worker and take the lock only for runs with no live worker; plan files under `.dev/` are never committed.
@@ -76,6 +77,7 @@ chains them into an unattended pipeline.
 - `scripts/validate.sh` - Validate the entire repository structure.
 - `python3 scripts/build_codex_plugin.py [--check] [--plugin dev|factory]` - Regenerate or check the Codex distributions.
 - `cd factory && python3 -m unittest discover -s runner/tests -t .` - Factory runner unit and integration tests.
+- `python3 factory/evals/foreman/run.py` - Paid foreman evals against captured real-run cases; never part of `validate.sh`.
 - `bash scripts/test_factory_runner.sh` - Offline end-to-end factory runner test with stub hosts.
 - Codex testing: `codex plugin marketplace add .` then
   `codex plugin add {name}@nurbot`.

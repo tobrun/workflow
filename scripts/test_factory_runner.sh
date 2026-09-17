@@ -112,8 +112,8 @@ check(run["retries"] == {"used": 0, "budget": 5}, f"retries {run['retries']}")
 check([a["stage"] for a in run["attempts"]] == ["scope", "scope-review", "build", "ship"], "attempt order")
 check(all(a["outcome"] == "done" for a in run["attempts"]), "every attempt passed")
 milestones = ["run.created", "worktree.created", "run.scoping", "scope.launched", "scope.committed", "run.queued",
-              "slot.acquired", "stage.started", "process.spawned", "process.exited", "gate.evaluated",
-              "stage.finished", "slot.released", "run.done"]
+              "slot.acquired", "stage.started", "process.spawned", "process.exited", "slot.released",
+              "gate.evaluated", "stage.finished", "run.done"]
 positions = [events.index(name) for name in milestones]
 check(positions == sorted(positions), f"event ordering {events}")
 check(events.count("stage.started") == 3 and events.count("slot.released") == 3, "one slot per headless stage")

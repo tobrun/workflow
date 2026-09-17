@@ -67,6 +67,10 @@ def headless_prompt(stage: str) -> Callable[[Run, int], str]:
         note = run.data["human"].get("note")
         if note:
             extra.append(f"Operator note: {note}.")
+        guidance = (run.data.get("guidance") or {}).get(stage)
+        if guidance:
+            extra.append("The foreman left guidance for this attempt under \"guidance\" in .dev/factory-run.json; "
+                         "read all of it before starting.")
         for condition in conditions.open_for(run, stage):
             extra.append(f"Open condition {condition['id']} {condition['code']}: {condition['summary']}. Re-check it; "
                          "report it resolved with evidence, or report it again.")
@@ -79,6 +83,28 @@ def headless_prompt(stage: str) -> Callable[[Run, int], str]:
         ]
         return "\n".join(lines) + "\n"
     return build
+
+
+def repair_prompt(run: Run, stage: str, n: int, repair: dict) -> str:
+    """A bounded fix the foreman asked for: no skill invocation, one instruction, the result file last."""
+    lines = [
+        f"Factory run {run.id}: a repair of the {stage} stage, attempt {n}. Read .dev/factory-run.json first;",
+        f"the runner protocol is in {GENERATED_SKILLS.parent / 'references' / 'factory-run.md'}.",
+        "No human is available in this session. Do not redo the stage and do not start other work.",
+        "",
+        "Do exactly this:",
+        repair["instruction"].strip(),
+    ]
+    checks = repair.get("checks") or []
+    if checks:
+        lines += ["", "The runner will check afterwards:"] + [f"- {check}" for check in checks]
+    lines += [
+        "",
+        "Commit what you change on the current branch; never switch branches, rebase, or force-push.",
+        f"Write .dev/{run.plan}/{stage}-result.json (schema 2) as your last action, reporting honestly the",
+        "state the stage is in now.",
+    ]
+    return "\n".join(lines) + "\n"
 
 
 def scope_prompt(run: Run, n: int) -> str:
@@ -94,7 +120,7 @@ PIPELINE: dict[str, Stage] = {
                           headless_prompt("scope-review"), gates.scope_review_gate),
     "build": Stage("build", "codex", "openai.gpt-5.6-luna", "medium", 3 * 60 * 60, True,
                    headless_prompt("build"), gates.build_gate),
-    "ship": Stage("ship", "codex", "openai.gpt-5.6-luna", "high", 3 * 60 * 60, True,
+    "ship": Stage("ship", "codex", "openai.gpt-5.6-luna", "medium", 3 * 60 * 60, True,
                   headless_prompt("ship"), gates.ship_gate),
 }
 
@@ -113,6 +139,10 @@ def run_context(run: Run, stage: str, n: int, *, interactive: bool) -> dict:
         "attempt": n,
         "previous": previous,
         "operator_note": run.data["human"].get("note"),
+        "guidance": (run.data.get("guidance") or {}).get(stage),
+        "history": [{"n": a["n"], "kind": a.get("kind", "stage"), "outcome": a.get("outcome"), "code": a.get("code"),
+                     "reason": (a.get("reason") or "")[:200] or None}
+                    for a in run.stage_attempts(stage) if a["n"] < n and a.get("outcome")],
         "conditions": conditions.context(run, stage),
         "intent_file": str(run.dir / "intent" / "approved.json") if run.data.get("intent") else None,
         "scenarios_file": str(run.dir / "intent" / "scenarios.json") if run.data.get("intent") else None,

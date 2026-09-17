@@ -114,6 +114,11 @@ PLUGINS = {
                 "Ship a factory run to a ready PR",
                 "Use $factory:ship to harden, review, and open the pull request for this factory run.",
             ),
+            "foreman": (
+                "Foreman",
+                "Decide a factory run's next step",
+                "Use $factory:foreman to decide what the factory runner does next for this run.",
+            ),
         },
     ),
 }

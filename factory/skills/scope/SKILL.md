@@ -27,6 +27,9 @@ This is the factory copy of `scope`: the factory runner launched it in a run wor
 Interview the user until you understand what they want, one consequential question at a time, using the host's structured user-input tool when available. Then write down what you understood.
 Whenever you recommend an option - here, in the decision talk-through, or in follow-up questions - put a confidence score next to it (`Confidence: 70%`) with the one fact that would most change it.
 Score how likely it is the right solution given the evidence, not how strongly you prefer it: a taste call, an unverified premise, or an option chosen without having read the relevant code scores low.
+A recommendation at `Confidence: 75%` or above is not a question: apply it and keep going, and write `auto-applied at Confidence: NN%` into the chosen line's because clause so the ledger shows who decided.
+Ask only below 75%, and, whatever the score, when the recommendation changes what was asked for: a different problem than the request names, a requirement dropped, or a new non-goal.
+At the end of the interview, list every auto-applied recommendation once, in one block, so a single reply can overturn any of them before the spec is written down.
 
 The request often arrives one level too low: a solution ("add rate limiting with Redis") hides the problem it solves, a symptom hides the cause that picks the fix.
 Climb up before interviewing about the change itself - what led to this, what they observed, what would look different if it worked - then pressure-test the premise: what data shows the problem is real, and does it point where they think? Committing to a fix before the cause means speccing the wrong change well.

@@ -13,6 +13,16 @@
         "Answer 3: under the run file's report_dir, as webhook-idempotency-spec.html, not /tmp",
         "Answer 4: writing .dev/webhook-idempotency/scope-result.json; scope-review is never launched - the runner performs the handoff after the operator confirms"
       ]
+    },
+    {
+      "id": "factory-scope-confidence-threshold",
+      "prompt": "Answer briefly, from the skill text only. During the interview you recommend storing the dedup keys in a database table over Redis at Confidence: 82%, and separately recommend a 30-day retention window at Confidence: 55%. Later a finding suggests the real problem is not duplicate deliveries but a missing retry, at Confidence: 90%. (0) Do you ask about the store, and how is that decision recorded? (1) Do you ask about the retention window? (2) Do you ask about the retry finding, and why? (3) When does the user see the recommendations you applied without asking?",
+      "assertions": [
+        "Answer 0: no question; the table is applied and its chosen line carries `auto-applied at Confidence: 82%` in its because clause",
+        "Answer 1: yes, 55% is below the 75% threshold, so the user is asked",
+        "Answer 2: yes, whatever the score, because it changes what was asked for (a different problem than the request names)",
+        "Answer 3: once, in one block at the end of the interview, so a single reply can overturn any of them before the spec is written"
+      ]
     }
   ]
 }

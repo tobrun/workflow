@@ -692,7 +692,8 @@ def run_setup(ctx: GateContext, contract: dict, data: dict, *, root: Path | None
         try:
             parts = commands.argv(command, root)
             cwd = commands.resolve_inside(root, command.get("cwd", "."), "cwd")
-            env = commands.environment(command, contract, ctx.env())
+            env = commands.environment(command, contract, ctx.env(),
+                                       provided=commands.provided_by_runner(ctx.env(), mode))
             wrapped, env = commands.confine(parts, mode, writable=[root, exec_dir], env=env)
             outputs, declared = commands.produces(command, root)
         except commands.CommandError as error:
@@ -792,7 +793,8 @@ def run_validation(ctx: GateContext, data: dict) -> GateResult | None:
         try:
             parts = commands.argv(command, ctx.worktree)
             cwd = commands.resolve_inside(ctx.worktree, command.get("cwd", "."), "cwd")
-            env = commands.environment(command, contract, ctx.env())
+            env = commands.environment(command, contract, ctx.env(),
+                                       provided=commands.provided_by_runner(ctx.env(), mode))
             wrapped, env = commands.confine(parts, mode, writable=[ctx.worktree, exec_dir], env=env)
         except commands.CommandError as error:
             repair = f"; repair: {error.repair}" if error.repair else ""
@@ -866,7 +868,8 @@ def gauntlet_evidence(ctx: GateContext, head: str, data: dict) -> GateResult | N
         mode = commands.boundary(command, contract)
         try:
             parts = commands.argv(command, ctx.worktree)
-            env = commands.environment(command, contract, ctx.env())
+            env = commands.environment(command, contract, ctx.env(),
+                                       provided=commands.provided_by_runner(ctx.env(), mode))
             wrapped, env = commands.confine(parts, mode, writable=[ctx.worktree, exec_dir], env=env)
             cwd = commands.resolve_inside(ctx.worktree, command.get("cwd", "."), "cwd")
         except commands.CommandError as error:

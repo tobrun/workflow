@@ -310,7 +310,7 @@ class BuildGateTests(GateTestCase):
         # FACTORY_* and AGENT_BROWSER_* are set by the runner for the driver; declaring them as inputs is not a gap.
         contract = json.loads((self.repo / ".factory" / "contract.json").read_text(encoding="utf-8"))
         contract["e2e"]["driver"]["env"] = ["FACTORY_REVISION", "FACTORY_E2E_OUT", "AGENT_BROWSER_CDP",
-                                            "FACTORY_BROWSER_CDP_URL"]
+                                            "FACTORY_BROWSER_CDP_URL", "AGENT_BROWSER_ARGS"]
         contract["environment"] = {"required": [], "passthrough": ["FACTORY_REVISION", "AGENT_BROWSER_CDP"]}
         self.write(".factory/contract.json", json.dumps(contract))
         self.commit_all("declare runner inputs")
@@ -321,6 +321,7 @@ class BuildGateTests(GateTestCase):
             gate = self.gate(browser="auto", home=self.home)
         self.assertTrue(gate.passed, gate.reason)
         self.assertNotEqual(gate.code, "contract.unrunnable")
+        self.assertNotIn("AGENT_BROWSER_ARGS", os.environ)
 
     def test_r1_names_in_comments_and_an_empty_e2e_record_are_not_evidence(self):
         comment_only = "# test_repeated_id_ignored: WebhookTests covers repeated ids\n"

@@ -52,7 +52,7 @@ def command_parts(ctx, contract: dict, command: dict, exec_dir: Path, *, cwd_roo
     """(wrapped argv, environment, cwd, boundary) for one contract command record."""
     mode = commands.boundary(command, contract)
     parts = commands.argv(command, cwd_root, placeholders)
-    env = commands.environment(command, contract, ctx.env())
+    env = commands.environment(command, contract, ctx.env(), provided=commands.provided_by_runner(ctx.env(), mode))
     cwd = commands.resolve_inside(cwd_root, command.get("cwd", "."), "cwd")
     wrapped, env = commands.confine(parts, mode, writable=[cwd_root, exec_dir], env=env)
     return wrapped, env, cwd, mode
@@ -361,7 +361,7 @@ def check_e2e(ctx, contract: dict, mapping: dict, scenarios: list[dict], data: d
             browser_record = {"status": "unavailable", "reason": str(error)}
         extra.update(browser.environment(hosted))
     # What the runner provides counts as present: a driver may declare FACTORY_* and AGENT_BROWSER_* as inputs.
-    provided = {**ctx.env(), **extra}
+    provided = commands.provided_by_runner(ctx.env(), mode, extra)
     try:
         plan = {"log_dir": str(exec_dir / "services"), "services": [], "driver": {}}
         services = {service["id"]: service for service in contract.get("services", [])}
@@ -371,14 +371,14 @@ def check_e2e(ctx, contract: dict, mapping: dict, scenarios: list[dict], data: d
             plan["services"].append({
                 "id": service_id, "timeout_s": commands.timeout_s(service) if "timeout_s" in service else 60,
                 "argv": commands.argv(service, ctx.worktree, values),
-                "env": {**commands.environment(service, contract, provided), **extra},
+                "env": {**commands.environment(service, contract, ctx.env(), provided=provided), **extra},
                 "cwd": str(commands.resolve_inside(ctx.worktree, service.get("cwd", "."), "cwd")),
                 "ready": {"argv": commands.argv(ready, ctx.worktree, values),
-                          "env": {**commands.environment(ready, contract, provided), **extra},
+                          "env": {**commands.environment(ready, contract, ctx.env(), provided=provided), **extra},
                           "cwd": str(commands.resolve_inside(ctx.worktree, ready.get("cwd", "."), "cwd"))},
             })
         plan["driver"] = {"argv": commands.argv(driver, ctx.worktree, values),
-                          "env": {**commands.environment(driver, contract, provided), **extra},
+                          "env": {**commands.environment(driver, contract, ctx.env(), provided=provided), **extra},
                           "cwd": str(commands.resolve_inside(ctx.worktree, driver.get("cwd", "."), "cwd"))}
         caches, cache_paths = commands.tool_caches(ctx.env(), mode)
         for record in [*plan["services"], *[s["ready"] for s in plan["services"]], plan["driver"]]:

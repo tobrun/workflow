@@ -179,7 +179,9 @@ def environment(browser: Browser | None) -> dict:
     """What agents, gate drivers, and services receive so their browser automation attaches to the host's."""
     if browser is None:
         return {}
-    return {"AGENT_BROWSER_CDP": str(browser.port), "FACTORY_BROWSER_CDP_URL": browser.cdp_url}
+    # AGENT_BROWSER_ARGS matches how this browser was launched, so a driver that reads it in any boundary sees it.
+    return {"AGENT_BROWSER_CDP": str(browser.port), "FACTORY_BROWSER_CDP_URL": browser.cdp_url,
+            "AGENT_BROWSER_ARGS": "--no-sandbox"}
 
 
 def record(browser: Browser) -> dict:

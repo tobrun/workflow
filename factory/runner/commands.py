@@ -78,8 +78,23 @@ def missing_environment(command: dict, contract: dict, base: dict) -> list[str]:
     return sorted({name for name in required if not base.get(name)})
 
 
-def environment(command: dict, contract: dict, base: dict) -> dict:
-    """Baseline variables plus exactly the declared inputs; never the whole runner environment."""
+def provided_by_runner(base: dict, mode: str, extra: dict | None = None) -> dict:
+    """Every variable the runner itself sets for a command in `mode`: the cache and sandbox settings the
+    boundary adds, plus `extra` (FACTORY_* values and the hosted browser for an e2e driver).
+
+    A contract may declare these as a command's inputs; they count as present whatever the host environment holds.
+    """
+    additions, _ = tool_caches(base, mode)
+    return {**additions, **(extra or {})}
+
+
+def environment(command: dict, contract: dict, base: dict, *, provided: dict | None = None) -> dict:
+    """Baseline variables plus exactly the declared inputs; never the whole runner environment.
+
+    `provided` is what the runner adds for this command (see `provided_by_runner`); declared inputs the runner
+    provides are satisfied by it, not by the host.
+    """
+    base = {**base, **(provided or {})}
     missing = missing_environment(command, contract, base)
     if missing:
         raise CommandError(f"command {command['id']} needs environment variable(s) {', '.join(missing)}",

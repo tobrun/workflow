@@ -1,7 +1,5 @@
 """The contract's setup runs in the run's own worktree, with writable package-manager caches."""
 
-import contextlib
-import io
 import json
 import os
 import shutil
@@ -12,9 +10,9 @@ import unittest
 import unittest.mock
 from pathlib import Path
 
-from runner import cli, commands, watch
-from runner.model import Run
-from runner.tests.helpers import CONTRACT, FactoryTestCase, git, happy_scenario, make_repo
+from runner import commands, supervise, watch
+from runner import worktree as wt
+from runner.tests.helpers import CONTRACT, STUBS, FactoryTestCase, git, happy_scenario, make_repo
 from runner.worker import Worker
 
 INSTALL = ["sh", "-c", "mkdir -p __pycache__ && echo installed >> __pycache__/installs"]
@@ -40,6 +38,40 @@ class SetupTests(FactoryTestCase):
         self.assertEqual(build["setup"]["commands"][0]["classification"], "succeeded")
         self.assertTrue(ship["setup"]["decisions"][0]["decision"].startswith("reused"))
 
+    def test_setup_reruns_when_an_installed_output_disappears_and_hides_it_from_git_status(self):
+        scenario = happy_scenario()
+        # The build agent "tidies" the worktree by removing what setup installed, as one real run did to node_modules.
+        scenario["build"][0]["run"].insert(0, ["rm", "-rf", "__pycache__"])
+        self.scenario(scenario)
+        contract = {**CONTRACT, "setup": [{"id": "deps", "run": INSTALL, "produces": ["__pycache__"]}]}
+        run = self.queued_run(repo=self.repo_with(contract, "vanishing"))
+        Worker(self.home, run.id, grace=1).run()
+        data = json.loads((run.dir / "run.json").read_text())
+        self.assertEqual(data["status"], "done", data["human"])
+        build, ship = (next(a for a in data["attempts"] if a["stage"] == stage) for stage in ("build", "ship"))
+        self.assertEqual(build["setup"]["produces"], [str(run.worktree / "__pycache__")])
+        # The build gate runs setup again, finds the install gone, and reinstalls; ship then reuses that.
+        self.assertEqual([d["decision"] for d in build["checkpoints"] if d["subphase"] == "setup"],
+                         ["computed: setup output __pycache__ is missing"])
+        self.assertTrue(ship["setup"]["decisions"][0]["decision"].startswith("reused"))
+        self.assertEqual((run.worktree / "__pycache__" / "installs").read_text(), "installed\n")
+        excludes = (wt.common_dir(run.worktree) / "info" / "exclude").read_text()
+        self.assertIn("/__pycache__/", excludes.splitlines())
+        self.assertEqual(wt.changed_paths(run.worktree), [])
+
+    def test_a_declared_output_that_setup_does_not_produce_only_warns(self):
+        self.scenario(happy_scenario())
+        contract = {**CONTRACT, "setup": [{"id": "deps", "run": ["true"], "produces": ["node_modules"]}]}
+        run = self.queued_run(stage="build", repo=self.repo_with(contract, "undeclared"))
+        Worker(self.home, run.id, grace=1).run()
+        data = json.loads((run.dir / "run.json").read_text())
+        self.assertEqual(data["status"], "done", data["human"])
+        build = next(a for a in data["attempts"] if a["stage"] == "build")
+        self.assertEqual(build["setup"]["warnings"],
+                         ["setup command deps succeeded but did not produce node_modules, which its contract record declares"])
+        self.assertIn("did not produce node_modules", build["warning"])
+        self.assertIn('"event": "stage.warning"', (run.dir / "events.jsonl").read_text())
+
     def test_a_failing_setup_parks_before_the_agent_starts_and_names_the_full_output(self):
         failing = ["sh", "-c", "echo resolving; echo npm error code EPERM >&2; exit 1"]
         self.scenario(happy_scenario())
@@ -56,6 +88,25 @@ class SetupTests(FactoryTestCase):
         self.assertEqual([c for c in self.stub_calls("codex") if c["argv"][0] == "exec"
                           and c["env"]["FACTORY_STAGE"] == "build"], [])
         self.assertEqual(data["attempts"][-1]["code"], "setup.failed")
+
+
+class ProducesTests(unittest.TestCase):
+    def test_package_manager_installs_imply_their_output_directory(self):
+        root = Path(os.path.realpath(tempfile.mkdtemp(prefix="fp-")))
+        try:
+            (root / "ui").mkdir()
+            self.assertEqual(commands.produces({"run": ["npm", "ci"], "cwd": "ui"}, root), ([root / "ui" / "node_modules"], False))
+            self.assertEqual(commands.produces({"run": ["yarn"]}, root), ([root / "node_modules"], False))
+            self.assertEqual(commands.produces({"run": ["uv", "sync", "--frozen"]}, root), ([root / ".venv"], False))
+            self.assertEqual(commands.produces({"run": ["uv", "sync"], "set": {"UV_PROJECT_ENVIRONMENT": "/x"}}, root),
+                             ([], False))
+            self.assertEqual(commands.produces({"run": ["pip", "install", "-e", "."]}, root), ([], False))
+            self.assertEqual(commands.produces({"run": ["make", "deps"], "produces": ["vendor", "ui/dist"]}, root),
+                             ([root / "vendor", root / "ui" / "dist"], True))
+            with self.assertRaises(commands.CommandError):
+                commands.produces({"run": ["make"], "produces": ["../outside"]}, root)
+        finally:
+            shutil.rmtree(root, ignore_errors=True)
 
 
 class CacheTests(unittest.TestCase):
@@ -117,6 +168,48 @@ class AgentEnvironmentTests(FactoryTestCase):
         self.assertEqual(build["env"]["AGENT_BROWSER_ARGS"], "--no-sandbox")
         self.assertEqual(build["env"]["npm_config_cache"], str(cache / "npm"))
         self.assertIn(str(cache), build["argv"])
+
+
+class HostedBrowserTests(FactoryTestCase):
+    fast_config = {**FactoryTestCase.fast_config, "browser": "auto"}
+
+    def test_build_and_ship_attempts_get_a_hosted_browser_that_ends_with_the_attempt(self):
+        self.scenario(happy_scenario())
+        run = self.queued_run()
+        with unittest.mock.patch.dict(os.environ, {"FACTORY_BROWSER_BIN": str(STUBS / "chrome")}):
+            Worker(self.home, run.id, grace=1).run()
+        data = json.loads((run.dir / "run.json").read_text())
+        self.assertEqual(data["status"], "done", data["human"])
+        for stage in ("build", "ship"):
+            attempt = next(a for a in data["attempts"] if a["stage"] == stage)
+            call = next(c for c in self.stub_calls("codex") if c["argv"][0] == "exec" and c["env"]["FACTORY_STAGE"] == stage)
+            port = attempt["browser"]["port"]
+            self.assertEqual(attempt["browser"]["status"], "hosted")
+            self.assertEqual(call["env"]["AGENT_BROWSER_CDP"], str(port))
+            self.assertEqual(call["env"]["FACTORY_BROWSER_CDP_URL"], f"http://127.0.0.1:{port}")
+            launched = json.loads((Path(attempt["browser"]["log"]).parent / "profile" / "stub.json").read_text())
+            self.assertIn(f"--remote-debugging-port={port}", launched["argv"])
+            self.assertEqual(launched["pid"], attempt["browser"]["pid"])
+            self.assertFalse(supervise.process_identity(attempt["browser"]["pid"])[0], "the browser outlived the attempt")
+            self.assertTrue(Path(attempt["browser"]["log"]).is_file())
+        self.assertFalse((run.attempt_dir("scope-review", 1) / "browser").exists(), "no browser for scope-review")
+        review = next(a for a in data["attempts"] if a["stage"] == "scope-review")
+        self.assertEqual(review.get("browser"), {"status": "off"})
+        events = (run.dir / "events.jsonl").read_text()
+        self.assertIn('"event": "browser.hosted"', events)
+
+    def test_a_host_without_a_browser_records_why_and_the_attempt_still_runs(self):
+        self.scenario(happy_scenario())
+        run = self.queued_run(stage="build")
+        with unittest.mock.patch("runner.browser.find", return_value=None):
+            Worker(self.home, run.id, grace=1).run()
+        data = json.loads((run.dir / "run.json").read_text())
+        self.assertEqual(data["status"], "done", data["human"])
+        build = next(a for a in data["attempts"] if a["stage"] == "build")
+        self.assertEqual(build["browser"]["status"], "unavailable")
+        self.assertIn("no Chrome or Chromium found", build["browser"]["reason"])
+        call = next(c for c in self.stub_calls("codex") if c["argv"][0] == "exec" and c["env"]["FACTORY_STAGE"] == "build")
+        self.assertNotIn("AGENT_BROWSER_CDP", call["env"])
 
 
 class BlockerTests(FactoryTestCase):

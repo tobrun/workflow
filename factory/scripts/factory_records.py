@@ -376,13 +376,28 @@ def decode_data_uri(uri: str, limit: int = EVIDENCE_FILE_MAX_BYTES) -> tuple[str
 
 # --- repository execution contract --------------------------------------------------------
 
-def validate_command(command: object, where: str, check: "_Checker", *, placeholders: tuple[str, ...] = ()) -> None:
-    """One command record: an argv (`run`) or one repository script (`script`), never a shell string."""
+def validate_command(command: object, where: str, check: "_Checker", *, placeholders: tuple[str, ...] = (),
+                     produces: bool = False) -> None:
+    """One command record: an argv (`run`) or one repository script (`script`), never a shell string.
+
+    `produces` (setup commands only) lists the worktree-relative paths the command installs; the
+    runner reruns setup when one is missing and keeps them out of Git status.
+    """
     if not isinstance(command, dict):
         check.add(where, "must be an object")
         return
     check.keys(command, where, ("id",), ("run", "script", "args", "shell", "cwd", "env", "set", "timeout_s",
-                                         "boundary", "description", "ready"))
+                                         "boundary", "description", "ready") + (("produces",) if produces else ()))
+    if "produces" in command and produces:
+        outputs = command["produces"]
+        if not isinstance(outputs, list) or not outputs:
+            check.add(f"{where}.produces", "must be a non-empty list of worktree-relative paths")
+        else:
+            for output in outputs:
+                try:
+                    safe_relative(output, f"{where}.produces")
+                except RecordError as error:
+                    check.add(f"{where}.produces", str(error))
     if "ready" in command:
         validate_command({"id": "ready", **command["ready"]} if isinstance(command["ready"], dict) else command["ready"],
                          f"{where}.ready", check, placeholders=placeholders)
@@ -442,7 +457,7 @@ def _commands(check: "_Checker", data: dict, key: str, *, required: bool, placeh
         check.add(key, "must list at least one command")
     seen: set[str] = set()
     for index, command in enumerate(commands):
-        validate_command(command, f"{key}[{index}]", check, placeholders=placeholders)
+        validate_command(command, f"{key}[{index}]", check, placeholders=placeholders, produces=key == "setup")
         if isinstance(command, dict) and isinstance(command.get("id"), str):
             if command["id"] in seen:
                 check.add(f"{key}[{index}].id", f"duplicate command id {command['id']!r}")

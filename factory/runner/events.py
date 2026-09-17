@@ -44,6 +44,8 @@ NAMES = frozenset({
     "intent.drift",
     "config.changed",
     "skills.fallback",
+    "browser.hosted",
+    "browser.unavailable",
 })
 
 

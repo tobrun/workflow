@@ -24,7 +24,7 @@ import shutil
 import sys
 from pathlib import Path
 
-from runner import checkpoints, commands, intent, records, resources, servicehost
+from runner import browser, checkpoints, commands, intent, records, resources, servicehost
 from runner import worktree as wt
 
 RENDER_E2E = Path(__file__).resolve().parent.parent / "skills" / "build" / "scripts" / "render-e2e.py"
@@ -69,8 +69,10 @@ def execute_tests(ctx, contract: dict, test_ids: list[str], *, label: str, root:
     exec_dir = gates.next_exec_dir(ctx, label)
     output = results_file(exec_dir, tests["results"])
     output.parent.mkdir(parents=True, exist_ok=True)
-    values = {"tests": test_ids, "results": [str(output)], "junit": [str(output)], "out": [str(output.parent)],
-              "run_dir": [str(ctx.run_dir or ctx.attempt_dir)]}
+    # The runner sees paths from its own working directory; the scenario map names them from the worktree root.
+    runner_cwd = tests_cwd(contract)
+    values = {"tests": [cwd_relative(test, runner_cwd) for test in test_ids], "results": [str(output)],
+              "junit": [str(output)], "out": [str(output.parent)], "run_dir": [str(ctx.run_dir or ctx.attempt_dir)]}
     command = {"id": "tests", **tests["run"]}
     try:
         argv, env, cwd, mode = command_parts(ctx, contract, command, exec_dir, cwd_root=root, placeholders=values)
@@ -85,21 +87,48 @@ def execute_tests(ctx, contract: dict, test_ids: list[str], *, label: str, root:
         return receipt, None, (f"the test runner {gates.describe(receipt)} and wrote no results to its runner-owned "
                                f"file" + (f": {tail}" if tail else "") + gates.full_output(exec_dir)), output
     try:
-        return receipt, records.parse_test_results(output, tests["results"]), None, output
+        results = records.parse_test_results(output, tests["results"])
     except records.RecordError as error:
         return receipt, None, f"{error} [{error.code}]", output
+    return receipt, {worktree_relative(test, runner_cwd): outcome for test, outcome in results.items()}, None, output
+
+
+def tests_cwd(contract: dict) -> str:
+    """The test runner's working directory relative to the worktree, POSIX style, "" for the root."""
+    cwd = ((contract.get("tests") or {}).get("run") or {}).get("cwd", ".")
+    relative = Path(cwd).as_posix().strip("/")
+    return "" if relative in ("", ".") else relative
+
+
+def cwd_relative(test_id: str, cwd: str) -> str:
+    """A worktree-relative `path::name` id as the runner sees it from its working directory."""
+    if cwd and test_id.startswith(cwd + "/"):
+        return test_id[len(cwd) + 1:]
+    return test_id
+
+
+def worktree_relative(test_id: str, cwd: str) -> str:
+    """A `path::name` id the runner reported from its working directory, as the scenario map names it."""
+    path = records.test_path(test_id)
+    looks_like_a_file = path is not None and ("/" in path or "." in path)
+    if not cwd or not looks_like_a_file or path.startswith(cwd + "/") or path.startswith("/"):
+        return test_id
+    return f"{cwd}/{test_id}"
 
 
 def layer_problems(contract: dict, mapping: dict) -> list[str]:
+    """Tests mapped outside their layer's globs; a matter of tidiness the gate reports without failing."""
     layers = (contract.get("tests") or {}).get("layers") or {}
+    cwd = tests_cwd(contract)
     problems = []
     for scenario_id, entry in sorted(mapping["scenarios"].items()):
         globs = layers.get(entry["layer"])
         if not globs:
             continue
         for test_id in entry.get("tests", []):
-            path = records.test_path(test_id)
-            if path is None or not any(fnmatch.fnmatch(path, pattern) for pattern in globs):
+            spellings = {test_id, cwd_relative(test_id, cwd), worktree_relative(test_id, cwd)}
+            candidates = [path for path in map(records.test_path, spellings) if path is not None]
+            if not any(fnmatch.fnmatch(candidate, pattern) for candidate in candidates for pattern in globs):
                 problems.append(f"{scenario_id} maps {test_id} as [{entry['layer']}], but the contract's "
                                 f"{entry['layer']} tests live in {', '.join(globs)}")
     return problems
@@ -113,9 +142,7 @@ def check_tests(ctx, contract: dict, mapping: dict, data: dict):
     if "tests" not in contract:
         return gates.blocked("scenarios need test execution but the contract declares no 'tests' runner",
                              retryable=False, code="contract.gap", **data)
-    problems = layer_problems(contract, mapping)
-    if problems:
-        return gates.blocked("; ".join(problems[:5]), code="evidence.wrong_layer", **data)
+    ctx.warnings.extend(layer_problems(contract, mapping))
     ids = sorted({test for tests in wanted.values() for test in tests})
     inputs = {"tree": checkpoints.tree(ctx.worktree), "tests": wanted, "contract_tests": contract["tests"],
               "runner": ctx.runner_sha()}
@@ -275,9 +302,19 @@ def check_e2e(ctx, contract: dict, mapping: dict, scenarios: list[dict], data: d
               "junit": [], **{f"port_{name}": [str(port)] for name, port in ports.items()}}
     extra = {"FACTORY_E2E_OUT": str(out), "FACTORY_REVISION": revision, "FACTORY_SERVICE_DATA": str(service_data),
              **{f"FACTORY_PORT_{name.upper()}": str(port) for name, port in ports.items()}}
+    driver = {"id": "e2e", **e2e["driver"]}
+    mode = commands.boundary(driver, contract)
+    hosted, browser_record = None, {"status": "off"}
+    if ctx.browser != "off":
+        # The driver gets the browser the build agent had, so it behaves the same at the gate as in the attempt.
+        try:
+            hosted = browser.launch(home=lease_home, holder=f"{ctx.plan}:e2e:browser", port_range=ctx.port_range,
+                                    mode=mode, directory=exec_dir / "browser", env=ctx.env())
+            browser_record = browser.record(hosted)
+        except browser.Unavailable as error:
+            browser_record = {"status": "unavailable", "reason": str(error)}
+        extra.update(browser.environment(hosted))
     try:
-        driver = {"id": "e2e", **e2e["driver"]}
-        mode = commands.boundary(driver, contract)
         plan = {"log_dir": str(exec_dir / "services"), "services": [], "driver": {}}
         services = {service["id"]: service for service in contract.get("services", [])}
         for service_id in e2e.get("services", []):
@@ -303,6 +340,7 @@ def check_e2e(ctx, contract: dict, mapping: dict, scenarios: list[dict], data: d
         argv = commands.sandbox_wrap(servicehost.bootstrap_argv(plan_path), mode,
                                      writable=[ctx.worktree, exec_dir, *cache_paths])
     except commands.CommandError as error:
+        browser.stop(hosted)
         for lease in port_leases:
             lease.release()
         return gates.blocked(f"the e2e driver cannot run: {error}", retryable=False, code="contract.unrunnable", **data)
@@ -312,9 +350,10 @@ def check_e2e(ctx, contract: dict, mapping: dict, scenarios: list[dict], data: d
                                 timeout_cap=commands.timeout_s(driver), boundary=mode, exec_dir=exec_dir,
                                 extra_fds=[lease.fd for lease in port_leases])
     finally:
+        browser.stop(hosted)
         for lease in port_leases:
             lease.release()
-    data.setdefault("e2e", {})["ports"] = ports
+    data.setdefault("e2e", {}).update({"ports": ports, "browser": browser_record})
     halted = gates.interrupted(ctx, receipt, "the e2e driver", **data)
     if halted:
         return halted
@@ -350,7 +389,7 @@ def check_e2e(ctx, contract: dict, mapping: dict, scenarios: list[dict], data: d
         problems.append(f"the e2e driver {gates.describe(receipt)}")
     counts = records.e2e_counts({"scenarios": [by_case[c] for c in cases.values() if c in by_case]})
     data["e2e"] = {"revision": revision, "coverage": coverage, "counts": counts, "record": str(record_path),
-                   "ports": ports, "service_data": str(service_data)}
+                   "ports": ports, "service_data": str(service_data), "browser": browser_record}
     if problems:
         return gates.blocked("; ".join(problems[:5]), code="e2e.failed", **data)
     data["e2e_report"] = publish_e2e(ctx, record, out)

@@ -60,8 +60,7 @@ class RuntimeManifestTests(ProvenanceTestCase):
                          json.loads((run.dir / "intent" / "approved.json").read_text())["contract_sha256"])
         self.assertEqual(manifest["environment"]["required"], {"FACTORY_TEST_API_KEY": "set"})
         self.assertEqual(manifest["environment"]["github_token"], "forwarded")
-        self.assertEqual(manifest["config"]["semantic"], {"max_tokens_per_run": 60_000_000,
-                                                          "stop_on_repeated_reason": False})
+        self.assertEqual(manifest["config"]["semantic"], {"max_retries": 5, "stop_on_repeated_reason": False})
         build = [a for a in data["attempts"] if a["stage"] == "build"][0]
         self.assertEqual(build["runtime"]["skills_id"], manifest["skills"]["skills_id"])
 
@@ -131,14 +130,15 @@ class ConfigBoundaryTests(ProvenanceTestCase):
         run = self.queued_run()
         self.assertEqual(self.call("resume", run.id, "--detach")[0], 0)
         self.wait_for(lambda: "process.spawned" in [e["event"] for e in events.read(run.dir)], 20, "spawn")
-        (self.home / "config.json").write_text(json.dumps({**self.fast_config, "max_tokens_per_run": 500}))
+        (self.home / "config.json").write_text(json.dumps({**self.fast_config, "stop_on_repeated_reason": True}))
         data = self.wait_status(run.dir, ("done", "needs-human", "cancelled"))
         review, build = data["attempts"][0], data["attempts"][1]
-        self.assertEqual(review["outcome"], "done", "the running attempt keeps the ceiling it started with")
-        self.assertEqual(review["config"]["semantic"]["max_tokens_per_run"], 60_000_000)
-        self.assertEqual(build["config"]["semantic"]["max_tokens_per_run"], 500)
-        self.assertEqual((data["status"], data["stage"]), ("needs-human", "build"))
-        self.assertIn("token ceiling exceeded", data["human"]["reason"])
+        self.assertEqual(review["outcome"], "done", "the running attempt keeps its initial semantic settings")
+        self.assertEqual(review["config"]["semantic"]["stop_on_repeated_reason"], False)
+        self.assertEqual(review["config"]["semantic"]["max_retries"], 5)
+        self.assertEqual(build["config"]["semantic"]["stop_on_repeated_reason"], True)
+        self.assertEqual(build["config"]["semantic"]["max_retries"], 5)
+        self.assertEqual((data["status"], data["stage"]), ("done", "ship"))
         changed = [e for e in events.read(run.dir) if e["event"] == "config.changed"]
         self.assertEqual(len(changed), 1)
         self.assertEqual((changed[0]["stage"], changed[0]["data"]["previous"]), ("build", "scope-review-1"))
@@ -151,7 +151,7 @@ class ConfigBoundaryTests(ProvenanceTestCase):
         from runner import config
         effective = provenance.effective_config(config.load(self.home), str(self.root))
         self.assertEqual(effective["values"]["codex_sandbox"], "bypass")
-        self.assertEqual(effective["semantic"], {"max_tokens_per_run": 20_000_000, "stop_on_repeated_reason": True})
+        self.assertEqual(effective["semantic"], {"max_retries": 5, "stop_on_repeated_reason": True})
 
 
 class ReadinessTests(ProvenanceTestCase):

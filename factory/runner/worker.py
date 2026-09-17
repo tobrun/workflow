@@ -15,8 +15,8 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from runner import (FACTORY_ROOT, commands, conditions, config, dashboard, events, executor, faults, gates, hosts,
-                    intent, notify, pricing, provenance, records, slots, supervise)
+from runner import (FACTORY_ROOT, browser, commands, conditions, config, dashboard, events, executor, faults, gates,
+                    hosts, intent, notify, pricing, provenance, records, slots, supervise)
 from runner import worktree as wt
 from runner.model import (CANCELLED, DONE, PARKED, QUEUED, RUNNING, BudgetExhausted, Run, decide)
 from runner.pipeline import PIPELINE, Stage, gate_context, gate_reserve_s, write_run_context
@@ -156,6 +156,8 @@ class Worker:
             self.save(run)
             return
         stage = self.pipeline[run.stage]
+        if browser.stop_recorded(open_attempt.get("browser"), grace=self.grace):
+            log(f"stopped the browser {stage.name} attempt {open_attempt['n']} left behind")
         execution = open_attempt.get("execution")
         if not execution:
             reconcile_orphan(run, self.cfg)
@@ -229,9 +231,7 @@ class Worker:
             )
             attempt["limits"] = {"child_agents": self.cfg.max_child_agents, "agent_depth": self.cfg.max_agent_depth,
                                  "enforced_by": "codex agents.max_concurrent_threads_per_session and agents.max_depth",
-                                 "heavy_commands": self.cfg.max_heavy_commands,
-                                 "token_ceiling": self.cfg.max_tokens_per_run,
-                                 "token_enforcement": "at Codex turn boundaries, when usage is reported"}
+                                 "heavy_commands": self.cfg.max_heavy_commands}
             attempt["sandbox"] = hosts.sandbox_capabilities(sandbox, writable, run.worktree)
         except (ValueError, wt.GitError) as error:
             self.save(run)
@@ -250,6 +250,8 @@ class Worker:
             self.save(run)
             self.finish(run, stage, attempt, stop, None, None)
             return
+        hosted = self.host_browser(run, stage, n, attempt, sandbox)
+        env.update(browser.environment(hosted))
         token = executor.new_token()
         attempt["execution"] = {"token": token, "dir": os.path.relpath(attempt_dir, run.dir)}
         attempt["deadline_at"] = time.time() + stage.timeout_s if stage.timeout_s else None
@@ -269,12 +271,41 @@ class Worker:
             token=token, kind="stage", label=f"{stage.name}-{n}", argv=argv, cwd=str(run.worktree),
             run_dir=str(run.dir), stdout=str(attempt_dir / "stdout.jsonl"), stderr=str(attempt_dir / "stderr.log"),
             deadline_at=host_deadline, cancel_file=str(run.dir / "cancel"), grace=self.grace,
-            token_ceiling=max(0, self.cfg.max_tokens_per_run - run.data.get("tokens_total", 0)),
             inherit_fds=[slot.fd] if slot is not None else [],
         )
-        receipt = executor.run(attempt_dir, request, env, on_running=running,
-                               cancel_requested=lambda: run.cancel_requested)
+        try:
+            receipt = executor.run(attempt_dir, request, env, on_running=running,
+                                   cancel_requested=lambda: run.cancel_requested)
+        finally:
+            browser.stop(hosted, grace=self.grace)
         self.complete(run, stage, attempt, receipt, slot)
+
+    def host_browser(self, run: Run, stage: Stage, n: int, attempt: dict, sandbox: str) -> browser.Browser | None:
+        """Start the attempt's headless browser outside the agent's sandbox, where Chrome can actually run.
+
+        The agent reaches it through AGENT_BROWSER_CDP and FACTORY_BROWSER_CDP_URL; a host without a
+        browser records why and the attempt proceeds without one.
+        """
+        if stage.name not in ("build", "ship") or self.cfg.browser == "off":
+            attempt["browser"] = {"status": "off"}
+            return None
+        try:
+            hosted = browser.launch(home=self.home, holder=f"{run.id}:{stage.name}-{n}:browser",
+                                    port_range=self.cfg.port_range,
+                                    mode="workspace-write" if sandbox == "workspace-write" else "host",
+                                    directory=run.attempt_dir(stage.name, n) / "browser", env=dict(os.environ))
+        except browser.Unavailable as error:
+            attempt["browser"] = {"status": "unavailable", "reason": str(error)}
+            run.event("browser.unavailable", stage.name, n, reason=str(error))
+            log(f"no hosted browser for {stage.name} attempt {n}: {error}")
+            return None
+        try:
+            attempt["browser"] = browser.record(hosted)
+            run.event("browser.hosted", stage.name, n, port=hosted.port, executable=str(hosted.executable))
+        except BaseException:
+            browser.stop(hosted, grace=self.grace)
+            raise
+        return hosted
 
     def complete(self, run: Run, stage: Stage, attempt: dict, receipt: executor.Receipt,
                  slot: slots.Slot | None = None) -> None:
@@ -304,23 +335,19 @@ class Worker:
                         receipt, None)
             return
 
-        if receipt.classification == "budget":
-            reason = (f"token ceiling {self.cfg.max_tokens_per_run} reached during {stage.name} attempt {n} "
-                      f"({receipt.detail}); usage arrives when a Codex turn completes, so the ceiling is enforced at "
-                      "turn boundaries")
-            self.finish(run, stage, attempt, gates.Outcome("blocked", reason, False, "runner", code="budget.tokens"),
-                        receipt, None)
-            return
         ctx = gate_context(run, stage.name, n, deadline=attempt.get("deadline_at"),
                            poll_seconds=self.cfg.stage_poll_seconds, sleep=self.sleep,
                            cancel_requested=lambda: run.cancel_requested, grace=self.grace,
                            inherit_fds=[slot.fd] if slot is not None else [], home=self.home,
-                           max_heavy_commands=self.cfg.max_heavy_commands, port_range=self.cfg.port_range)
+                           max_heavy_commands=self.cfg.max_heavy_commands, port_range=self.cfg.port_range,
+                           browser=self.cfg.browser)
         gate_started = time.monotonic()
         try:
             gate = stage.gate(ctx)
         except Exception as error:  # noqa: BLE001 - a gate crash is a retryable runner failure
             gate = gates.blocked(f"gate crashed: {type(error).__name__}: {error}", outcome="failed")
+        gate.warnings = [*(attempt.get("setup") or {}).get("warnings", []), *gate.warnings]
+        attempt["gate_warnings"] = gate.warnings
         self.record_handoff(run, stage, attempt)
         attempt["host_seconds"] = round(receipt.seconds, 1)
         attempt["gate_seconds"] = round(time.monotonic() - gate_started, 1)
@@ -374,7 +401,7 @@ class Worker:
         started = time.monotonic()
         result = gates.run_setup(ctx, contract, data)
         attempt["setup"] = {**data.get("setup", {}), "seconds": round(time.monotonic() - started, 1),
-                            "decisions": ctx.checkpoint_log}
+                            "decisions": ctx.checkpoint_log, "warnings": ctx.warnings}
         if result is None:
             return None
         return gates.Outcome("blocked", f"before launching {stage.name}: {result.reason}", result.retryable, "runner",
@@ -508,8 +535,11 @@ def apply_decision(run: Run, attempt: dict, cfg: config.Config, pending: list | 
     already in `pending`) instead of written, so the caller persists the decision and its
     history in one save and then calls `emit_pending`. Without it, events are written now.
     """
-    action, reason = decide(run, attempt, max_tokens=cfg.max_tokens_per_run,
-                            stop_on_repeated_reason=cfg.stop_on_repeated_reason)
+    semantic = (attempt.get("config") or {}).get("semantic") or {}
+    retry_budget = semantic.get("max_retries", cfg.max_retries)
+    if retry_budget < run.data["retries"]["budget"]:
+        run.data["retries"]["budget"] = retry_budget
+    action, reason = decide(run, attempt, stop_on_repeated_reason=cfg.stop_on_repeated_reason)
     stage = attempt["stage"]
     planned: list = [] if pending is None else pending
     if action == "retry":

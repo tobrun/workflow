@@ -34,7 +34,7 @@ Read [references/layers.md](references/layers.md), [references/tests.md](referen
 6. Then run the full e2e pass per "The e2e layer" below over the whole spec, and loop on failures until it is green.
 7. Run the repository's required pull-request commands per [../../references/ci-parity.md](../../references/ci-parity.md), starting them in the background as soon as the e2e loop is green and rendering the e2e report while they run - the two share nothing. A known-red CI scenario is not an acceptable deviation.
 8. After the e2e report and CI-parity gate, close per "Closing message". Build never pushes or opens a PR; that is `ship`'s phase 3.
-9. Leave the tracked worktree clean: the runner's gate requires it, then runs the mapped tests, the `[repro]` checks, the e2e driver, and every contract validation command itself under the attempt's deadline.
+9. Leave the tracked worktree clean: the runner's gate requires it, then runs the mapped tests, the `[repro]` checks, the e2e driver, and every contract validation command itself under the attempt's deadline. Never delete or move what the contract's setup installed (`node_modules`, `.venv`, and the like): the runner keeps those out of Git status, and the gate's tests need them.
 
 ## Jira sync
 
@@ -88,7 +88,7 @@ The contract's `e2e.driver` (and its `services`) is what the runner executes: th
 1. **Launch the app.** Invoke an installed `run` skill with the mocked environment configured when the host supports direct skill invocation. Otherwise inspect the repository's documented commands and start the app directly. When no safe launch command can be determined, stop with a `blocked` result carrying a `launch.unavailable` condition whose evidence names every discovery attempt and why each was unsafe.
 2. **Drive it and capture evidence**, per scenario:
    - `kind: "frontend"` - use available browser automation (the host browser integration or Playwright) to exercise the scenario, one screenshot file per meaningful step with its SHA-256.
-     The runner's environment already lets `agent-browser` and Playwright start Chrome in your sandbox; a launcher of your own needs `--no-sandbox`. A browser that still will not start is not `launch.unavailable`: commit the driver, record it in Deviations, and finish `done`, because the runner runs the driver itself at the gate and its result is the evidence.
+     The runner hosts the browser: `AGENT_BROWSER_CDP` and `FACTORY_BROWSER_CDP_URL` point `agent-browser` and Playwright's `connectOverCDP` at a headless Chrome running outside your sandbox, where Chrome itself cannot start. Never launch a browser of your own, and a browser problem is never `launch.unavailable`: record it in Deviations, commit the driver, and finish `done`, because the runner runs the driver with the same browser at the gate and its result is the evidence.
    - `kind: "non-frontend"` - capture the entity's real before/after state from the run's own output or fixtures.
 3. **Never fabricate a screenshot or a data-model-state entry.** Both come from this actual run.
 4. **Loop until green.** A failed scenario is a bug: diagnose it, fix the code (a new red-green cycle at the right layer), re-run and re-capture that scenario. Never flip a status to pass without a fresh capture. If a scenario fails three times on the same root cause, write what you found into Deviations, leave the scenario marked failed in the report, and finish with a `blocked` result (no condition: the gate retries it).

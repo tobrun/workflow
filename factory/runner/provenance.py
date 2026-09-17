@@ -135,7 +135,7 @@ def host_versions() -> dict:
 
 
 # Settings that change what an attempt means are read once per attempt; resource controls stay live.
-SEMANTIC_SETTINGS = ("max_tokens_per_run", "stop_on_repeated_reason")
+SEMANTIC_SETTINGS = ("max_retries", "stop_on_repeated_reason")
 LIVE_SETTINGS = ("max_concurrent_stages", "stage_poll_seconds", "heartbeat_seconds", "notify")
 
 

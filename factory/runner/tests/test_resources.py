@@ -130,20 +130,16 @@ class WorkerUsageTests(FactoryTestCase):
         self.assertEqual(data["status"], "done", data["human"])
         self.assertEqual(len([a for a in data["attempts"] if a["stage"] == "build"]), 4)
 
-    def test_the_token_ceiling_stops_an_attempt_at_its_turn_boundary(self):
+    def test_reported_usage_does_not_stop_an_attempt(self):
         (self.home / "config.json").write_text(json.dumps({**self.fast_config, "max_tokens_per_run": 5000}))
         scenario = happy_scenario()
-        scenario["scope-review"] = [{"early_usage": {"input_tokens": 9000, "output_tokens": 100}, "sleep": 30}]
+        scenario["scope-review"][0]["early_usage"] = {"input_tokens": 9000, "output_tokens": 100}
         self.scenario(scenario)
         run = self.queued_run()
-        started = time.monotonic()
         Worker(self.home, run.id, grace=1).run()
-        self.assertLess(time.monotonic() - started, 15)
         data = json.loads((run.dir / "run.json").read_text())
-        attempt = data["attempts"][0]
-        self.assertEqual((data["status"], attempt["code"]), ("needs-human", "budget.tokens"))
-        self.assertIn("token ceiling 5000 reached during scope-review attempt 1 (9100 tokens reported", attempt["reason"])
-        self.assertIn("enforced at turn boundaries", attempt["reason"])
+        self.assertEqual(data["status"], "done")
+        self.assertGreater(data["attempts"][0]["tokens"], 5000)
 
 
 class ConcurrencyTests(FactoryTestCase):

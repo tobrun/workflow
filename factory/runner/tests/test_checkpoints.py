@@ -4,12 +4,11 @@ import contextlib
 import io
 import json
 import os
-from pathlib import Path
 from unittest import mock
 
 from runner import checkpoints, cli, gates, records, supervise
 from runner.model import Run
-from runner.tests.helpers import (CONTRACT, E2E_DRIVER_PY, GAUNTLET, NOTES, PR_BODY, SCENARIO_MAP, SHIP_LENSES, SPEC,
+from runner.tests.helpers import (E2E_DRIVER_PY, GAUNTLET, NOTES, PR_BODY, SCENARIO_MAP, SHIP_LENSES, SPEC,
                                   TESTS_PY, WEBHOOK_PY, FactoryTestCase, at_head, git, happy_scenario, make_repo,
                                   review_record)
 from runner.worker import Worker

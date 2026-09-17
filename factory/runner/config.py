@@ -13,13 +13,13 @@ from pathlib import Path
 
 SCHEMA = 1
 SANDBOX_MODES = ("workspace-write", "bypass")
+BROWSER_MODES = ("auto", "off")
 
 DEFAULTS = {
     "schema": SCHEMA,
     "max_concurrent_stages": 4,
+    "max_retries": 5,
     "notify": True,
-    # One real first-try run used 31.7M tokens (ship alone 20.9M); see factory/README.md.
-    "max_tokens_per_run": 60_000_000,
     "stop_on_repeated_reason": False,
     "stage_poll_seconds": 10,
     "heartbeat_seconds": 30,
@@ -27,6 +27,8 @@ DEFAULTS = {
     "max_agent_depth": 1,
     "max_heavy_commands": 2,
     "port_range": [20000, 29999],
+    # "auto" hosts one headless Chrome per build and ship attempt and per e2e gate, reached over CDP; see runner/browser.py.
+    "browser": "auto",
     "repos": {},
 }
 
@@ -51,8 +53,8 @@ def normalize_repo(path: str | Path) -> str:
 @dataclass
 class Config:
     max_concurrent_stages: int = 4
+    max_retries: int = 5
     notify: bool = True
-    max_tokens_per_run: int = 60_000_000
     stop_on_repeated_reason: bool = False
     stage_poll_seconds: float = 10
     heartbeat_seconds: float = 30
@@ -60,6 +62,7 @@ class Config:
     max_agent_depth: int = 1
     max_heavy_commands: int = 2
     port_range: tuple = (20000, 29999)
+    browser: str = "auto"
     repos: dict = field(default_factory=dict)
     raw: dict = field(default_factory=dict)
 
@@ -82,7 +85,7 @@ def parse(data: object) -> Config:
     if merged["schema"] != SCHEMA:
         raise ConfigError(f"config.json: schema {merged['schema']!r} is not supported (expected {SCHEMA})")
     _positive_number(merged, "max_concurrent_stages", integer=True)
-    _positive_number(merged, "max_tokens_per_run", integer=True)
+    _positive_number(merged, "max_retries", integer=True)
     _positive_number(merged, "stage_poll_seconds", integer=False)
     _positive_number(merged, "heartbeat_seconds", integer=False)
     for key in ("max_child_agents", "max_agent_depth", "max_heavy_commands"):
@@ -94,6 +97,8 @@ def parse(data: object) -> Config:
     for key in ("notify", "stop_on_repeated_reason"):
         if not isinstance(merged[key], bool):
             raise ConfigError(f"config.json: '{key}' must be true or false, got {merged[key]!r}")
+    if merged["browser"] not in BROWSER_MODES:
+        raise ConfigError(f"config.json: 'browser' must be one of {', '.join(BROWSER_MODES)}, got {merged['browser']!r}")
     if not isinstance(merged["repos"], dict):
         raise ConfigError("config.json: 'repos' must be an object keyed by absolute repository path")
     repos: dict = {}
@@ -110,8 +115,8 @@ def parse(data: object) -> Config:
         repos[normalize_repo(key)] = entry
     return Config(
         max_concurrent_stages=merged["max_concurrent_stages"],
+        max_retries=merged["max_retries"],
         notify=merged["notify"],
-        max_tokens_per_run=merged["max_tokens_per_run"],
         stop_on_repeated_reason=merged["stop_on_repeated_reason"],
         stage_poll_seconds=merged["stage_poll_seconds"],
         heartbeat_seconds=merged["heartbeat_seconds"],
@@ -119,6 +124,7 @@ def parse(data: object) -> Config:
         max_agent_depth=merged["max_agent_depth"],
         max_heavy_commands=merged["max_heavy_commands"],
         port_range=tuple(merged["port_range"]),
+        browser=merged["browser"],
         repos=repos,
         raw=data,
     )

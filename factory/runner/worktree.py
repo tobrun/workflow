@@ -11,7 +11,7 @@ from pathlib import Path
 
 from runner.config import binary
 
-EXCLUDE_MARKER = "# factory: plan directories, run files, and metrics are never committed"
+EXCLUDE_MARKER = "# factory: plan directories, run files, metrics, and installed dependencies are never committed"
 EXCLUDE_PATTERNS = (".dev/",)
 
 
@@ -106,18 +106,25 @@ def unique_branch(repo: Path, remote: str, plan: str) -> str:
     return candidate
 
 
-def install_excludes(repo: Path) -> Path:
+def install_excludes(repo: Path, patterns: tuple[str, ...] | list[str] = EXCLUDE_PATTERNS) -> Path:
+    """Append `patterns` to the repository's info/exclude under the factory marker, once each."""
     exclude = common_dir(repo) / "info" / "exclude"
     exclude.parent.mkdir(parents=True, exist_ok=True)
     existing = exclude.read_text(encoding="utf-8") if exclude.exists() else ""
     lines = existing.splitlines()
-    missing = [pattern for pattern in EXCLUDE_PATTERNS if pattern not in lines]
+    missing = [pattern for pattern in patterns if pattern not in lines]
     if missing:
         block = ([] if EXCLUDE_MARKER in lines else [EXCLUDE_MARKER]) + missing
         prefix = "" if not existing or existing.endswith("\n") else "\n"
         with exclude.open("a", encoding="utf-8") as handle:
             handle.write(prefix + "\n".join(block) + "\n")
     return exclude
+
+
+def exclude_pattern(worktree: Path, path: Path) -> str:
+    """The info/exclude line that hides one installed path everywhere in the repository."""
+    relative = Path(os.path.realpath(path)).relative_to(Path(os.path.realpath(worktree))).as_posix()
+    return f"/{relative}/" if path.is_dir() else f"/{relative}"
 
 
 def registered_worktrees(repo: Path) -> list[Path]:

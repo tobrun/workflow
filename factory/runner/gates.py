@@ -44,6 +44,8 @@ class GateResult:
     failures: list[str] = field(default_factory=list)
     data: dict = field(default_factory=dict)
     code: str | None = None
+    # Hygiene the gate noticed but that does not make the evidence wrong; surfaced, never blocking.
+    warnings: list[str] = field(default_factory=list)
 
     def to_json(self) -> dict:
         return {
@@ -55,11 +57,22 @@ class GateResult:
             "failures": self.failures,
             "data": self.data,
             "code": self.code,
+            "warnings": self.warnings,
         }
 
 
 def passed(**data: object) -> GateResult:
     return GateResult(True, "done", None, True, False, [], dict(data))
+
+
+def reports_warnings(gate):
+    """A stage gate whose result carries every hygiene warning its checks left on the context."""
+    def wrapped(ctx: GateContext) -> GateResult:
+        result = gate(ctx)
+        result.warnings = [*ctx.warnings, *(w for w in result.warnings if w not in ctx.warnings)]
+        return result
+    wrapped.__name__, wrapped.__doc__ = gate.__name__, gate.__doc__
+    return wrapped
 
 
 def blocked(reason: str, *, retryable: bool = True, outcome: str = "blocked", precondition: bool = False,
@@ -104,7 +117,12 @@ class GateContext:
     home: Path | None = None
     max_heavy_commands: int | None = None
     port_range: tuple = (20000, 29999)
+    # The worker passes the configured value; a context built without a config hosts no browser.
+    browser: str = "off"
     checkpoint_log: list[dict] = field(default_factory=list)
+    # Collected by checks that find hygiene problems (tracked plan files, a test mapped outside its layer's
+    # globs, a declared setup output that never appeared): reported with the outcome, never a failure.
+    warnings: list[str] = field(default_factory=list)
     _runner_sha: str | None = None
 
     def runner_sha(self) -> str:
@@ -370,14 +388,14 @@ def boundary(ctx: GateContext) -> GateResult | None:
         committed = wt.committed_paths(ctx.worktree, start)
         touched = [path for _, path in wt.stage_delta(ctx.worktree, start) if path in before]
         if touched:
-            permanent = permanent or any(path in committed for path in touched)
-            problems.append(f"{ctx.stage} changed plan files the base tracks: {', '.join(touched[:5])}; "
-                            "they belong to other plans and are never part of a run")
+            ctx.warnings.append(f"{ctx.stage} changed plan files the base tracks: {', '.join(touched[:5])}; "
+                                "they belong to other plans")
+    # Plan files in Git are untidy, not wrong: the evidence the gate checks is unaffected, so this only warns.
     tracked = sorted(set(wt.tracked_under(ctx.worktree, ".dev")) | set(wt.tracked_under(ctx.worktree, ".dev", "HEAD")))
     added = [path for path in tracked if path not in before]
     if added:
-        problems.append(f"plan files are now tracked by Git: {', '.join(added[:5])}; .dev/ is never committed")
-        permanent = True
+        ctx.warnings.append(f"plan files are now tracked by Git: {', '.join(added[:5])}; .dev/ is meant to stay "
+                            "out of commits")
     if not problems:
         return None
     gate = blocked(problems[0], retryable=not permanent, code="boundary.violation")
@@ -430,6 +448,7 @@ def scope_commit_paths(ctx: GateContext) -> tuple[list[str], list[str]]:
     return allowed, unexpected
 
 
+@reports_warnings
 def scope_gate(ctx: GateContext) -> GateResult:
     failures: list[str] = []
     precondition = False
@@ -514,6 +533,7 @@ def deferred_items(text: str) -> list[tuple[str, str | None]]:
     return items
 
 
+@reports_warnings
 def scope_review_gate(ctx: GateContext) -> GateResult:
     if not ctx.spec.is_file():
         return blocked(f"{relative(ctx.spec, ctx.worktree)} does not exist", precondition=True, code="input.spec_missing")
@@ -568,7 +588,8 @@ def scope_review_gate(ctx: GateContext) -> GateResult:
         )
     result, error = read_result(ctx)
     if error:
-        return blocked(error, code="result.invalid", **data)
+        # The gate verified the evidence itself; a result file it cannot read is untidy, not a failure.
+        ctx.warnings.append(f"the stage result is invalid: {error}")
     return passed(**data)
 
 
@@ -586,6 +607,7 @@ def load_e2e_data(sidecar: Path) -> tuple[dict | None, str | None]:
     return record, None
 
 
+@reports_warnings
 def build_gate(ctx: GateContext) -> GateResult:
     if not ctx.spec.is_file():
         return blocked(f"{relative(ctx.spec, ctx.worktree)} does not exist", precondition=True, code="input.spec_missing")
@@ -610,7 +632,8 @@ def build_gate(ctx: GateContext) -> GateResult:
         return validation
     result, error = read_result(ctx)
     if error:
-        return blocked(error, code="result.invalid", **data)
+        # The gate verified the evidence itself; a result file it cannot read is untidy, not a failure.
+        ctx.warnings.append(f"the stage result is invalid: {error}")
     return passed(**data)
 
 
@@ -649,11 +672,14 @@ def run_setup(ctx: GateContext, contract: dict, data: dict, *, root: Path | None
               "environment": contract.get("environment", {}), "runner": ctx.runner_sha()}
     if reusable_here:
         reused, decision = checkpoints.reusable(ctx.run_dir, "setup", inputs)
+        gone = [Path(p) for p in (reused or {}).get("data", {}).get("produces", []) if not Path(p).exists()]
+        if gone:
+            reused, decision = None, f"computed: setup output {gone[0].relative_to(root)} is missing"
         checkpoints.note(ctx, "setup", decision)
         if reused is not None:
             data["setup"] = {**reused["data"], "reused_from": reused["completed_at"]}
             return None
-    summary = []
+    summary, produced = [], []
     for command in setup:
         stop = ctx.stop_reason()
         if stop:
@@ -665,6 +691,7 @@ def run_setup(ctx: GateContext, contract: dict, data: dict, *, root: Path | None
             cwd = commands.resolve_inside(root, command.get("cwd", "."), "cwd")
             env = commands.environment(command, contract, ctx.env())
             wrapped, env = commands.confine(parts, mode, writable=[root, exec_dir], env=env)
+            outputs, declared = commands.produces(command, root)
         except commands.CommandError as error:
             repair = f"; repair: {error.repair}" if error.repair else ""
             return blocked(f"setup command {command['id']} cannot run: {error}{repair}", retryable=False,
@@ -682,8 +709,17 @@ def run_setup(ctx: GateContext, contract: dict, data: dict, *, root: Path | None
             return blocked(f"Setup command {command['id']} ({shlex.join(parts)}) {describe(receipt)} in the {mode} "
                            f"boundary" + (f": {tail}" if tail else "") + full_output(exec_dir),
                            retryable=False, code="setup.failed", **data)
-    data["setup"] = {"commands": summary}
+        missing = [output for output in outputs if declared and not output.exists()]
+        if missing:
+            ctx.warnings.append(f"setup command {command['id']} succeeded but did not produce "
+                                f"{', '.join(str(m.relative_to(root)) for m in missing)}, which its contract record "
+                                "declares")
+        produced.extend(output for output in outputs if output.exists())
+    data["setup"] = {"commands": summary, "produces": [str(output) for output in produced]}
     if reusable_here:
+        # Installed dependencies never belong in a commit and must not look like dirt to an agent tidying up.
+        if produced:
+            wt.install_excludes(root, [wt.exclude_pattern(root, output) for output in produced])
         checkpoints.save(ctx.run_dir, "setup", inputs, revision=wt.head(root), outputs=[], receipt=None,
                          data=data["setup"])
     return None
@@ -1079,6 +1115,7 @@ def required_checks(ctx: GateContext, pr: dict, head: str, data: dict) -> GateRe
             raise Restart(f"the PR head moved to {str(current.get('headRefOid'))[:12]} while its checks were pending")
 
 
+@reports_warnings
 def ship_gate(ctx: GateContext) -> GateResult:
     stop = ctx.stop_reason()
     if stop:
@@ -1183,7 +1220,8 @@ def verify_candidate(ctx: GateContext, number: int, restarts: list[str]) -> Gate
         raise Restart(f"PR #{number} changed (draft, state, or Evidence) before completion was recorded")
     result, error = read_result(ctx)
     if error:
-        return blocked(error, code="result.invalid", **data)
+        # The gate verified the evidence itself; a result file it cannot read is untidy, not a failure.
+        ctx.warnings.append(f"the stage result is invalid: {error}")
     if result is not None:
         if result.get("pr_url") and result["pr_url"] != pr.get("url"):
             return blocked(f"ship-result.json names {result['pr_url']} but the open PR is {pr.get('url')}",
@@ -1228,26 +1266,31 @@ def merge(gate: GateResult, result: dict | None, result_error: str | None, block
     recognized, unresolved park condition blocks completion even when the gate passed, and
     its code decides retryability. An ordinary blocked status without a condition stays a warning.
     """
-    if result_error:
-        if gate.passed:
-            return Outcome("blocked", f"the stage result is invalid: {result_error}", True, "runner",
-                           code="result.invalid")
-        return Outcome(gate.outcome, f"{gate.reason}; the stage result is invalid: {result_error}", gate.retryable,
-                       "gate", code=gate.code)
+    notes = list(gate.warnings)
+    invalid = f"the stage result is invalid: {result_error}" if result_error else None
+    if invalid and not gate.passed:
+        return Outcome(gate.outcome, f"{gate.reason}; {invalid}", gate.retryable, "gate", warning=_join(notes),
+                       code=gate.code)
+    if invalid and invalid not in notes:
+        # The gate verified the evidence itself; a result file it cannot read is untidy, not a failure.
+        notes.append(invalid)
     if blocking:
         described = "; ".join(f"{c['code']} ({c['id']}): {c['summary']}" for c in blocking[:3])
         retryable = all(c["retryable"] for c in blocking) and (gate.passed or gate.retryable)
         reason = described if gate.passed else f"{described}; gate: {gate.reason}"
-        return Outcome("blocked", reason, retryable, "condition", code=blocking[0]["code"],
+        return Outcome("blocked", reason, retryable, "condition", warning=_join(notes), code=blocking[0]["code"],
                        conditions=[c["id"] for c in blocking])
     if gate.passed:
-        warning = None
-        if result is None:
-            warning = "skill wrote no result file; gate passed"
-        elif result["status"] != "done":
-            warning = f"skill reported {result['status']} ({result['reason']}) but the gate passed"
-        return Outcome("done", None, True, "gate", warning)
+        if not invalid and result is None:
+            notes.append("skill wrote no result file; gate passed")
+        elif not invalid and result["status"] != "done":
+            notes.append(f"skill reported {result['status']} ({result['reason']}) but the gate passed")
+        return Outcome("done", None, True, "gate", _join(notes))
     reason = gate.reason
     if result is not None and result["status"] != "done" and result.get("reason") and result["reason"] not in (reason or ""):
         reason = f"{reason} (skill: {result['reason']})"
-    return Outcome(gate.outcome, reason, gate.retryable, "gate", code=gate.code)
+    return Outcome(gate.outcome, reason, gate.retryable, "gate", warning=_join(notes), code=gate.code)
+
+
+def _join(notes: list[str]) -> str | None:
+    return "; ".join(notes) or None

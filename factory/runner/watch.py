@@ -28,16 +28,23 @@ WORKER_DOWN_POLLS = 5
 
 @dataclass
 class StreamTail:
-    """Incremental reader for the running attempt's stdout.jsonl."""
+    """Incremental reader for the running attempt's stdout.jsonl.
+
+    The watch view is an operations console, not a terminal transcript: retain
+    agent milestones and failed commands, but discard routine successful shell
+    activity.
+    """
     path: Path | None = None
     offset: int = 0
     tokens: int = 0
     latest: str | None = None
+    latest_agent: str | None = None
+    command: str | None = None
     lines: list[str] = field(default_factory=list)
 
     def follow(self, path: Path) -> None:
         if path != self.path:
-            self.path, self.offset, self.tokens, self.latest = path, 0, 0, None
+            self.path, self.offset, self.tokens, self.latest, self.latest_agent, self.command = path, 0, 0, None, None, None
         if not path.exists():
             return
         with path.open("rb") as handle:
@@ -56,10 +63,18 @@ class StreamTail:
                 usage = event.get("usage") or {}
                 self.tokens += int(usage.get("input_tokens") or 0) + int(usage.get("output_tokens") or 0)
             rendered = hosts.render_event(event)
-            if rendered:
-                self.lines.append(" ".join(rendered.split()) if not rendered.startswith("  exit ") else rendered)
-            if rendered and not rendered.startswith(("  exit ", "tokens ", "thread ")):
-                self.latest = " ".join(rendered.split())
+            if not rendered:
+                continue
+            compact = " ".join(rendered.split())
+            if compact.startswith("$ "):
+                self.command = compact
+                self.latest = compact
+            elif compact.startswith("agent:"):
+                self.latest = compact
+                self.latest_agent = compact
+                self.lines.append(compact)
+            elif compact.startswith("exit ") and int((event.get("item") or {}).get("exit_code") or 0) != 0:
+                self.lines.append(f"{self.command or 'command'} — {compact}")
 
     def drain(self) -> list[str]:
         lines, self.lines = self.lines, []
@@ -112,8 +127,9 @@ def event_line(run: Run, entry: dict) -> str | None:
     elif name == "stage.finished":
         seconds = (attempt or {}).get("seconds")
         took = f" in {human_duration(seconds)}" if seconds is not None else ""
+        code = f" [{data['code']}]" if data.get("code") else ""
         reason = f": {data['reason']}" if data.get("reason") else ""
-        text = f"{stage} attempt {n} {data.get('outcome')}{took}{reason}"
+        text = f"{stage} attempt {n} {data.get('outcome')}{code}{took}{reason}"
     elif name == "retry.scheduled":
         text = f"retry {data.get('used')}/{data.get('budget')} scheduled for {stage}"
     elif name == "run.queued" and data.get("previous"):
@@ -123,7 +139,7 @@ def event_line(run: Run, entry: dict) -> str | None:
             return None
         text = f"{stage} committed {str(data.get('commit'))[:8]} ({len(data.get('paths') or [])} path(s))"
     elif name == "stage.warning":
-        text = f"warning: {data.get('warning')}"
+        text = f"warning from {stage} attempt {n}: {data.get('warning')}"
     elif name == "skills.fallback":
         text = f"warning: {data.get('reason')}"
     elif name == "process.exited" and (data.get("timed_out") or data.get("spawn_error")):
@@ -187,7 +203,61 @@ def stage_rows(run: Run, style: Style, tail: StreamTail, now: float) -> list[str
     return rows
 
 
-def status_block(run: Run, style: Style, tail: StreamTail, now: float, alive: bool, width: int) -> list[str]:
+ATTENTION_ATTEMPTS = 3
+
+
+def attention_attempts(run: Run, *, all_attempts: bool = False) -> list[dict]:
+    """Diagnostics relevant to the active stage, unless full history is requested."""
+    stage = None if all_attempts else run.stage
+    attention = []
+    for attempt in reversed(run.data["attempts"]):
+        if stage is not None and attempt.get("stage") != stage:
+            continue
+        if attempt.get("outcome") not in (None, "done", "cancelled") or attempt.get("warning"):
+            attention.append(attempt)
+            if not all_attempts and len(attention) == ATTENTION_ATTEMPTS:
+                break
+    return attention
+
+
+def wrapped(text: str, width: int, *, subsequent: str = "") -> list[str]:
+    """Wrap operator-facing diagnostics without silently clipping the important part."""
+    return textwrap.wrap(text, max(20, width), subsequent_indent=subsequent,
+                         break_long_words=False, break_on_hyphens=False) or [text]
+
+
+def attention_lines(run: Run, style: Style, width: int, *, all_attempts: bool = False) -> list[str]:
+    attempts = attention_attempts(run, all_attempts=all_attempts)
+    if not attempts:
+        return []
+    heading = "all diagnostics" if all_attempts else f"{run.stage} diagnostics"
+    lines = [f"  {heading} (persisted for this run):"]
+    for attempt in attempts:
+        failed = attempt.get("outcome") not in (None, "done", "cancelled")
+        marker = style.bad("!") if failed else style.active("!")
+        state = attempt.get("outcome") or "running"
+        code = f" [{attempt['code']}]" if attempt.get("code") else ""
+        reason = attempt.get("reason") if failed else attempt.get("warning")
+        header = f"  {marker} {attempt['stage']} attempt {attempt['n']} {state}{code}"
+        if reason:
+            detail = wrapped(f"{header}: {reason}", width - 2, subsequent="    ")
+            lines.extend(detail)
+        else:
+            lines.append(header)
+        attempt_dir = run.attempt_dir(attempt["stage"], attempt["n"])
+        artifacts = [name for name in ("gate.json", "stderr.log", "gate-executions.json", "last-message.md")
+                     if (attempt_dir / name).is_file()]
+        if artifacts:
+            relative = attempt_dir.relative_to(run.dir)
+            lines.extend(wrapped(f"    evidence: {relative}/" + ", ".join(artifacts), width - 2,
+                                 subsequent="              "))
+        lines.extend(wrapped(f"    inspect: factory logs {run.id} --stage {attempt['stage']} --attempt {attempt['n']}",
+                             width - 2, subsequent="             "))
+    return lines
+
+
+def status_block(run: Run, style: Style, tail: StreamTail, now: float, alive: bool, width: int,
+                 *, all_diagnostics: bool = False) -> list[str]:
     lines = stage_rows(run, style, tail, now)
     retries = run.data["retries"]
     if alive:
@@ -205,8 +275,10 @@ def status_block(run: Run, style: Style, tail: StreamTail, now: float, alive: bo
         # Wrapped, not clipped: the reason is what the operator has to act on.
         for line in textwrap.wrap(run.data["human"]["reason"], width - 3)[:BLOCKER_LINES]:
             lines.append("  " + style.bad(line))
-    if run.status == RUNNING and tail.latest:
-        lines.append("  " + style.dim(clip("> " + tail.latest, width - 3)))
+    lines.extend(attention_lines(run, style, width, all_attempts=all_diagnostics))
+    if run.status == RUNNING and (tail.latest_agent or tail.latest):
+        insight = tail.latest_agent or tail.latest
+        lines.append("  " + style.dim(clip("now: " + insight, width - 3)))
     return lines
 
 
@@ -287,6 +359,7 @@ class Watcher:
         self.last_plain: str | None = None
         self.last_plain_at = 0.0
         self.verbose = False
+        self.all_diagnostics = False
         self.help = False
         self.notices: list[str] = []
         self.home = self.home or self.run_dir.parent.parent
@@ -340,7 +413,7 @@ class Watcher:
                     # The followed attempt ended since the last poll: show its final lines before letting go.
                     self.tail.follow(self.tail.path)
                     stream = self.tail.drain()
-                    self.tail = StreamTail(latest=self.tail.latest)
+                    self.tail = StreamTail()
                 if current is not None:
                     self.tail.follow(current)
                 stream += self.tail.drain()
@@ -383,7 +456,9 @@ class Watcher:
             options = "r resume the worker  c cancel  q quit"
         else:
             pause = "p withdraw pause" if (run.dir / "pause").exists() else "p pause"
-            options = f"{pause}  n note  c cancel  v {'quiet' if self.verbose else 'verbose'}  d dashboard  q detach"
+            diagnostics = "recent diagnostics" if self.all_diagnostics else "all diagnostics"
+            options = (f"{pause}  n note  c cancel  v {'quiet' if self.verbose else 'verbose'}  "
+                       f"f {diagnostics}  d dashboard  q detach")
         return f"  keys: {options}" + ("" if self.help else "  ? help")
 
     def help_lines(self) -> list[str]:
@@ -393,7 +468,8 @@ class Watcher:
             "  c  cancel: stops the running Codex process and keeps the worktree and any draft PR",
             "  r  retry a parked run, continue a paused one, or resume a dead worker",
             "  b  retry after resetting the shared retry budget",
-            "  v  stream every Codex command and message; d opens the dashboard; q or Ctrl-C leaves the run going",
+            "  v  stream agent milestones and failed commands; f toggles current-stage versus all diagnostics",
+            "  d  opens the dashboard; q or Ctrl-C leaves the run going",
         ]
 
     def handle(self, key: str, run: Run, alive: bool, worker_down: bool) -> int | None:
@@ -405,7 +481,11 @@ class Watcher:
                 self.help = not self.help
             elif key == "v":
                 self.verbose = not self.verbose
-                self.notice("streaming Codex activity" if self.verbose else "Codex activity stream off")
+                self.notice("streaming agent milestones and failed commands" if self.verbose else "activity stream off")
+            elif key == "f":
+                self.all_diagnostics = not self.all_diagnostics
+                self.notice("showing all attempt diagnostics" if self.all_diagnostics
+                            else f"showing the latest {ATTENTION_ATTEMPTS} attempt diagnostics")
             elif key == "d":
                 control.refresh(self.home, self.cfg)
                 path = self.home / "dashboard.html"
@@ -464,7 +544,8 @@ class Watcher:
                     self.write(f"{datetime.now().strftime('%H:%M:%S')}  {summary}\n")
                 self.last_plain, self.last_plain_at = summary, self.now()
             return
-        block = status_block(run, self.style, self.tail, self.now(), alive, width)
+        block = status_block(run, self.style, self.tail, self.now(), alive, width,
+                             all_diagnostics=self.all_diagnostics)
         if self.interactive and not (run.status == DONE and not alive):
             if self.help:
                 block += [self.style.dim(clip(line, width - 1)) for line in self.help_lines()]

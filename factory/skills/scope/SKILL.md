@@ -25,6 +25,8 @@ This is the factory copy of `scope`: the factory runner launched it in a run wor
 ## 1. Interview
 
 Interview the user until you understand what they want, one consequential question at a time, using the host's structured user-input tool when available. Then write down what you understood.
+Whenever you recommend an option - here, in the decision talk-through, or in follow-up questions - put a confidence score next to it (`Confidence: 70%`) with the one fact that would most change it.
+Score how likely it is the right solution given the evidence, not how strongly you prefer it: a taste call, an unverified premise, or an option chosen without having read the relevant code scores low.
 
 The request often arrives one level too low: a solution ("add rate limiting with Redis") hides the problem it solves, a symptom hides the cause that picks the fix.
 Climb up before interviewing about the change itself - what led to this, what they observed, what would look different if it worked - then pressure-test the premise: what data shows the problem is real, and does it point where they think? Committing to a fix before the cause means speccing the wrong change well.

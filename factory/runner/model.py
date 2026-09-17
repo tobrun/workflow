@@ -151,7 +151,10 @@ class Run:
 
     @classmethod
     def create(cls, runs_root: Path, *, repo: str, request: str, plan: str, remote: str = "origin",
-               body: str | None = None, source: dict | None = None, now: datetime | None = None) -> "Run":
+               body: str | None = None, source: dict | None = None, retry_budget: int = DEFAULT_BUDGET,
+               now: datetime | None = None) -> "Run":
+        if isinstance(retry_budget, bool) or not isinstance(retry_budget, int) or retry_budget <= 0:
+            raise ValueError(f"retry_budget must be a positive integer, got {retry_budget!r}")
         stamp = (now or datetime.now().astimezone()).strftime("%Y%m%d-%H%M")
         base_id = f"{stamp}-{plan}"
         runs_root.mkdir(parents=True, exist_ok=True)
@@ -180,7 +183,7 @@ class Run:
             "updated_at": created,
             "status": NEW,
             "stage": "scope",
-            "retries": {"used": 0, "budget": DEFAULT_BUDGET},
+            "retries": {"used": 0, "budget": retry_budget},
             "scope_session_id": None,
             "stages": {},
             "attempts": [],
@@ -382,7 +385,7 @@ class Run:
         record["finished_at"] = ended
 
 
-def decide(run: Run, attempt: dict, *, max_tokens: int, stop_on_repeated_reason: bool) -> tuple[str, str | None]:
+def decide(run: Run, attempt: dict, *, stop_on_repeated_reason: bool) -> tuple[str, str | None]:
     """Choose the follow-up action for a finished headless attempt.
 
     Returns (action, reason) where action is one of stage_passed, retry,
@@ -391,17 +394,11 @@ def decide(run: Run, attempt: dict, *, max_tokens: int, stop_on_repeated_reason:
     changes the next attempt, never the meaning of one already running.
     """
     semantic = (attempt.get("config") or {}).get("semantic") or {}
-    max_tokens = semantic.get("max_tokens_per_run", max_tokens)
     stop_on_repeated_reason = semantic.get("stop_on_repeated_reason", stop_on_repeated_reason)
     outcome = attempt["outcome"]
     if outcome == "cancelled":
         return "cancel", attempt.get("reason") or "cancelled by operator"
     if outcome == "done":
-        if next_stage(attempt["stage"]) is not None and run.data["tokens_total"] > max_tokens:
-            return "park", (
-                f"token ceiling exceeded: {run.data['tokens_total']} > {max_tokens} after {attempt['stage']} "
-                f"attempt {attempt['n']}"
-            )
         return "stage_passed", None
     reason = attempt.get("reason") or f"{attempt['stage']} attempt {attempt['n']} ended {outcome}"
     if not attempt.get("retryable"):
@@ -412,8 +409,6 @@ def decide(run: Run, attempt: dict, *, max_tokens: int, stop_on_repeated_reason:
         return "park", (f"no progress: {attempt['stage']} attempts {previous[-1]['n']} and {attempt['n']} both failed with "
                         f"{attempt['code']} and left the commit and plan files unchanged "
                         f"({attempt['fingerprint'][:12]}); last reason: {reason}")
-    if run.data["tokens_total"] > max_tokens:
-        return "park", f"token ceiling exceeded: {run.data['tokens_total']} > {max_tokens}; last reason: {reason}"
     if stop_on_repeated_reason:
         previous = run.stage_attempts(attempt["stage"])[:-1]
         if previous and previous[-1].get("retryable") and previous[-1].get("outcome") != "done" \

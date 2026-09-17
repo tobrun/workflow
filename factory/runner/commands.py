@@ -96,6 +96,37 @@ def timeout_s(command: dict) -> int:
     return int(command.get("timeout_s", DEFAULT_TIMEOUT_S))
 
 
+# What a package manager's install leaves in the command's working directory when the record does not say.
+# A directory that later disappears (an agent "cleaning" the worktree) invalidates the setup checkpoint.
+INSTALL_OUTPUTS = {
+    ("npm", "ci"): "node_modules", ("npm", "install"): "node_modules", ("npm", "i"): "node_modules",
+    ("yarn", None): "node_modules", ("yarn", "install"): "node_modules",
+    ("pnpm", "install"): "node_modules", ("pnpm", "i"): "node_modules",
+    ("bun", "install"): "node_modules", ("bun", "i"): "node_modules",
+    ("uv", "sync"): ".venv",
+}
+
+
+def produces(command: dict, worktree: Path) -> tuple[list[Path], bool]:
+    """(paths the command installs, declared) resolved inside the worktree.
+
+    A `produces` list on the record is authoritative; otherwise a known package-manager install
+    implies its output directory in the command's working directory, and anything else implies nothing.
+    """
+    if command.get("produces"):
+        return [resolve_inside(worktree, output, "produces") for output in command["produces"]], True
+    run = command.get("run") or []
+    if not run or (command.get("set") or {}).get("UV_PROJECT_ENVIRONMENT"):
+        return [], False
+    tool = os.path.basename(run[0])
+    subcommand = next((part for part in run[1:] if not part.startswith("-")), None)
+    output = INSTALL_OUTPUTS.get((tool, subcommand))
+    if output is None:
+        return [], False
+    cwd = resolve_inside(worktree, command.get("cwd", "."), "cwd")
+    return [cwd / output], False
+
+
 def boundary(command: dict, contract: dict) -> str:
     return command.get("boundary") or contract.get("boundary") or "host"
 

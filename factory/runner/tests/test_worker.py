@@ -312,14 +312,11 @@ class RetryTests(WorkerTestCase):
         self.assertEqual(builds[0]["exit_code"], -9)
         self.assertEqual(data["status"], "done")
 
-    def test_token_ceiling_parks_after_attempt(self):
+    def test_legacy_token_ceiling_config_does_not_park_after_attempt(self):
         (self.home / "config.json").write_text(json.dumps({**self.fast_config, "max_tokens_per_run": 500}))
         run = self.queued_run()
         data = self.work(run)
-        self.assertEqual(data["status"], "needs-human")
-        self.assertEqual(data["stage"], "scope-review")
-        self.assertIn("token ceiling exceeded: 1100 > 500", data["human"]["reason"])
-        self.assertEqual(len(data["attempts"]), 1)
+        self.assertEqual(data["status"], "done")
 
 
 class CancellationTests(WorkerTestCase):
@@ -511,9 +508,22 @@ class ParkConditionTests(WorkerTestCase):
         prompt = (run.attempt_dir("build", 3) / "prompt.txt").read_text()
         self.assertIn("Open condition C1 premise.invalidated: the provider sends no delivery ids.", prompt)
 
-    def test_unknown_condition_codes_and_decision_failures(self):
+    def test_an_unknown_condition_code_warns_when_the_gate_passed(self):
         unknown = build_step()
         unknown["result"] = {"status": "blocked", "reason": "x", "conditions": [{"code": "human.please", "summary": "?"}]}
+        scenario = happy_scenario()
+        scenario["build"] = [unknown]
+        self.scenario(scenario)
+        run = self.queued_run()
+        data = self.work(run)
+        self.assertEqual(data["status"], "done", data["human"])
+        builds = self.attempts(data, "build")
+        self.assertEqual([(b["outcome"], b["code"]) for b in builds], [("done", None)])
+        self.assertIn("the stage result is invalid: build-result.json is malformed", builds[0]["warning"])
+        self.assertIn("unknown condition code 'human.please'", builds[0]["warning"])
+        self.assertEqual(data["retries"]["used"], 0)
+
+    def test_decision_failures_block_until_the_skill_resolves_them(self):
         decision = build_step()
         decision["result"] = {"status": "blocked", "reason": "applied retry policy failed", "conditions": [
             {"code": "decision.verification_failed", "summary": "exponential backoff broke the idempotency test"}]}
@@ -521,15 +531,14 @@ class ParkConditionTests(WorkerTestCase):
             {"code": "decision.verification_failed", "summary": "fixed", "resolution": "resolved", "resolves": "C1",
              "evidence": ["tests/test_webhook.py passes"]}]}}
         scenario = happy_scenario()
-        scenario["build"] = [unknown, decision, fixed]
+        scenario["build"] = [decision, fixed]
         self.scenario(scenario)
         run = self.queued_run()
         data = self.work(run)
         self.assertEqual(data["status"], "done", data["human"])
         builds = self.attempts(data, "build")
-        self.assertEqual([b["code"] for b in builds], ["result.invalid", "decision.verification_failed", None])
-        self.assertIn("unknown condition code 'human.please'", builds[0]["reason"])
-        self.assertEqual(data["retries"]["used"], 2)
+        self.assertEqual([b["code"] for b in builds], ["decision.verification_failed", None])
+        self.assertEqual(data["retries"]["used"], 1)
 
 
 if __name__ == "__main__":

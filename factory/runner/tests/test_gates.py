@@ -6,11 +6,12 @@ import sys
 import threading
 import time
 import unittest
+import unittest.mock
 import uuid
 from pathlib import Path
 
 from runner import executor, gates, records
-from runner.tests.helpers import (BASE_WEBHOOK_PY, CONTRACT, E2E_DRIVER_PY, GAUNTLET, INERT_TESTS_PY, NOTES, PR_BODY,
+from runner.tests.helpers import (BASE_WEBHOOK_PY, CONTRACT, E2E_DRIVER_PY, GAUNTLET, INERT_TESTS_PY, NOTES, PR_BODY, STUBS,
                                   SCENARIO_MAP, SHIP_LENSES, SPEC, TESTS_PY, WEBHOOK_PY, FactoryTestCase, e2e_record, git,
                                   make_repo, review_record)
 
@@ -199,6 +200,37 @@ class ScopeReviewGateTests(GateTestCase):
         self.assertTrue(gates.scope_review_gate(self.ctx("scope-review")).passed)
 
 
+class TestIdTests(unittest.TestCase):
+    """Scenario maps name tests from the worktree root; a runner with a `cwd` sees and reports them from there."""
+
+    CONTRACT_WITH_CWD = {**CONTRACT, "tests": {**CONTRACT["tests"], "run": {**CONTRACT["tests"]["run"], "cwd": "omr-ui"},
+                                              "layers": {"unit": ["omr-ui/src/utils/**"], "integration": ["omr-ui/src/pages/**"]}}}
+
+    def test_ids_are_passed_relative_to_the_runner_and_read_back_from_the_worktree_root(self):
+        from runner import verification
+        self.assertEqual(verification.tests_cwd(CONTRACT), "")
+        self.assertEqual(verification.tests_cwd(self.CONTRACT_WITH_CWD), "omr-ui")
+        self.assertEqual(verification.cwd_relative("omr-ui/src/utils/groups.test.ts::savings groups", "omr-ui"),
+                         "src/utils/groups.test.ts::savings groups")
+        self.assertEqual(verification.cwd_relative("scripts/test_x.py::t", "omr-ui"), "scripts/test_x.py::t")
+        self.assertEqual(verification.worktree_relative("src/utils/groups.test.ts::savings groups", "omr-ui"),
+                         "omr-ui/src/utils/groups.test.ts::savings groups")
+        self.assertEqual(verification.worktree_relative("omr-ui/src/x.test.ts::t", "omr-ui"), "omr-ui/src/x.test.ts::t")
+        self.assertEqual(verification.worktree_relative("suite::t", "omr-ui"), "suite::t")
+        self.assertEqual(verification.cwd_relative("tests/test_a.py::t", ""), "tests/test_a.py::t")
+
+    def test_layer_globs_accept_either_spelling_of_a_runner_relative_path(self):
+        from runner import verification
+        mapping = {"scenarios": {
+            "S1": {"layer": "unit", "tests": ["omr-ui/src/utils/groups.test.ts::savings groups"]},
+            "S2": {"layer": "unit", "tests": ["src/utils/groups.test.ts::savings columns"]},
+            "S3": {"layer": "integration", "tests": ["omr-ui/src/utils/groups.test.ts::misplaced"]},
+        }}
+        problems = verification.layer_problems(self.CONTRACT_WITH_CWD, mapping)
+        self.assertEqual(len(problems), 1)
+        self.assertIn("S3 maps omr-ui/src/utils/groups.test.ts::misplaced as [integration]", problems[0])
+
+
 class BuildGateTests(GateTestCase):
     """Build completes only on evidence the runner executed itself: mapped tests, reproductions, and the e2e driver."""
 
@@ -246,6 +278,24 @@ class BuildGateTests(GateTestCase):
         self.write("README.md", "changed\n")
         self.assertIn("tracked worktree is dirty", self.gate().reason)
 
+    def test_the_e2e_driver_runs_with_the_hosted_browser_the_agent_had(self):
+        driver = E2E_DRIVER_PY.replace(
+            'record = {', 'open(os.path.join(out, "browser-env.json"), "w").write(json.dumps('
+            '{k: v for k, v in os.environ.items() if k in ("AGENT_BROWSER_CDP", "FACTORY_BROWSER_CDP_URL")}))\nrecord = {')
+        self.build(driver=driver)
+        with unittest.mock.patch.dict(os.environ, {"FACTORY_BROWSER_BIN": str(STUBS / "chrome")}):
+            gate = self.gate(browser="auto", home=self.home)
+        self.assertTrue(gate.passed, gate.reason)
+        hosted = gate.data["e2e"]["browser"]
+        self.assertEqual(hosted["status"], "hosted")
+        seen = json.loads((Path(gate.data["e2e"]["record"]).parent / "browser-env.json").read_text())
+        self.assertEqual(seen, {"AGENT_BROWSER_CDP": str(hosted["port"]),
+                                "FACTORY_BROWSER_CDP_URL": f"http://127.0.0.1:{hosted['port']}"})
+        launched = json.loads((Path(hosted["log"]).parent / "profile" / "stub.json").read_text())
+        self.assertEqual(launched["pid"], hosted["pid"])
+        from runner import supervise
+        self.assertFalse(supervise.process_identity(hosted["pid"])[0], "the gate's browser outlived the driver")
+
     def test_r1_names_in_comments_and_an_empty_e2e_record_are_not_evidence(self):
         comment_only = "# test_repeated_id_ignored: WebhookTests covers repeated ids\n"
         empty_driver = E2E_DRIVER_PY.replace('"scenarios": [{', '"scenarios": [], "unused": [{')
@@ -284,7 +334,7 @@ class BuildGateTests(GateTestCase):
                 self.assertEqual(gate.code, "evidence.map_invalid")
                 self.assertIn(fragment, gate.reason)
 
-    def test_skipped_failing_and_wrong_layer_tests_are_rejected(self):
+    def test_skipped_and_failing_tests_are_rejected_and_a_wrong_layer_only_warns(self):
         skipped = TESTS_PY.replace("    def test_repeated_id_ignored", "    @unittest.skip('later')\n"
                                                                        "    def test_repeated_id_ignored")
         self.build(tests=skipped)
@@ -300,8 +350,12 @@ class BuildGateTests(GateTestCase):
                                                                           "test_repeated_id_ignored"]}}}
         self.build(mapping=mapping)
         gate = self.gate()
-        self.assertEqual(gate.code, "evidence.wrong_layer")
-        self.assertIn("but the contract's unit tests live in tests/*.py", gate.reason)
+        self.assertTrue(gate.passed, gate.reason)
+        self.assertEqual(len(gate.warnings), 1)
+        self.assertIn("S1 maps e2e/test_webhook.py::WebhookTests::test_repeated_id_ignored as [unit], but the "
+                      "contract's unit tests live in tests/*.py", gate.warnings[0])
+        self.assertEqual(gate.data["tests"]["scenarios"]["S1"],
+                         {"e2e/test_webhook.py::WebhookTests::test_repeated_id_ignored": "passed"})
 
     def test_results_come_from_a_fresh_run_every_time(self):
         self.build()
@@ -454,12 +508,15 @@ class BoundaryTests(GateTestCase):
         git(self.repo, "checkout", "--quiet", "--detach")
         self.assertIn("a detached HEAD", self.check("build").reason)
 
-    def test_force_added_plan_files_are_rejected(self):
+    def test_force_added_plan_files_only_warn(self):
         self.write(f".dev/{PLAN}/spec.md", SPEC)
         git(self.repo, "add", "-f", f".dev/{PLAN}/spec.md")
-        self.assertViolation("build", f"plan files are now tracked by Git: .dev/{PLAN}/spec.md", retryable=False)
-        self.commit_all("tracked plan")
-        self.assertViolation("ship", f"plan files are now tracked by Git: .dev/{PLAN}/spec.md", retryable=False)
+        for stage in ("build", "ship"):
+            ctx = self.ctx(stage, baseline={"head": self.head})
+            self.assertIsNone(gates.boundary(ctx))
+            self.assertEqual(len(ctx.warnings), 1)
+            self.assertIn(f"plan files are now tracked by Git: .dev/{PLAN}/spec.md", ctx.warnings[0])
+            self.commit_all("tracked plan")
 
     def test_other_plans_tracked_on_the_base_are_left_alone(self):
         self.write(".dev/old/spec.md", "# old\n")
@@ -468,19 +525,20 @@ class BoundaryTests(GateTestCase):
         base = git(self.repo, "rev-parse", "HEAD")
 
         def check(stage):
-            return gates.boundary(self.ctx(stage, base_sha=base, baseline={"head": base}))
+            ctx = self.ctx(stage, base_sha=base, baseline={"head": base})
+            return gates.boundary(ctx), ctx.warnings
 
         self.write("src/app.py", "print('built')\n")
         self.write(f".dev/{PLAN}/implementation-notes.md", "notes\n")
-        self.assertIsNone(check("build"))
+        self.assertEqual(check("build"), (None, []))
         self.write(".dev/old/spec.md", "# rewritten\n")
-        gate = check("build")
-        self.assertIn("build changed plan files the base tracks: .dev/old/spec.md", gate.reason)
-        self.assertTrue(gate.retryable)
+        gate, warnings = check("build")
+        self.assertIsNone(gate)
+        self.assertIn("build changed plan files the base tracks: .dev/old/spec.md", warnings[0])
         self.commit_all("touch the old plan")
-        gate = check("ship")
-        self.assertIn("ship changed plan files the base tracks: .dev/old/spec.md", gate.reason)
-        self.assertFalse(gate.retryable)
+        gate, warnings = check("ship")
+        self.assertIsNone(gate)
+        self.assertIn("ship changed plan files the base tracks: .dev/old/spec.md", warnings[0])
 
     def test_the_contract_is_locked_after_scope(self):
         self.write(".factory/contract.json", json.dumps({"schema": "factory.repo-contract/1", "ci": {"none": "probe"},
@@ -1105,12 +1163,24 @@ class MergeTests(unittest.TestCase):
         self.assertIn("skill: stuck", outcome.reason)
         self.assertFalse(gates.merge(self.precondition, self.stuck, None).retryable)
 
-    def test_invalid_results_fail_explicitly(self):
+    def test_an_invalid_result_only_warns_when_the_gate_passed(self):
         outcome = gates.merge(self.ok, None, "unknown condition code 'weird'")
-        self.assertEqual((outcome.outcome, outcome.code, outcome.retryable), ("blocked", "result.invalid", True))
-        self.assertIn("the stage result is invalid", outcome.reason)
+        self.assertEqual((outcome.outcome, outcome.code, outcome.reason), ("done", None, None))
+        self.assertEqual(outcome.warning, "the stage result is invalid: unknown condition code 'weird'")
         outcome = gates.merge(self.bad, None, "malformed")
         self.assertEqual((outcome.outcome, outcome.code), ("blocked", "validation.failed"))
+        self.assertIn("the stage result is invalid: malformed", outcome.reason)
+
+    def test_gate_warnings_travel_with_every_outcome(self):
+        warned = gates.passed()
+        warned.warnings = ["plan files are now tracked by Git: .dev/webhook/notes.md"]
+        outcome = gates.merge(warned, {"status": "done", "reason": "ok", "conditions": []}, None)
+        self.assertEqual((outcome.outcome, outcome.warning), ("done", warned.warnings[0]))
+        failed = gates.blocked("tests failed", code="evidence.tests_failed")
+        failed.warnings = ["S1 maps a test outside its layer"]
+        outcome = gates.merge(failed, None, None)
+        self.assertEqual((outcome.outcome, outcome.code, outcome.warning),
+                         ("blocked", "evidence.tests_failed", failed.warnings[0]))
 
     def test_unresolved_conditions_block_a_passing_gate(self):
         outcome = gates.merge(self.ok, self.done, None, [self.credentials])

@@ -15,8 +15,8 @@ import time
 import uuid
 from pathlib import Path
 
-from runner import (FACTORY_ROOT, commands, conditions, config, control, dashboard, events, executor, gates, hosts,
-                    intent, pricing, provenance, records, requests, slots, supervise, watch)
+from runner import (FACTORY_ROOT, browser, commands, conditions, config, control, dashboard, events, executor, gates,
+                    hosts, intent, pricing, provenance, records, requests, slots, supervise, watch)
 from runner import worktree as wt
 from runner.model import (CANCELLED, DONE, NEEDS_HUMAN, NEW, PAUSED, QUEUED, RUNNING, SCOPING, InvalidTransition,
                           Run, SchemaError, parse_ts, utc_now)
@@ -129,8 +129,8 @@ def check_gh_auth() -> tuple[str, str] | None:
 def check_codex_plugin() -> tuple[str, str] | None:
     """Codex must run, and the generated skills attempts may fall back to must match factory/."""
     try:
-        result = subprocess.run([config.binary("codex"), "plugin", "list"], capture_output=True, text=True,
-                                timeout=60, stdin=subprocess.DEVNULL)
+        subprocess.run([config.binary("codex"), "plugin", "list"], capture_output=True, text=True, timeout=60,
+                       stdin=subprocess.DEVNULL)
     except (OSError, subprocess.TimeoutExpired) as error:
         return f"codex plugin list failed: {error}", "codex --version"
     current, detail = provenance.generated_is_current()
@@ -364,7 +364,7 @@ def cmd_new(args: argparse.Namespace, home: Path, cfg: config.Config) -> int:
             "alone, and a stage that changes them fails its gate.")
     summary = request.body if request.source["kind"] == "text" else request.title
     run = Run.create(home / "runs", repo=repo, request=summary, plan=plan, remote=args.remote,
-                     body=request.markdown(), source=request.source)
+                     body=request.markdown(), source=request.source, retry_budget=cfg.max_retries)
     lock = supervise.WorkerLock(run.dir)
     if not lock.acquire():
         raise CliError(f"could not lock new run {run.id}", 2)
@@ -1023,6 +1023,10 @@ def doctor_checks(home: Path) -> list[dict]:
     acli = which("acli")
     add("binary:acli", "ok" if acli else "warn", acli or "not found; only `factory new --jira` needs it",
         None if acli else "install the Atlassian CLI (acli) to start runs from Jira tickets")
+    chrome = browser.find(dict(os.environ))
+    add("browser", "ok" if chrome else "warn",
+        f"{chrome} hosted per attempt over CDP" if chrome else "no Chrome or Chromium found; frontend e2e has no browser",
+        None if chrome else "agent-browser install, or npx playwright install chromium, or set FACTORY_BROWSER_BIN")
     failure = check_claude_plugin()
     add("claude:plugin", "fail" if failure else "ok", failure[0] if failure else str(FACTORY_ROOT),
         failure[1] if failure else None)

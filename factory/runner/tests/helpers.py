@@ -351,7 +351,8 @@ def happy_scenario() -> dict:
 class FactoryTestCase(unittest.TestCase):
     """Isolated FACTORY_HOME, stub binaries, and a repo with a bare origin per test."""
 
-    fast_config = {"notify": False, "stage_poll_seconds": 0.05, "heartbeat_seconds": 0.2}
+    # No hosted browser by default: a test that wants one sets "browser": "auto" and FACTORY_BROWSER_BIN to the stub.
+    fast_config = {"notify": False, "stage_poll_seconds": 0.05, "heartbeat_seconds": 0.2, "browser": "off"}
 
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory(prefix="factory-test-")

@@ -165,7 +165,7 @@ class CancelAndRetryTests(ControlTestCase):
         run = self.queued_run()
         for _ in range(6):
             attempt = run.begin_attempt("scope-review", host="codex", model="m", effort="low")
-            run.finish_attempt(attempt, outcome="blocked", reason="stuck", retryable=True, source="gate")
+            run.finish_attempt(attempt, outcome="blocked", reason="stuck", retryable=True, source="gate", tokens=100)
         run.data.update({"status": "cancelled", "retries": {"used": 5, "budget": 5}})
         run.data["human"]["reason"] = "retry budget exhausted (5/5)"
         run.save()
@@ -173,7 +173,8 @@ class CancelAndRetryTests(ControlTestCase):
         viewer, _ = self.watcher(run, [(status("cancelled"), "r", [""]), (status("cancelled"), "b", [""])])
         self.assertEqual(viewer.run(), 0)
         self.assertIn("not done: retry budget exhausted (5/5); pass --reset-budget", viewer.out.getvalue())
-        self.assertEqual(Run.load(run.dir).data["retries"]["used"], 1)
+        data = Run.load(run.dir).data
+        self.assertEqual(data["retries"]["used"], 1)
 
     def test_dead_worker_is_resumed_from_the_view(self):
         run = self.queued_run()
@@ -204,8 +205,8 @@ class CancelAndRetryTests(ControlTestCase):
         thread.join(timeout=20)
         plain = ANSI.sub("", out.getvalue())
         self.assertIn("p  pause before the next attempt starts", plain)
-        self.assertIn("streaming Codex activity", plain)
-        self.assertRegex(plain, r"\| \$ git add -A")
+        self.assertIn("streaming agent milestones and failed commands", plain)
+        self.assertRegex(plain, r"\| agent: ")
         self.assertEqual(opened, [self.home / "dashboard.html"])
 
 

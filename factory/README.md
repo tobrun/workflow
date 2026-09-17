@@ -41,11 +41,12 @@ After the handoff, `factory new` stays in your terminal and shows the assembly l
   ▶ build        running  attempt 1, 22m15s, 1.8M tokens
   · ship
   retries 0/5, 2.4M tokens, worker alive
-  > $ pytest -q tests/unit/test_relevance.py
+  now: agent: validating the completed change set
   keys: p pause  n note  c cancel  v verbose  d dashboard  q detach  ? help
 ```
 
-Stage transitions, retries, notes, and warnings scroll above a status block that redraws in place: one row per stage, the running attempt's elapsed time and tokens, the latest Codex command or message, and the keys that apply right now.
+Stage transitions, retries, notes, and warnings scroll above a status block that redraws in place: one row per stage, the running attempt's elapsed time and tokens, the latest agent milestone, and the keys that apply right now.
+The status block shows diagnostics only for the active stage, so failures already resolved in an earlier stage do not bury current progress. Toggle `f` to inspect the full persisted failure/warning history, including failure code, reason, evidence files, and a `factory logs` command for the exact attempt.
 
 | Key | Action |
 | --- | --- |
@@ -54,7 +55,8 @@ Stage transitions, retries, notes, and warnings scroll above a status block that
 | `c` | Cancel after a `[y/N]` confirmation: the running Codex process stops, and the worktree and any draft PR are kept. |
 | `r` | Retry a `needs-human` or `cancelled` run (with an optional note), continue a `paused` one, or resume a dead worker. |
 | `b` | Retry after resetting the shared retry budget. |
-| `v` | Stream every Codex command and message into the history, or turn that off. |
+| `v` | Stream agent milestones and failed commands into the history, or turn that off. |
+| `f` | Toggle between active-stage diagnostics and the complete persisted failure/warning history. |
 | `d` | Regenerate and open the dashboard. |
 | `q`, Ctrl-C | Leave the view; the run keeps going. |
 | `?` | Show or hide the key help. |
@@ -126,7 +128,7 @@ Pi ships `dev` only: Pi uses a flat skill namespace, so the factory's `scope`, `
 | `factory ls [--all] [--json]` | Show actionable runs first. Hide `done` runs unless `--all`. |
 | `factory show <id> [--json]` | Show status, stage, retries, blocker, attempts, artifacts, PR, worktree, and exact next command. |
 | `factory logs <id> [--stage name] [--attempt n] [-f] [--raw]` | Render Codex events compactly or stream raw JSONL. |
-| `factory retry <id> [--reset-budget] [--note text] [--rescope] [--detach]` | Queue a new attempt for a `needs-human` or `cancelled` run and watch it; `--rescope` reopens interactive scope to change the approved intent. |
+| `factory retry <id> [--reset-budget] [--note text] [--rescope] [--detach]` | Queue a new attempt for a `needs-human` or `cancelled` run and watch it; `--reset-budget` restores the retry budget; `--rescope` reopens interactive scope to change the approved intent. |
 | `factory intent <id> [--json]` | Show the sealed approved intent (request, non-goals, scenario ids), scenarios added later, and each attempt's decision delta. |
 | `factory inputs <id> --stage name [--attempt n] [--file name]` | Show which plan files an attempt started from, how they changed, or print one snapshotted file. |
 | `factory resume <id> [--detach]` | Continue a `paused` run, or recover a queued or running run whose worker died, and watch it. |
@@ -139,7 +141,7 @@ Pi ships `dev` only: Pi uses a flat skill namespace, so the factory's `scope`, `
 | `factory gc [--dry-run]` | Archive merged completed runs, exporting each bundle first; `exports/` is never removed. |
 | `factory rm <id> --force` | Explicitly remove one run and worktree; refuses while an execution of the run is still live. |
 | `factory dashboard [--open]` | Regenerate the static board and optionally open it. |
-| `factory doctor [--json] [-v] [--repo PATH [--run-setup]] [--smoke]` | Check binaries, auth, that Codex loads exactly the generated skills, config, slots, runtime permissions, and worktree health; `--repo` checks a repository's contract, environment names, commands, token forwarding, and sandboxed worktree Git; `--run-setup` runs its setup commands in a throwaway worktree; `--smoke` makes one cached, paid Codex call per model; `-v` also lists passing checks. |
+| `factory doctor [--json] [-v] [--repo PATH [--run-setup]] [--smoke]` | Check binaries, auth, that Codex loads exactly the generated skills, the browser the runner would host, config, slots, runtime permissions, and worktree health; `--repo` checks a repository's contract, environment names, commands, token forwarding, and sandboxed worktree Git; `--run-setup` runs its setup commands in a throwaway worktree; `--smoke` makes one cached, paid Codex call per model; `-v` also lists passing checks. |
 
 Run ids accept an exact id or an unambiguous prefix.
 Every command prints the outcome first, then evidence and the next action.
@@ -178,14 +180,16 @@ A run parks only for a fixed list, reported as typed conditions (`premise.invali
 
 ## Retries
 
-A run has five paid retries shared by `scope-review`, `build`, and `ship`.
+A run has five paid retries shared by `scope-review`, `build`, and `ship` by default. Set
+`max_retries` in `~/.factory/config.json` to use a lower cap for new runs; lowering it while a run
+is active takes effect after its current attempt ends.
 The first attempt of each headless stage is free; every further attempt consumes one retry before it launches.
 Interactive scope relaunches are free.
 Every retry is a fresh process that reads the previous reason and the artifacts on disk; a failed headless session is never resumed.
 Exhausting the budget cancels the run and keeps the worktree and any draft PR.
 Non-retryable outcomes, such as an invalidated premise or a missing launch command, park the run in `needs-human`.
 `factory retry <id> --note "..."` passes a note to the next attempt.
-An operator retry is still an additional attempt, so it consumes a retry too; when the budget is spent, add `--reset-budget` to restore all five first.
+An operator retry is still an additional attempt, so it consumes a retry too; when the budget is spent, add `--reset-budget` to restore all five. Lifetime token usage stays in the run record for audit and reporting.
 `factory resume <id>` never starts a second agent next to a surviving one.
 Every attempt runs under a small runner-owned guard process that holds the run's executor lease and the stage slot, records the agent's process identity before the agent may start, and writes an execution receipt.
 When the worker died but the attempt's execution is still running or already finished, the new worker reattaches to it and gates its result, with no extra retry.
@@ -237,11 +241,11 @@ The runtime root is `~/.factory`, overridden by `FACTORY_HOME`.
 | --- | --- | --- |
 | `max_concurrent_stages` | `4` | Headless stages that may run at once, at least 1. |
 | `notify` | `true` | macOS notifications on `needs-human`, `cancelled`, and `done`. |
-| `max_tokens_per_run` | `60000000` | Token ceiling for the run's reported usage (input plus output). The attempt's guard stops the agent as soon as a reported turn crosses it, so enforcement happens at Codex turn boundaries; crossing it parks the run. |
 | `max_child_agents` | `6` | Concurrent sub-agents per Codex session, passed as `agents.max_concurrent_threads_per_session`, which Codex itself enforces. |
 | `max_agent_depth` | `1` | Sub-agent nesting depth, passed as `agents.max_depth`. |
 | `max_heavy_commands` | `2` | Runner-executed tests, e2e drivers, validation, gauntlet, and setup commands that may run at once across all runs; a lease the command's guard holds, so a worker crash cannot free it early. |
-| `port_range` | `[20000, 29999]` | Ports leased to e2e services, one holder at a time across concurrent runs. |
+| `port_range` | `[20000, 29999]` | Ports leased to e2e services and hosted browsers, one holder at a time across concurrent runs. |
+| `browser` | `auto` | Host one headless Chrome per build and ship attempt and per e2e gate, outside the agent's sandbox, and hand it over as `AGENT_BROWSER_CDP` and `FACTORY_BROWSER_CDP_URL`; `off` hosts none. See `factory/references/repo-contract.md`. |
 | `stop_on_repeated_reason` | `false` | Park after two consecutive identical retryable blocks at one stage. Independently, a retry that fails with the same failure code and leaves the commit and plan files unchanged always parks as "no progress". |
 | `stage_poll_seconds` | `10` | Slot wait interval. |
 | `heartbeat_seconds` | `30` | Worker heartbeat interval. |
@@ -260,12 +264,13 @@ Model, effort, and timeout defaults live in `runner/pipeline.py`.
 Headless prompts open with `$factory:{stage}`.
 Codex loads an installed copy of the plugin from `$CODEX_HOME/plugins/cache/nurbot/factory/{version}/`, not the checkout path `codex plugin list` prints, so an edited checkout can run stale skills under the same version.
 Every attempt compares a content hash of that copy with `plugins/factory`; when the plugin is missing or differs, the attempt reads the generated skill file by path instead, logs `skills.fallback`, and `factory doctor` warns, so a stale install never stops a run. Each attempt's `runtime.json` records the runner, skills identity, host versions, model, contract, effective configuration, and environment names (never values).
-Settings that change what an attempt means (`max_tokens_per_run`, `stop_on_repeated_reason`) are read when the attempt starts, and a change is logged as `config.changed`; slots, polling, heartbeat, and notifications apply immediately.
+Settings that change what an attempt means (`stop_on_repeated_reason`) are read when the attempt starts, and a change is logged as `config.changed`; slots, polling, heartbeat, and notifications apply immediately.
 To always read the generated skills by path, set `FACTORY_DIRECT_SKILL_PATH=1` before `factory new` or `factory retry`: prompts then name `plugins/factory/skills/{stage}/SKILL.md` instead of `$factory:{stage}`.
 
 ## Testing
 
-All runner tests are offline and use stub `codex`, `claude`, `gh`, and `acli` binaries from `runner/tests/stubs/`, selected through `FACTORY_CODEX_BIN`, `FACTORY_CLAUDE_BIN`, `FACTORY_GH_BIN`, `FACTORY_ACLI_BIN`, and an isolated `FACTORY_HOME`.
+All runner tests are offline and use stub `codex`, `claude`, `gh`, `acli`, and `chrome` binaries from `runner/tests/stubs/`, selected through `FACTORY_CODEX_BIN`, `FACTORY_CLAUDE_BIN`, `FACTORY_GH_BIN`, `FACTORY_ACLI_BIN`, `FACTORY_BROWSER_BIN`, and an isolated `FACTORY_HOME`; the test config sets `"browser": "off"` except where a test hosts the stub browser.
+One test attaches a real `agent-browser` session to a hosted Chrome from inside a sandboxed command and is skipped where those are absent.
 
 ```bash
 cd factory && python3 -m unittest discover -s runner/tests -t .
@@ -275,7 +280,7 @@ bash scripts/test_factory_runner.sh
 ## Cleanup
 
 `factory gc` archives only runs that are `done` and whose PR is merged, removing their worktree and local branch.
-Plan files are never committed (the runner adds `.dev/` to the repository's local `.git/info/exclude`), so `gc` copies `.dev/{plan}/` into the archive's `plan/` first.
+Plan files are meant to stay out of commits (the runner adds `.dev/` to the repository's local `.git/info/exclude`; a stage that commits one gets a warning, not a failure), so `gc` copies `.dev/{plan}/` into the archive's `plan/` first.
 A repository whose base branch already tracks other plans under `.dev/` still works: `factory new` notes them and leaves them alone, refuses only a run whose own `.dev/{plan}/` is tracked (pick another `--plan`), and a stage that changes any tracked plan file fails its gate.
 Nothing unmerged is removed automatically; `factory rm <id> --force` removes one exact run.
 
@@ -313,7 +318,7 @@ Confirmed:
 Found and fixed:
 
 - `gh` inside Codex failed with HTTP 401 even though the host was logged in: `gh` keeps its token in the macOS keychain, which the sandbox blocks. The runner now reads `gh auth token` on the host and passes it to every attempt as `GH_TOKEN`, unless `GH_TOKEN` or `GITHUB_TOKEN` is already set.
-- The 20M token ceiling was below one first-try run (31.7M total); the default is now 60M.
+- Token usage is recorded for audit and reporting, but it no longer limits or stops a run.
 - The repository already ignored `.dev/`, so plans were never committed; the runner now excludes `.dev/` itself so every repository behaves that way.
 
 Setup notes:

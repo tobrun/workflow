@@ -29,6 +29,8 @@ The spec's `### Validation` block is its human-readable rendering and must name 
 `ci` is required: the pull-request checks that must finish green, or `{"none": "why this repository has no CI"}`.
 `e2e` is a driver, or `{"none": "why"}` for a change with no application to launch; a plan with `[e2e]` scenarios needs a driver.
 `tests`, `services`, and `ports` describe how the runner itself executes mapped tests and the e2e driver; placeholders are `{tests}`, `{junit}`, `{out}`, `{run_dir}`, and `{port_<name>}` for each declared port.
+Scenario maps name tests from the worktree root; when `tests.run` has a `cwd`, the runner passes `{tests}` relative to that directory and reads the results back the same way, so a `path::name` id works whichever directory the test runner reports from.
+A test mapped outside its layer's globs is reported as a warning on the attempt, not a failure: the runner still executes it and judges its outcome.
 
 ## Command records
 
@@ -50,14 +52,25 @@ The spec's `### Validation` block is its human-readable rendering and must name 
 
 `workspace-write` matches the Codex sandbox the factory launches agents with (`workspace-write` with network access), so a check that passed for the agent behaves the same for the gate.
 A host without the enforcement tool fails the command with a repair step instead of running it unconfined.
-Browser e2e works in `workspace-write` by default, for the runner's commands and the agents alike.
-The runner points `npm_config_cache`, `UV_CACHE_DIR`, `PIP_CACHE_DIR`, `YARN_CACHE_FOLDER`, and `AGENT_BROWSER_SOCKET_DIR` at shared directories under `~/.factory/cache/` (a value already in the environment is kept and made writable), and sets `AGENT_BROWSER_ARGS=--no-sandbox` because Chrome cannot start its own sandbox inside the OS sandbox, which still confines the browser's writes.
-Playwright already launches Chromium that way; another Chrome launcher needs `--no-sandbox` in the driver, or `"boundary": "host"` on that command.
+The runner points `npm_config_cache`, `UV_CACHE_DIR`, `PIP_CACHE_DIR`, `YARN_CACHE_FOLDER`, and `AGENT_BROWSER_SOCKET_DIR` at shared directories under `~/.factory/cache/` (a value already in the environment is kept and made writable).
+
+## The hosted browser
+
+Chrome cannot start inside the Codex sandbox: its policy is closed by default and denies the Mach services Chrome needs at startup, so a browser the agent launches exits before it listens, whatever `--no-sandbox` says.
+The runner therefore hosts one headless Chrome per build and ship attempt and per e2e gate, outside that sandbox but confined by the `workspace-write` boundary to its own profile directory and the temporary directories, on a leased loopback port.
+Agents, the e2e driver, and its services receive `AGENT_BROWSER_CDP` (every `agent-browser` session attaches to the hosted browser) and `FACTORY_BROWSER_CDP_URL` (for Playwright's `chromium.connectOverCDP`), so a driver behaves the same for the agent and at the gate.
+Closing an `agent-browser` session leaves the browser running; the runner stops it when the attempt or gate ends.
+The browser is the newest Chrome the host already has: `FACTORY_BROWSER_BIN` or `AGENT_BROWSER_EXECUTABLE_PATH`, agent-browser's download, Playwright's Chromium, a system Chrome or Chromium, then `PATH`; `factory doctor` reports which.
+A host without one records `browser: unavailable` on the attempt and the run proceeds; the runner's own sandboxed commands still carry `AGENT_BROWSER_ARGS=--no-sandbox` so a driver that launches its own Chrome there works.
+`"browser": "off"` in `~/.factory/config.json` disables hosting.
 
 ## Setup
 
 The runner runs `setup` in the run's worktree before the build and ship agents start, and again at those gates and in the `[repro]` base worktree.
-It reruns only when a dependency file (`package.json`, lockfiles, `pyproject.toml`, `uv.lock`, `requirements*.txt`, and similar) or the setup records change; a failure parks the run with `setup.failed` and the path to the full output.
+It reruns only when a dependency file (`package.json`, lockfiles, `pyproject.toml`, `uv.lock`, `requirements*.txt`, and similar) or the setup records change, or when something a command installed is gone; a failure parks the run with `setup.failed` and the path to the full output.
+A setup command may declare `produces`, the worktree-relative paths it installs (`["node_modules", "omr-ui/node_modules"]`); a known package-manager install implies its output when the record is silent (`npm ci`, `npm install`, `yarn`, `pnpm install`, and `bun install` imply `node_modules` in the command's `cwd`, `uv sync` implies `.venv`).
+A declared path that is missing after the command succeeds is reported as a warning on the attempt, never a failure.
+Every produced path is added to the repository's `info/exclude`, so an installed dependency directory never appears in Git status or in an agent's `git add -A`, and its later disappearance reruns setup instead of failing the gate's tests with a missing runner.
 
 ## Checking a repository before a run
 

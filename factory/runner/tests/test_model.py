@@ -103,34 +103,36 @@ class RetryAccountingTests(ModelTestCase):
         self.assertEqual(run.status, CANCELLED)
         self.assertIn("retry budget exhausted (5/5)", run.data["human"]["reason"])
 
+    def test_run_can_start_with_a_configured_retry_budget(self):
+        run = Run.create(self.home / "runs", repo="/tmp/repo", request="Add a thing", plan="two-retries",
+                         retry_budget=2)
+        self.assertEqual(run.data["retries"], {"used": 0, "budget": 2})
+
+    def test_lowered_config_budget_caps_an_existing_run_before_retrying(self):
+        run = self.new_run(RUNNING, "build")
+        run.data["retries"] = {"used": 2, "budget": 5}
+        attempt = self.attempt(run, "failed")
+        cfg = config.parse({"max_retries": 2})
+        self.assertEqual(apply_decision(run, attempt, cfg), "exhausted")
+        self.assertEqual(run.data["retries"], {"used": 2, "budget": 2})
+        self.assertIn("retry budget exhausted (2/2)", run.data["human"]["reason"])
+
     def test_non_retryable_parks(self):
         run = self.new_run(RUNNING, "build")
         attempt = self.attempt(run, "blocked", reason="no spec", retryable=False)
-        self.assertEqual(decide(run, attempt, max_tokens=10**9, stop_on_repeated_reason=False), ("park", "no spec"))
+        self.assertEqual(decide(run, attempt, stop_on_repeated_reason=False), ("park", "no spec"))
 
-    def test_token_ceiling_parks_before_next_stage(self):
-        run = self.new_run(RUNNING, "build")
-        attempt = self.attempt(run, "done", reason=None, tokens=500)
-        action, reason = decide(run, attempt, max_tokens=100, stop_on_repeated_reason=False)
-        self.assertEqual(action, "park")
-        self.assertIn("token ceiling", reason)
-
-    def test_token_ceiling_does_not_block_final_done(self):
-        run = self.new_run(RUNNING, "ship")
-        attempt = self.attempt(run, "done", reason=None, tokens=500)
-        self.assertEqual(decide(run, attempt, max_tokens=100, stop_on_repeated_reason=False)[0], "stage_passed")
-
-    def test_token_ceiling_parks_instead_of_retrying(self):
+    def test_reported_usage_never_changes_the_decision(self):
         run = self.new_run(RUNNING, "build")
         attempt = self.attempt(run, "blocked", tokens=500)
-        self.assertEqual(decide(run, attempt, max_tokens=100, stop_on_repeated_reason=False)[0], "park")
+        self.assertEqual(decide(run, attempt, stop_on_repeated_reason=False)[0], "retry")
 
     def test_repeated_reason_policy(self):
         run = self.new_run(RUNNING, "build")
         self.attempt(run, "blocked", reason="npm test failed in 12.3s")
         attempt = self.attempt(run, "blocked", reason="npm  test failed in 40s")
-        self.assertEqual(decide(run, attempt, max_tokens=10**9, stop_on_repeated_reason=False)[0], "retry")
-        action, reason = decide(run, attempt, max_tokens=10**9, stop_on_repeated_reason=True)
+        self.assertEqual(decide(run, attempt, stop_on_repeated_reason=False)[0], "retry")
+        action, reason = decide(run, attempt, stop_on_repeated_reason=True)
         self.assertEqual(action, "park")
         self.assertIn("same reason twice", reason)
 
@@ -138,7 +140,7 @@ class RetryAccountingTests(ModelTestCase):
         run = self.new_run(RUNNING, "build")
         self.attempt(run, "blocked", reason="lint failed")
         attempt = self.attempt(run, "blocked", reason="tests failed")
-        self.assertEqual(decide(run, attempt, max_tokens=10**9, stop_on_repeated_reason=True)[0], "retry")
+        self.assertEqual(decide(run, attempt, stop_on_repeated_reason=True)[0], "retry")
 
     def test_cancelled_attempt_cancels(self):
         run = self.new_run(RUNNING, "build")
@@ -205,10 +207,12 @@ class ConfigTests(unittest.TestCase):
     def test_defaults(self):
         cfg = config.parse({})
         self.assertEqual(cfg.max_concurrent_stages, 4)
+        self.assertEqual(cfg.max_retries, 5)
         self.assertEqual(cfg.sandbox_for("/any"), "workspace-write")
 
     def test_invalid_values(self):
-        for bad in ({"max_concurrent_stages": 0}, {"notify": "yes"}, {"schema": 2}, {"stage_poll_seconds": -1},
+        for bad in ({"max_concurrent_stages": 0}, {"max_retries": 0}, {"notify": "yes"}, {"schema": 2},
+                    {"stage_poll_seconds": -1},
                     {"repos": {"relative/path": {}}}, {"repos": {"/abs": {"codex_sandbox": "none"}}}, []):
             with self.subTest(bad=bad), self.assertRaises(config.ConfigError):
                 config.parse(bad)

@@ -56,7 +56,7 @@ class LaunchTests(unittest.TestCase):
         try:
             self.assertEqual(browser.version(hosted.port)["Browser"], "StubChrome/1.0")
             self.assertEqual(browser.environment(hosted),
-                             {"AGENT_BROWSER_CDP": str(hosted.port), "FACTORY_BROWSER_CDP_URL": hosted.cdp_url})
+                             {"AGENT_BROWSER_CDP": str(hosted.port), "FACTORY_BROWSER_CDP_URL": hosted.cdp_url, "AGENT_BROWSER_ARGS": "--no-sandbox"})
             entry = browser.record(hosted)
             self.assertEqual((entry["status"], entry["port"], entry["pid"]), ("hosted", hosted.port, hosted.process.pid))
             self.assertTrue((hosted.directory / "profile" / "DevToolsActivePort").is_file())

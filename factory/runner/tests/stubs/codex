@@ -131,6 +131,38 @@ def hindsight_turn(argv):
     return 0
 
 
+def replay_turn(argv):
+    """Play a replayed foreman turn: the answer for the point in $FACTORY_REPLAY_POINT.
+
+    The prompt names the skill it follows; a skill under a dream's staged `candidates/` tree answers from
+    $FACTORY_STUB_REPLAY_CANDIDATE, any other from $FACTORY_STUB_REPLAY. Each file maps a point directory name,
+    or `{world}/{point}`, to a decision object or "invalid"; an unmapped point parks.
+    """
+    last_message = option(argv, "-o")
+    prompt = argv[1]
+    skill = prompt.split("Follow the skill at ", 1)[1].split("\n", 1)[0] if "Follow the skill at " in prompt else ""
+    variable = "FACTORY_STUB_REPLAY_CANDIDATE" if "/candidates/" in skill else "FACTORY_STUB_REPLAY"
+    path = os.environ.get(variable)
+    answers = json.loads(Path(path).read_text(encoding="utf-8")) if path and Path(path).exists() else {}
+    point = os.environ.get("FACTORY_REPLAY_POINT", Path(os.getcwd()).name)
+    world = Path(os.getcwd()).parent.parent.name
+    step = answers.get(f"{world}/{point}", answers.get(point, answers.get("*")))
+    if step == "invalid":
+        text = json.dumps({"schema": "factory.decision/1", "action": "fly", "summary": "s", "rationale": "r"})
+    else:
+        decision = {"schema": "factory.decision/1", "summary": "stub replay", "rationale": "stub rationale"}
+        decision.update(step or {"action": "park", "park": {"reason": "stub replay has no answer",
+                                                            "operator_action": "map the point"}})
+        text = json.dumps(decision)
+    emit({"type": "thread.started", "thread_id": "stub-replay"})
+    emit({"type": "item.completed", "item": {"type": "agent_message", "text": text}})
+    emit({"type": "turn.completed", "usage": {"input_tokens": 100, "cached_input_tokens": 0, "output_tokens": 10}})
+    if last_message:
+        Path(last_message).write_text(text + "\n", encoding="utf-8")
+    return 0
+
+
+
 def main():
     argv = sys.argv[1:]
     log = os.environ.get("FACTORY_STUB_LOG")
@@ -158,6 +190,8 @@ def main():
         return foreman_turn(argv)
     if os.environ.get("FACTORY_ROLE") == "hindsight":
         return hindsight_turn(argv)
+    if os.environ.get("FACTORY_ROLE") == "replay":
+        return replay_turn(argv)
 
     worktree = Path(option(argv, "-C") or os.getcwd())
     last_message = option(argv, "-o")

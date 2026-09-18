@@ -7,6 +7,10 @@
 The case holds `digest.json` (attempts up to and including the named one), `event.md` (the attempt.finished
 message the foreman would have received), and `expected.json`. Repository identity is redacted: run and
 worktree paths, the repository path, GitHub URLs, and the run id become placeholders, so a case can be committed.
+
+The point also joins the run's history world (`factory history build`) with the accept and reject lists as a
+human label when the run has finished; for a run still in flight the case is written and the command prints
+how to record the label once it finishes.
 """
 
 from __future__ import annotations
@@ -20,6 +24,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
 from runner import config, foreman, gates  # noqa: E402
+from runner import history  # noqa: E402
 from runner.history import as_of, redact  # noqa: E402
 from runner.model import Run  # noqa: E402
 
@@ -55,6 +60,21 @@ def main() -> int:
         "schema": "factory.foreman-eval/1", "stage": args.stage, "attempt": args.attempt, "note": args.note,
         "accept": args.accept, "reject": args.reject, "source_run": "<run_id>"}, indent=2) + "\n", encoding="utf-8")
     print(f"captured {case}")
+    # The same point joins the run's history world with the hand label, so the labeller's check set grows too.
+    home = config.factory_home()
+    with history.HistoryLock(home):
+        built = history.build(run.dir, home)
+        for note in built.notes:
+            print(f"  {note}")
+        point = f"{args.stage}-{args.attempt}"
+        if built.world is None:
+            print(f"no world yet; once the run finishes, record the hand label with "
+                  f"`factory history build {run.id}` and `factory history label --set {run.id} {point} "
+                  f"--accept {' '.join(args.accept)}" + (f" --reject {' '.join(args.reject)}" if args.reject else "")
+                  + "`")
+            return 0
+        history.set_label(built.world, point, args.accept, args.reject, note=args.note or None)
+        print(f"labelled {run.id} {point} by hand in {built.world}")
     return 0
 
 

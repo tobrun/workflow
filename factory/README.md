@@ -330,6 +330,8 @@ The dream loop improves the foreman skill offline from finished runs, the way Dr
 - The **deploy** writes `factory/skills/foreman/SKILL.md`, rebuilds `plugins/factory`, runs `scripts/validate.sh`, commits the two skill files on `main` as `feat(foreman): dream {id} raises confirmation score {old} -> {new}` with the score table and both policy hashes, and pushes to `origin`.
   Runs pick it up on their next cold turn; `codex plugin add factory@nurbot` realigns the installed plugin.
   Roll a revision back with `git revert` of its commit.
+- The deploy refuses, writing nothing, when `main` carries local commits ahead of `origin/main` that no dream made (`unpushed_commits`: push or drop your own work first, since the deploy pushes `main`), when the foreman skill or `factory-run.md` changed on disk since the dream scored its incumbent (`incumbent_changed`), and when any replay draw failed at the host twice (`unreplayed`).
+  A replay the host did not finish is retried once and never scored as a wrong answer; `decision.json` and the report count the draws that stayed unreplayed.
 
 Replays are cached under `~/.factory/dreams/cache/` by policy hash, world, point, snapshot hash, decision schema, model, effort, and repeat ordinal; `factory dream` reports the fault ranking across worlds for a person to act on.
 `factory history` and `factory dream` never run inside `scripts/validate.sh`: labelling and dreaming are paid.

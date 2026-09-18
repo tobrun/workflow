@@ -48,7 +48,7 @@ Captured: 2026-09-17 (full, scope) - Updated: 2026-09-18 (the dream loop: histor
 1. `factory dream` (dream, `factory/runner/dream.py`) splits labelled worlds into selection and confirmation, replays the incumbent foreman skill on every selection point (cached under ~/.factory/dreams/cache/), and scores each answer against its label.
 2. Each round the dream skill reads the selection traces and writes a revised skill; deterministic checks reject a candidate before any replay, and a passing one is staged as a full plugin tree and scored the same way.
 3. The best by selection score, incumbent included, is scored on confirmation; the report and decision.json land under ~/.factory/dreams/{dream-id}/.
-4. A winner that clears the floor and the margin is written to `factory/skills/foreman/SKILL.md`, rebuilt into plugins/, validated, committed on main, and pushed; runs read it on their next cold turn.
+4. A winner that clears the floor and the margin, on a round whose every replay draw was answered, is written to `factory/skills/foreman/SKILL.md`, rebuilt into plugins/, validated, committed on main, and pushed, unless main carries other unpushed commits or the incumbent skill changed since it was scored; runs read it on their next cold turn.
 
 ### Building the Codex distributions
 1. `scripts/build_codex_plugin.py` copies skills/, references/, and `scripts/` of each source plugin into plugins/{name}/, strips Claude-only frontmatter, and writes agents/openai.yaml.

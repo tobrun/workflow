@@ -748,7 +748,10 @@ class DeployTests(FactoryTestCase):
         text = self.source.read_text().rstrip("\n") + f"\n{CANDIDATE_LINE}\n"
         tree = dream.stage_plugin(text, self.dream_dir / "candidates" / "1" / "plugins" / "factory",
                                   self.repo / "plugins" / "factory")
-        self.candidate = {"text": text, "tree": tree, "name": "round-1"}
+        # The incumbent the dream scored: the source skill and the generated policy as they were at its start.
+        base = {"text": self.source.read_text(),
+                "policy": dream.provenance.tree_policy(self.repo / "plugins" / "factory")["sha256"]}
+        self.candidate = {"text": text, "tree": tree, "name": "round-1", "base": base}
 
     def deploy(self, *, gain: float = 0.06, worlds: int = 6, points: int = 5,
                repositories: tuple = ("github.com/acme/app", "github.com/acme/web"), partial: bool = False,
@@ -887,6 +890,40 @@ class DeployTests(FactoryTestCase):
         self.assertEqual(decision_["pending"], [head])
         self.assertEqual(git(origin, "rev-parse", "main"), published)
         self.assert_untouched(head)
+
+    def land(self, relative: str, line: str) -> str:
+        """Someone else's change to a policy file while the dream ran: committed, rebuilt, and pushed."""
+        path = self.repo / relative
+        path.write_text(path.read_text() + line)
+        subprocess.run([sys.executable, "scripts/build_codex_plugin.py", "--plugin", "factory"], cwd=self.repo,
+                       check=True, capture_output=True)
+        git(self.repo, "commit", "--quiet", "-am", "docs(foreman): a change made while the dream ran")
+        git(self.repo, "push", "--quiet", "origin", "main")
+        return self.head()
+
+    def assert_kept(self, head: str, relative: str, line: str) -> None:
+        self.assertEqual(self.head(), head)
+        self.assertEqual(git(self.root / "workflow-origin.git", "rev-parse", "main"), head)
+        self.assertIn(line, (self.repo / relative).read_text())
+        self.assertNotIn(CANDIDATE_LINE, self.generated.read_text())
+        self.assertEqual(git(self.repo, "status", "--porcelain", "--untracked-files=no"), "")
+
+    def test_a_protocol_change_landed_during_the_dream_refuses_the_deploy(self):
+        line = "\nA protocol rule added while the dream ran.\n"
+        head = self.land("factory/references/factory-run.md", line)
+        decision_ = self.deploy()
+        self.assertEqual((decision_["deployed"], decision_["reason"]), (False, "incumbent_changed"), decision_)
+        self.assertIn("factory-run.md", decision_["cause"])
+        self.assertIn("incumbent_changed", __import__("runner.cli", fromlist=["cli"]).DEPLOY_FAILURES)
+        self.assert_kept(head, "plugins/factory/references/factory-run.md", line)
+
+    def test_a_skill_change_landed_during_the_dream_is_never_reverted(self):
+        line = "\nA skill rule added while the dream ran.\n"
+        head = self.land("factory/skills/foreman/SKILL.md", line)
+        decision_ = self.deploy()
+        self.assertEqual((decision_["deployed"], decision_["reason"]), (False, "incumbent_changed"), decision_)
+        self.assertIn("factory/skills/foreman/SKILL.md", decision_["cause"])
+        self.assert_kept(head, "factory/skills/foreman/SKILL.md", line)
 
     def test_a_failing_validate_restores_both_skill_files(self):
         os.environ["FACTORY_TEST_VALIDATE_EXIT"] = "1"

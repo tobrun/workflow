@@ -604,6 +604,7 @@ class _Dream:
     budget: Budget
     by_id: dict[str, WorldView]
     incumbent_text: str
+    incumbent_policy: str  # the generated tree's policy hash when the dream read its incumbent
     echo: Callable[[str], None]
 
     def score(self, name: str, views: list[WorldView], tree: Path, repeats: int, work: str) -> PolicyScore:
@@ -615,20 +616,21 @@ def run(home: Path, cfg: config.Config, *, rounds: int = 3, repeats: int | None 
     """One dream: score the incumbent, ask for `rounds` revisions, keep the best, confirm it, maybe deploy it."""
     root = repo_root()
     incumbent_text = (root / "factory" / provenance.FOREMAN_SKILL).read_text(encoding="utf-8")
+    incumbent_policy = provenance.tree_policy(root / "plugins" / "factory")["sha256"]
     views, unlabelled = load_views(home, world_ids)
     by_id = {v.id: v for v in views}
     chosen = split([{"id": v.id, "repository": v.repository} for v in views])
     selection, confirmation = [by_id[w] for w in chosen.selection], [by_id[w] for w in chosen.confirmation]
     dreams = Path(home) / "dreams"
     ctx = _Dream(mint_id(dreams), root / "plugins" / "factory", cfg, Cache(dreams / "cache"), Budget(max_calls), by_id,
-                 incumbent_text, echo)
+                 incumbent_text, incumbent_policy, echo)
     echo(f"Dream {ctx.dir.name}: {len(selection)} selection and {len(confirmation)} confirmation world(s), "
          f"rule {chosen.rule}.")
     incumbent = ctx.score("incumbent", selection, ctx.tree, repeats or 1, "incumbent")
     candidates, best = _rounds(ctx, incumbent, selection, rounds, repeats or 1)
     confirmed, partial = _confirm(ctx, incumbent, candidates, best, confirmation, repeats or 2)
     decision = _decision(ctx, chosen, incumbent, candidates, best, confirmed, partial, confirmation)
-    decision.update(deploy(dream_dir=ctx.dir, candidate=_candidate(best, incumbent), confirmation=confirmed,
+    decision.update(deploy(dream_dir=ctx.dir, candidate=_candidate(ctx, best, incumbent), confirmation=confirmed,
                            confirmation_worlds=confirmation, partial=partial, cfg=cfg, root=root,
                            enabled=deploy_enabled, echo=echo))
     (ctx.dir / "decision.json").write_text(json.dumps(decision, indent=2) + "\n", encoding="utf-8")
@@ -738,8 +740,12 @@ def _decision(ctx: _Dream, chosen: Split, incumbent: PolicyScore, candidates: li
     }
 
 
-def _candidate(best: tuple, incumbent: PolicyScore) -> dict | None:
-    return None if best[0] is incumbent else {"text": best[1], "tree": best[2], "name": best[0].name}
+def _candidate(ctx: _Dream, best: tuple, incumbent: PolicyScore) -> dict | None:
+    """The winner for deploy, with the incumbent it was scored against as its `base`."""
+    if best[0] is incumbent:
+        return None
+    return {"text": best[1], "tree": best[2], "name": best[0].name,
+            "base": {"text": ctx.incumbent_text, "policy": ctx.incumbent_policy}}
 
 
 # --- the report ------------------------------------------------------------------------------
@@ -1031,7 +1037,23 @@ def _refusal(root: Path, builder: list[str], enabled: bool, others: list[str],
     code, out = _run(root, builder + ["--check"])
     if code != 0:
         return "stale_plugins", out.splitlines()[-1][:300] if out else f"exit {code}"
-    return None
+    moved = _moved(root, gate_args["candidate"]["base"])
+    return ("incumbent_changed", moved) if moved else None
+
+
+def _moved(root: Path, base: dict) -> str | None:
+    """Why the foreman policy on disk is no longer the incumbent the dream scored, or None when it still is.
+
+    The candidate was derived from and scored against `base`; writing it over a policy changed since would
+    silently revert that change. Runs after `--check`, so the generated tree matches the sources.
+    """
+    source = root / SKILL_FILES[0]
+    changed = [] if source.is_file() and source.read_text(encoding="utf-8") == base["text"] else [SKILL_FILES[0]]
+    if provenance.tree_policy(root / "plugins" / "factory")["sha256"] != base["policy"]:
+        changed.append(f"the generated skill or factory/{provenance.PROTOCOL}")
+    if not changed:
+        return None
+    return f"changed since the dream scored its incumbent: {', '.join(changed)}; dream again on the current skill"
 
 
 def _dirty(root: Path) -> str | None:

@@ -62,6 +62,16 @@ class BuildFromRunsTests(HistoryTestCase):
         self.assertTrue((points / "build-1" / "plan" / "spec.md").is_file())
         self.assertTrue((points / "build-1" / "event.md").read_text().startswith(f"Factory run {run.id}: event"))
 
+    def test_the_world_records_the_skill_hash_its_last_foreman_turn_ran_under(self):
+        run = self.finished_run(foreman="codex", decisions=[advance("scope-review"), advance("build"),
+                                                             advance("ship")])
+        turns = run.dir / "foreman" / "turns"
+        last = max((p for p in turns.iterdir() if p.name.isdigit()), key=lambda p: int(p.name))
+        sha = json.loads((last / "decision.json").read_text())["policy"]["sha256"]
+        self.assertTrue(sha)
+        self.assertEqual(self.call("history", "build", run.id)[0], 0)
+        self.assertEqual(self.world(run.id)["skill_hash"], sha)
+
     def test_a_run_without_the_foreman_is_rebuilt_with_its_auto_transitions(self):
         run = self.finished_run(foreman="off")
         self.call("history", "build", run.id)

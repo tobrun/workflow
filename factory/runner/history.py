@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import final
 
-from runner import config, foreman, records
+from runner import config, foreman, outcomes, records
 from runner.model import (
     HEADLESS,
     PARKED,
@@ -441,10 +441,9 @@ def _points(run: Run, home: Path, staging: Path, cfg: config.Config, notes: list
 
 def _skill_hash(run: Run, points: list[dict]) -> str | None:
     """The policy hash of the last foreman turn that recorded one."""
-    turns = (_read_json(run.dir / foreman.DIR / "turns" / str(e["turn"]) / "decision.json") or {}
-                for e in points if e.get("turn"))
-    policies = [p.get("sha256") for p in turns if isinstance(p, dict)]
-    return next((sha for sha in reversed(policies) if sha), None)
+    hashes = outcomes.turn_policies(run.dir)
+    turns = [e["turn"] for e in points if e.get("turn")]
+    return next((hashes[turn] for turn in reversed(turns) if turn in hashes), None)
 
 
 def _world(run: Run, points: list[dict], source_sha: str) -> dict:

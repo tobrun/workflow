@@ -1276,15 +1276,19 @@ def _actions(check: _Checker, obj: dict, key: str, where: str, *, non_empty: boo
     if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
         check.add(f"{where}.{key}", "must be a list of action names")
         return []
+    _action_problems(check, value, f"{where}.{key}", non_empty=non_empty)
+    return value
+
+
+def _action_problems(check: _Checker, value: list, where: str, *, non_empty: bool) -> None:
     unknown = [v for v in value if v not in DECISION_ACTIONS]
     if unknown:
-        check.add(f"{where}.{key}", f"unknown action(s) {', '.join(map(repr, unknown))}; "
-                                    f"known: {', '.join(DECISION_ACTIONS)}")
+        check.add(where, f"unknown action(s) {', '.join(map(repr, unknown))}; "
+                         f"known: {', '.join(DECISION_ACTIONS)}")
     if non_empty and not value:
-        check.add(f"{where}.{key}", "must name at least one action")
+        check.add(where, "must name at least one action")
     if len(set(value)) != len(value):
-        check.add(f"{where}.{key}", "names an action twice")
-    return value
+        check.add(where, "names an action twice")
 
 
 def _label(check: _Checker, entry: object, where: str, *, keys: tuple, optional: tuple = ()) -> None:
@@ -1325,51 +1329,64 @@ def validate_world(data: object, *, name: str = "world.json") -> dict:
     check.keys(data, "world", ("schema", "run", "repository", "terminal_status", "decision_schema", "points",
                                "source_sha256", "builder"),
                ("runner_revision", "skill_hash", "skills_id", "built_at"))
-    run = data.get("run")
-    if not isinstance(run, dict) or not isinstance(run.get("id"), str) or not isinstance(run.get("attempts"), list):
-        check.add("world.run", "must be an object with an id and the ordered attempt summaries")
-    else:
-        for index, attempt in enumerate(run["attempts"]):
-            where = f"world.run.attempts[{index}]"
-            if not isinstance(attempt, dict):
-                check.add(where, "must be an object")
-                continue
-            check.keys(attempt, where, ("stage", "n", "outcome", "tokens"), ("kind", "code"))
+    _world_run(check, data.get("run"))
     check.string(data, "repository", "world", empty=False)
     points = data.get("points")
     if not isinstance(points, list):
         check.add("world.points", "must be a list")
         points = []
-    seen = set()
+    seen: set = set()
     for index, point in enumerate(points):
-        where = f"world.points[{index}]"
-        if not isinstance(point, dict):
-            check.add(where, "must be an object")
-            continue
-        # The recorded decision and its source are optional: a pre-foreman attempt, or a turn that fell back,
-        # recorded no decision, and the point stays scorable against its label.
-        check.keys(point, where, ("id", "stage", "attempt", "event", "scorable", "snapshot", "plan"),
-                   ("recorded_decision", "decision_source", "origin", "turn", "unscorable_reason"))
-        if not isinstance(point.get("id"), str) or not POINT_ID.match(point["id"]):
-            check.add(f"{where}.id", "must be {stage}-{attempt} of a headless stage")
-        elif point["id"] in seen:
-            check.add(f"{where}.id", "appears twice")
-        else:
-            seen.add(point["id"])
-        if not isinstance(point.get("scorable"), bool):
-            check.add(f"{where}.scorable", "must be true or false")
-        if point.get("snapshot") not in SNAPSHOT_ORIGINS:
-            check.add(f"{where}.snapshot", f"must be one of {', '.join(SNAPSHOT_ORIGINS)}")
-        if "origin" in point and point["origin"] not in TURN_ORIGINS:
-            check.add(f"{where}.origin", f"must be one of {', '.join(TURN_ORIGINS)}")
-        if "decision_source" in point and point["decision_source"] not in DECISION_SOURCES:
-            check.add(f"{where}.decision_source", f"must be one of {', '.join(DECISION_SOURCES)}")
-        recorded = point.get("recorded_decision")
-        if recorded is not None and (not isinstance(recorded, dict) or not isinstance(recorded.get("action"), str)
-                                     or recorded.get("vocabulary") not in ("decision", "transition")):
-            check.add(f"{where}.recorded_decision", "must name an action and its vocabulary (decision or transition)")
+        _world_point(check, point, f"world.points[{index}]", seen)
     check.raise_if_any()
     return data
+
+
+def _world_run(check: _Checker, run: object) -> None:
+    if not isinstance(run, dict) or not isinstance(run.get("id"), str) or not isinstance(run.get("attempts"), list):
+        check.add("world.run", "must be an object with an id and the ordered attempt summaries")
+        return
+    for index, attempt in enumerate(run["attempts"]):
+        where = f"world.run.attempts[{index}]"
+        if not isinstance(attempt, dict):
+            check.add(where, "must be an object")
+            continue
+        check.keys(attempt, where, ("stage", "n", "outcome", "tokens"), ("kind", "code"))
+
+
+def _world_point(check: _Checker, point: object, where: str, seen: set) -> None:
+    if not isinstance(point, dict):
+        check.add(where, "must be an object")
+        return
+    # The recorded decision and its source are optional: a pre-foreman attempt, or a turn that fell back,
+    # recorded no decision, and the point stays scorable against its label.
+    check.keys(point, where, ("id", "stage", "attempt", "event", "scorable", "snapshot", "plan"),
+               ("recorded_decision", "decision_source", "origin", "turn", "unscorable_reason"))
+    if not isinstance(point.get("id"), str) or not POINT_ID.match(point["id"]):
+        check.add(f"{where}.id", "must be {stage}-{attempt} of a headless stage")
+    elif point["id"] in seen:
+        check.add(f"{where}.id", "appears twice")
+    else:
+        seen.add(point["id"])
+    _world_point_fields(check, point, where)
+
+
+def _world_point_fields(check: _Checker, point: dict, where: str) -> None:
+    if not isinstance(point.get("scorable"), bool):
+        check.add(f"{where}.scorable", "must be true or false")
+    if point.get("snapshot") not in SNAPSHOT_ORIGINS:
+        check.add(f"{where}.snapshot", f"must be one of {', '.join(SNAPSHOT_ORIGINS)}")
+    if "origin" in point and point["origin"] not in TURN_ORIGINS:
+        check.add(f"{where}.origin", f"must be one of {', '.join(TURN_ORIGINS)}")
+    if "decision_source" in point and point["decision_source"] not in DECISION_SOURCES:
+        check.add(f"{where}.decision_source", f"must be one of {', '.join(DECISION_SOURCES)}")
+    _recorded_decision(check, point.get("recorded_decision"), where)
+
+
+def _recorded_decision(check: _Checker, recorded: object, where: str) -> None:
+    if recorded is not None and (not isinstance(recorded, dict) or not isinstance(recorded.get("action"), str)
+                                 or recorded.get("vocabulary") not in ("decision", "transition")):
+        check.add(f"{where}.recorded_decision", "must name an action and its vocabulary (decision or transition)")
 
 
 def validate_labels(data: object, *, name: str = "labels.json") -> dict:
@@ -1422,25 +1439,7 @@ def validate_hindsight(data: object, *, name: str = "hindsight", points: tuple |
         raise RecordError("record.unsupported_version", f"{name}: schema must be {HINDSIGHT_SCHEMA!r}")
     check = _Checker(name)
     check.keys(data, "hindsight", ("schema", "labels", "faults"))
-    labels = data.get("labels")
-    if not isinstance(labels, list):
-        check.add("hindsight.labels", "must be a list")
-        labels = []
-    named = []
-    for index, entry in enumerate(labels):
-        where = f"hindsight.labels[{index}]"
-        _label(check, entry, where, keys=("point", "accept", "reject", "allow_override", "note"))
-        if isinstance(entry, dict):
-            named.append(entry.get("point"))
-    if len(set(named)) != len(named):
-        check.add("hindsight.labels", "labels a point twice")
-    if points is not None:
-        missing = sorted(set(points) - set(named))
-        extra = sorted(set(named) - set(points), key=str)
-        if missing:
-            check.add("hindsight.labels", f"no label for {', '.join(missing)}")
-        if extra:
-            check.add("hindsight.labels", f"labels unknown or unscorable point(s) {', '.join(map(str, extra))}")
+    _hindsight_labels(check, data.get("labels"), points)
     faults = data.get("faults")
     if not isinstance(faults, list):
         check.add("hindsight.faults", "must be a list")
@@ -1449,6 +1448,28 @@ def validate_hindsight(data: object, *, name: str = "hindsight", points: tuple |
         _fault(check, entry, f"hindsight.faults[{index}]")
     check.raise_if_any()
     return data
+
+
+def _hindsight_labels(check: _Checker, labels: object, points: tuple | list | None) -> None:
+    if not isinstance(labels, list):
+        check.add("hindsight.labels", "must be a list")
+        labels = []
+    named = []
+    for index, entry in enumerate(labels):
+        _label(check, entry, f"hindsight.labels[{index}]",
+               keys=("point", "accept", "reject", "allow_override", "note"))
+        if isinstance(entry, dict):
+            named.append(entry.get("point"))
+    if len(set(named)) != len(named):
+        check.add("hindsight.labels", "labels a point twice")
+    if points is None:
+        return
+    missing = sorted(set(points) - set(named))
+    extra = sorted(set(named) - set(points), key=str)
+    if missing:
+        check.add("hindsight.labels", f"no label for {', '.join(missing)}")
+    if extra:
+        check.add("hindsight.labels", f"labels unknown or unscorable point(s) {', '.join(map(str, extra))}")
 
 
 def hindsight_json_schema() -> dict:

@@ -160,6 +160,10 @@ def seconds_between(start: str | None, end: str | None) -> float | None:
         return None
 
 
+def rate(part: int, whole: int) -> dict:
+    return {"count": part, "n": whole, "rate": round(part / whole, 3) if whole else None}
+
+
 def summarize(runs: list[tuple[Path, object]]) -> dict:
     """Cross-run rates, each with its sample size; unknowns are counted, never imputed."""
     terminal = [(d, r) for d, r in runs if r.status in ("done", "cancelled")]
@@ -198,9 +202,6 @@ def summarize(runs: list[tuple[Path, object]]) -> dict:
             if attempt.get("stage") == "scope":
                 scope_seconds += seconds_between(attempt.get("started_at"), attempt.get("ended_at")) or 0
 
-    def rate(part: int, whole: int) -> dict:
-        return {"count": part, "n": whole, "rate": round(part / whole, 3) if whole else None}
-
     legacy = [r.id for _, r in done if not r.data.get("completion")]
     return {"runs": len(runs), "success": rate(len(done), len(terminal)),
             "legacy_done": {"count": len(legacy), "note": "done before completion observations were recorded; "
@@ -214,18 +215,41 @@ def summarize(runs: list[tuple[Path, object]]) -> dict:
             "elapsed_interactive_scope_seconds": scope_seconds}
 
 
+def recorded_policy(record: Path) -> str | None:
+    try:
+        data = json.loads(record.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return ((data or {}).get("policy") or {}).get("sha256") if isinstance(data, dict) else None
+
+
 def turn_policies(run_dir: Path) -> dict[int, str]:
     """The policy hash each foreman turn recorded, by turn number; turns from before the hash are absent."""
     hashes = {}
     for record in sorted((run_dir / "foreman" / "turns").glob("*/decision.json")):
-        try:
-            data = json.loads(record.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            continue
-        sha = ((data or {}).get("policy") or {}).get("sha256") if isinstance(data, dict) else None
+        sha = recorded_policy(record)
         if sha and str(record.parent.name).isdigit():
             hashes[int(record.parent.name)] = sha
     return hashes
+
+
+def run_intervened(run_dir: Path, run) -> bool:
+    events = (run_dir / "events.jsonl").read_text(encoding="utf-8") if (run_dir / "events.jsonl").is_file() else ""
+    return run.status == "needs-human" or '"event": "run.needs_human"' in events
+
+
+def tally_turns(group, hashes: dict[int, str], run) -> set[str]:
+    """Count each of the run's foreman decisions into its policy group; returns the hashes the run ran under."""
+    overridden = {entry.get("turn") for entry in run.data.get("overrides") or []}
+    seen = set()
+    for decision in run.data.get("decisions") or []:
+        sha = hashes.get(decision.get("turn"), "unknown")
+        entry = group(sha)
+        entry["turns"] += 1
+        entry["fallbacks"] += decision.get("source") == "fallback"
+        entry["overrides"] += decision.get("turn") in overridden
+        seen.add(sha)
+    return seen
 
 
 def by_policy(runs: list[tuple[Path, object]]) -> dict:
@@ -239,26 +263,12 @@ def by_policy(runs: list[tuple[Path, object]]) -> dict:
         return groups.setdefault(sha, {"runs": set(), "intervened": set(), "turns": 0, "fallbacks": 0, "overrides": 0})
 
     for run_dir, run in runs:
-        hashes = turn_policies(run_dir)
-        decisions = run.data.get("decisions") or []
-        overridden = {entry.get("turn") for entry in run.data.get("overrides") or []}
-        events = (run_dir / "events.jsonl").read_text(encoding="utf-8") if (run_dir / "events.jsonl").is_file() else ""
-        intervened = run.status == "needs-human" or '"event": "run.needs_human"' in events
-        seen = set()
-        for decision in decisions:
-            sha = hashes.get(decision.get("turn"), "unknown")
-            entry = group(sha)
-            entry["turns"] += 1
-            entry["fallbacks"] += decision.get("source") == "fallback"
-            entry["overrides"] += decision.get("turn") in overridden
-            seen.add(sha)
+        seen = tally_turns(group, turn_policies(run_dir), run)
+        intervened = run_intervened(run_dir, run)
         for sha in seen or {"unknown"}:
             group(sha)["runs"].add(run.id)
             if intervened:
                 group(sha)["intervened"].add(run.id)
-
-    def rate(part: int, whole: int) -> dict:
-        return {"count": part, "n": whole, "rate": round(part / whole, 3) if whole else None}
 
     return {sha: {"runs": len(entry["runs"]), "turns": entry["turns"],
                   "intervention": rate(len(entry["intervened"]), len(entry["runs"])),

@@ -1022,81 +1022,105 @@ def cmd_report(args: argparse.Namespace, home: Path, cfg: config.Config) -> int:
 def cmd_history(args: argparse.Namespace, home: Path, cfg: config.Config) -> int:
     from runner import history
     if args.history_command == "ls":
-        worlds = history.worlds(home)
-        if not worlds:
-            out("No worlds yet; `factory history build --all` builds them from finished runs.")
-            return 0
-        out(f"{len(worlds)} world(s) under {history.root(home)}")
-        for world_dir in worlds:
-            try:
-                world = history.load_world(world_dir)
-            except (OSError, json.JSONDecodeError, records.RecordError) as error:
-                out(f"  {world_dir.name}  unreadable: {error}")
-                continue
-            labels = history.load_labels(world_dir)
-            labelled = len((labels or {}).get("labels") or {})
-            scorable = sum(1 for p in world["points"] if p["scorable"])
-            out(f"  {world_dir.name}  {len(world['points'])} point(s), {scorable} scorable, {labelled} labelled, "
-                f"{world['terminal_status']}, {world['repository']}")
-        return 0
+        return history_ls(home)
     with history.HistoryLock(home):
         if args.history_command == "build":
-            if not args.ids and not args.all:
-                raise CliError("name run ids or pass --all", 2)
-            dirs = history.run_dirs(home) if args.all else [resolve(home, ident, include_archive=True)
-                                                            for ident in args.ids]
-            counts = {"built": 0, "unchanged": 0, "skipped": 0}
-            for run_dir in dirs:
-                result = history.build(run_dir, home)
-                counts[result.status] += 1
-                if result.status == "built":
-                    out(f"built {result.run_id}")
-                for note in result.notes:
-                    out(f"  {note}")
-            out(f"History: {counts['built']} built, {counts['unchanged']} unchanged, {counts['skipped']} skipped.")
-            return 0
+            return history_build(args, home)
         if args.history_command == "label":
             return history_label(args, home, cfg)
     raise CliError(f"unknown history command {args.history_command}", 2)
 
 
-def history_label(args: argparse.Namespace, home: Path, cfg: config.Config) -> int:
+def history_ls(home: Path) -> int:
     from runner import history
-
-    def world_dir(ident: str) -> Path:
-        path = history.root(home) / ident
-        if not (path / "world.json").is_file():
-            matches = [w for w in history.worlds(home) if w.name.startswith(ident)]
-            if len(matches) != 1:
-                raise CliError(f"no single world matches {ident!r}; `factory history ls` lists them", 1)
-            path = matches[0]
-        return path
-
-    if args.set:
-        ident, point = args.set
-        if not args.accept:
-            raise CliError("--set needs --accept with at least one action", 2)
+    worlds = history.worlds(home)
+    if not worlds:
+        out("No worlds yet; `factory history build --all` builds them from finished runs.")
+        return 0
+    out(f"{len(worlds)} world(s) under {history.root(home)}")
+    for world_dir in worlds:
         try:
-            entry = history.set_label(world_dir(ident), point, args.accept, args.reject, args.allow_override,
-                                      args.note)
-        except history.LabelError as error:
-            raise CliError(str(error), 1) from error
-        out(f"Labelled {ident} {point} by hand: accept {', '.join(entry['accept'])}"
-            + (f"; reject {', '.join(entry['reject'])}" if entry["reject"] else ""))
-        return 0
+            world = history.load_world(world_dir)
+        except (OSError, json.JSONDecodeError, records.RecordError) as error:
+            out(f"  {world_dir.name}  unreadable: {error}")
+            continue
+        labels = history.load_labels(world_dir)
+        labelled = len((labels or {}).get("labels") or {})
+        scorable = sum(1 for p in world["points"] if p["scorable"])
+        out(f"  {world_dir.name}  {len(world['points'])} point(s), {scorable} scorable, {labelled} labelled, "
+            f"{world['terminal_status']}, {world['repository']}")
+    return 0
+
+
+def history_build(args: argparse.Namespace, home: Path) -> int:
+    from runner import history
+    if not args.ids and not args.all:
+        raise CliError("name run ids or pass --all", 2)
+    dirs = history.run_dirs(home) if args.all else [resolve(home, ident, include_archive=True) for ident in args.ids]
+    counts = {"built": 0, "unchanged": 0, "skipped": 0}
+    for run_dir in dirs:
+        result = history.build(run_dir, home)
+        counts[result.status] += 1
+        if result.status == "built":
+            out(f"built {result.run_id}")
+        for note in result.notes:
+            out(f"  {note}")
+    out(f"History: {counts['built']} built, {counts['unchanged']} unchanged, {counts['skipped']} skipped.")
+    return 0
+
+
+def find_world(home: Path, ident: str) -> Path:
+    from runner import history
+    path = history.root(home) / ident
+    if not (path / "world.json").is_file():
+        matches = [w for w in history.worlds(home) if w.name.startswith(ident)]
+        if len(matches) != 1:
+            raise CliError(f"no single world matches {ident!r}; `factory history ls` lists them", 1)
+        path = matches[0]
+    return path
+
+
+def history_label(args: argparse.Namespace, home: Path, cfg: config.Config) -> int:
+    if args.set:
+        return label_by_hand(args, home)
     if args.check_cases:
-        report = history.check_hand_cases(home)
-        out(f"Hand cases: {report['cases']} total, {len(report['matched'])} matched, "
-            f"{len(report['unmatched'])} unmatched, {len(report['unlabelled'])} matched but unlabelled.")
-        for name in report["unmatched"]:
-            out(f"  unmatched {name}: no world point for its run, stage, and attempt yet")
-        for line in report["disagreements"]:
-            out(f"  disagreement {line}")
-        out(f"mean accept-set size {report['mean_accept_size'] if report['mean_accept_size'] is not None else '-'}")
-        return 0
+        return label_check_cases(home)
+    return label_worlds(args, home, cfg)
+
+
+def label_by_hand(args: argparse.Namespace, home: Path) -> int:
+    from runner import history
+    ident, point = args.set
+    if not args.accept:
+        raise CliError("--set needs --accept with at least one action", 2)
+    try:
+        entry = history.set_label(find_world(home, ident), point, args.accept, args.reject, args.allow_override,
+                                  args.note)
+    except history.LabelError as error:
+        raise CliError(str(error), 1) from error
+    out(f"Labelled {ident} {point} by hand: accept {', '.join(entry['accept'])}"
+        + (f"; reject {', '.join(entry['reject'])}" if entry["reject"] else ""))
+    return 0
+
+
+def label_check_cases(home: Path) -> int:
+    from runner import history
+    report = history.check_hand_cases(home)
+    out(f"Hand cases: {report['cases']} total, {len(report['matched'])} matched, "
+        f"{len(report['unmatched'])} unmatched, {len(report['unlabelled'])} matched but unlabelled.")
+    for name in report["unmatched"]:
+        out(f"  unmatched {name}: no world point for its run, stage, and attempt yet")
+    for line in report["disagreements"]:
+        out(f"  disagreement {line}")
+    out(f"mean accept-set size {report['mean_accept_size'] if report['mean_accept_size'] is not None else '-'}")
+    return 0
+
+
+def label_worlds(args: argparse.Namespace, home: Path, cfg: config.Config) -> int:
+    from runner import history
     if not args.ids and not args.all:
         raise CliError("name world ids or pass --all", 2)
-    dirs = history.worlds(home) if args.all else [world_dir(ident) for ident in args.ids]
+    dirs = history.worlds(home) if args.all else [find_world(home, ident) for ident in args.ids]
     failed = []
     for path in dirs:
         result = history.label(path, cfg, relabel=args.relabel)
@@ -1120,6 +1144,16 @@ DEPLOY_FAILURES = ("dirty", "branch", "stale_plugins", "build_failed", "validate
 def cmd_dream(args: argparse.Namespace, home: Path, cfg: config.Config) -> int:
     """Score the foreman skill on history, ask for revisions, and deploy a winner that clears every gate. Paid."""
     from runner import dream, history
+    check_dream_args(args, home)
+    with history.HistoryLock(home):
+        _, decision = dream.run(home, cfg, rounds=args.rounds, repeats=args.repeats, max_calls=args.max_calls,
+                                deploy_enabled=not args.no_deploy, world_ids=args.worlds, echo=out)
+    out(f"decision {decision['reason']}" + (f": {decision['cause']}" if decision.get("cause") else ""))
+    return 1 if decision["reason"] in DEPLOY_FAILURES else 0
+
+
+def check_dream_args(args: argparse.Namespace, home: Path) -> None:
+    from runner import history
     if args.repeats is not None and args.repeats < 1:
         raise CliError(f"--repeats must be at least 1, got {args.repeats}", 2)
     if args.rounds < 0:
@@ -1130,11 +1164,6 @@ def cmd_dream(args: argparse.Namespace, home: Path, cfg: config.Config) -> int:
     unknown = [w for w in args.worlds or [] if w not in known]
     if unknown:
         raise CliError(f"unknown world(s) {', '.join(unknown)}; known: {', '.join(known) or 'none yet'}", 2)
-    with history.HistoryLock(home):
-        _, decision = dream.run(home, cfg, rounds=args.rounds, repeats=args.repeats, max_calls=args.max_calls,
-                                deploy_enabled=not args.no_deploy, world_ids=args.worlds, echo=out)
-    out(f"decision {decision['reason']}" + (f": {decision['cause']}" if decision.get("cause") else ""))
-    return 1 if decision["reason"] in DEPLOY_FAILURES else 0
 
 
 def cmd_gc(args: argparse.Namespace, home: Path, cfg: config.Config) -> int:

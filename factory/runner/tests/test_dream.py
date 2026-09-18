@@ -862,6 +862,32 @@ class DeployTests(FactoryTestCase):
         self.assertEqual(git(self.root / "workflow-origin.git", "rev-parse", "main"), head)
         self.assert_untouched(head)
 
+    def test_local_commits_ahead_of_origin_refuse_the_deploy_and_are_never_pushed(self):
+        origin = self.root / "workflow-origin.git"
+        published = git(origin, "rev-parse", "main")
+        (self.repo / "NOTES.md").write_text("local work nobody asked to publish\n")
+        git(self.repo, "add", "NOTES.md")
+        git(self.repo, "commit", "--quiet", "-m", "docs: local notes")
+        head = self.head()
+        decision_ = self.deploy()
+        self.assertEqual((decision_["deployed"], decision_["reason"]), (False, "unpushed_commits"), decision_)
+        self.assertIn(head[:12], decision_["cause"])
+        self.assertIn("unpushed_commits", __import__("runner.cli", fromlist=["cli"]).DEPLOY_FAILURES)
+        self.assertEqual(git(origin, "rev-parse", "main"), published)
+        self.assert_untouched(head)
+
+    def test_an_unpushed_deploy_behind_a_local_commit_is_not_pushed_with_it(self):
+        origin = self.root / "workflow-origin.git"
+        published = git(origin, "rev-parse", "main")
+        git(self.repo, "commit", "--quiet", "--allow-empty", "-m", "docs: local notes")
+        git(self.repo, "commit", "--quiet", "--allow-empty", "-m", "feat(foreman): dream 20260917-0900-dream raises it")
+        head = self.head()
+        decision_ = self.deploy()
+        self.assertEqual((decision_["deployed"], decision_["reason"]), (False, "unpushed_commits"), decision_)
+        self.assertEqual(decision_["pending"], [head])
+        self.assertEqual(git(origin, "rev-parse", "main"), published)
+        self.assert_untouched(head)
+
     def test_a_failing_validate_restores_both_skill_files(self):
         os.environ["FACTORY_TEST_VALIDATE_EXIT"] = "1"
         head = self.head()
@@ -890,6 +916,7 @@ class DeployTests(FactoryTestCase):
     def test_a_stale_generated_tree_refuses_before_writing_the_skill(self):
         (self.repo / "factory" / "references" / "factory-run.md").write_text("edited, never rebuilt\n")
         git(self.repo, "commit", "--quiet", "-am", "edit the protocol without rebuilding")
+        git(self.repo, "push", "--quiet", "origin", "main")
         head = self.head()
         self.assertEqual(self.deploy()["reason"], "stale_plugins")
         self.assert_untouched(head)

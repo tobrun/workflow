@@ -924,10 +924,24 @@ def push_cause(output: str) -> str:
 
 def unpushed_deploys(root: Path) -> list[str]:
     """Deploy commits on main that origin does not have, by the local tracking ref a failed push left behind."""
+    return unpushed(root)[0]
+
+
+def unpushed(root: Path) -> tuple[list[str], list[str]]:
+    """Commits on main that origin does not have, as (deploy commits, every other commit)."""
     code, out = _git(root, "log", "--format=%H %s", "origin/main..main")
-    if code != 0:
-        return []
-    return [line.split(" ", 1)[0] for line in out.splitlines() if line.split(" ", 1)[-1].startswith(DEPLOY_SUBJECT)]
+    deploys: list[str] = []
+    others: list[str] = []
+    for line in out.splitlines() if code == 0 else []:
+        sha, _, subject = line.partition(" ")
+        (deploys if subject.startswith(DEPLOY_SUBJECT) else others).append(sha)
+    return deploys, others
+
+
+def _foreign(others: list[str]) -> str:
+    """Why a push of main is refused: it would publish commits no dream made."""
+    return (f"main holds {len(others)} commit(s) origin/main does not have that no dream made "
+            f"({', '.join(sha[:12] for sha in others[:5])}); `git push origin main` would publish them")
 
 
 def _restore(root: Path, originals: dict[str, bytes | None]) -> None:
@@ -950,11 +964,11 @@ def deploy(*, dream_dir: Path, candidate: dict | None, confirmation: dict, confi
     """
     root = Path(root)
     result: dict = {"deployed": False, "reason": None, **_candidate_hashes(candidate)}
-    pending = unpushed_deploys(root) if enabled else []
+    pending, others = unpushed(root) if enabled else ([], [])
     if pending:
-        return {**result, **_push_pending(root, pending)}
+        return {**result, **_push_pending(root, pending, others)}
     builder = [sys.executable, str(root / "scripts" / "build_codex_plugin.py"), "--plugin", "factory"]
-    refused = _refusal(root, builder, enabled, candidate=candidate, confirmation=confirmation,
+    refused = _refusal(root, builder, enabled, others, candidate=candidate, confirmation=confirmation,
                        confirmation_worlds=confirmation_worlds, partial=partial, cfg=cfg)
     if refused:
         return {**result, "reason": refused[0], "cause": refused[1]}
@@ -981,8 +995,13 @@ def _candidate_hashes(candidate: dict | None) -> dict:
             "generated_hash": provenance.tree_policy(candidate["tree"])["sha256"]}
 
 
-def _push_pending(root: Path, pending: list[str]) -> dict:
-    """Push deploy commits an earlier dream left unpushed; a dream that has some adds nothing new."""
+def _push_pending(root: Path, pending: list[str], others: list[str]) -> dict:
+    """Push deploy commits an earlier dream left unpushed; a dream that has some adds nothing new.
+
+    Pushing main publishes every commit on it, so a commit no dream made refuses the push.
+    """
+    if others:
+        return {"reason": "unpushed_commits", "cause": _foreign(others), "pending": pending}
     code, out = _git(root, "push", "origin", "main")
     if code != 0:
         return {"reason": "push_failed", "cause": push_cause(out), "pending": pending}
@@ -990,8 +1009,12 @@ def _push_pending(root: Path, pending: list[str]) -> dict:
                                                  "deploy this round", "pending": pending}
 
 
-def _refusal(root: Path, builder: list[str], enabled: bool, **gate_args) -> tuple[str, str] | None:
-    """Why the deploy stops before it touches the working tree: a gate, --no-deploy, or the checkout's state."""
+def _refusal(root: Path, builder: list[str], enabled: bool, others: list[str],
+             **gate_args) -> tuple[str, str] | None:
+    """Why the deploy stops before it touches the working tree: a gate, --no-deploy, or the checkout's state.
+
+    `others` are the commits on main that origin lacks and no dream made: the deploy's push would publish them.
+    """
     reason, cause = gate(**gate_args)
     if reason:
         return reason, cause
@@ -1000,6 +1023,8 @@ def _refusal(root: Path, builder: list[str], enabled: bool, **gate_args) -> tupl
     code, branch = _git(root, "rev-parse", "--abbrev-ref", "HEAD")
     if code != 0 or branch != "main":
         return "branch", f"main is not checked out ({branch})"
+    if others:
+        return "unpushed_commits", _foreign(others)
     dirty = _dirty(root)
     if dirty:
         return "dirty", dirty

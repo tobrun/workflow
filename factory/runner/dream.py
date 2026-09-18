@@ -774,17 +774,130 @@ def gate(*, candidate: dict | None, confirmation: dict, confirmation_worlds: lis
     return None, None
 
 
+
+# --- the deploy ------------------------------------------------------------------------------
+
+DEPLOY_SUBJECT = "feat(foreman): dream "
+SKILL_FILES = ("factory/skills/foreman/SKILL.md", "plugins/factory/skills/foreman/SKILL.md")
+REALIGN = "codex plugin add factory@nurbot"
+
+
+def _git(root: Path, *args: str, timeout: float = 120) -> tuple[int, str]:
+    try:
+        result = subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True, timeout=timeout,
+                                stdin=subprocess.DEVNULL)
+    except (OSError, subprocess.TimeoutExpired) as error:
+        return 127, str(error)
+    return result.returncode, (result.stdout + result.stderr).strip()
+
+
+def _run(root: Path, argv: list[str], timeout: float = 1800) -> tuple[int, str]:
+    try:
+        result = subprocess.run(argv, cwd=root, capture_output=True, text=True, timeout=timeout,
+                                stdin=subprocess.DEVNULL)
+    except (OSError, subprocess.TimeoutExpired) as error:
+        return 127, str(error)
+    return result.returncode, (result.stdout + result.stderr).strip()
+
+
+def push_cause(output: str) -> str:
+    text = output.lower()
+    if "non-fast-forward" in text or "[rejected]" in text or "fetch first" in text:
+        return "non-fast-forward"
+    if any(s in text for s in ("could not resolve", "unable to access", "connection", "timed out",
+                               "does not appear to be a git repository", "could not read from remote")):
+        return "network"
+    return output.splitlines()[-1][:300] if output else "git push failed"
+
+
+def unpushed_deploys(root: Path) -> list[str]:
+    """Deploy commits on main that origin does not have, by the local tracking ref a failed push left behind."""
+    code, out = _git(root, "log", "--format=%H %s", "origin/main..main")
+    if code != 0:
+        return []
+    return [line.split(" ", 1)[0] for line in out.splitlines() if line.split(" ", 1)[-1].startswith(DEPLOY_SUBJECT)]
+
+
+def _restore(root: Path, originals: dict[str, bytes | None]) -> None:
+    for relative, content in originals.items():
+        path = root / relative
+        if content is None:
+            path.unlink(missing_ok=True)
+        else:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(content)
+    _git(root, "reset", "-q", "--", *originals)
+
+
 def deploy(*, dream_dir: Path, candidate: dict | None, confirmation: dict, confirmation_worlds: list,
            partial: bool, cfg: config.Config, root: Path, enabled: bool = True, echo=print) -> dict:
-    """Gate the best candidate; committing and pushing a winner is not wired yet."""
-    result: dict = {"deployed": False}
+    """Gate the best candidate and, when it clears every gate, commit it to main and push it to origin.
+
+    Every repository path resolves under `root`. A failure before the commit leaves the working tree as it
+    was; a failed push leaves the commit, and the next dream pushes it again before adding anything new.
+    """
+    root = Path(root)
+    result: dict = {"deployed": False, "reason": None}
     if candidate is not None:
         result["source_hash"] = hashlib.sha256(candidate["text"].encode("utf-8")).hexdigest()
         result["generated_hash"] = provenance.tree_policy(candidate["tree"])["sha256"]
+    pending = unpushed_deploys(root) if enabled else []
+    if pending:
+        code, out = _git(root, "push", "origin", "main")
+        if code != 0:
+            return {**result, "reason": "push_failed", "cause": push_cause(out), "pending": pending}
+        return {**result, "reason": "pushed_pending", "cause": f"pushed {len(pending)} earlier deploy commit(s) "
+                                                              "first; no new deploy this round", "pending": pending}
     reason, cause = gate(candidate=candidate, confirmation=confirmation, confirmation_worlds=confirmation_worlds,
                          partial=partial, cfg=cfg)
     if reason:
         return {**result, "reason": reason, "cause": cause}
     if not enabled:
         return {**result, "reason": "no_deploy", "cause": "--no-deploy"}
-    return {**result, "reason": "not_wired", "cause": "the deploy step is not wired yet"}
+    code, branch = _git(root, "rev-parse", "--abbrev-ref", "HEAD")
+    if code != 0 or branch != "main":
+        return {**result, "reason": "branch", "cause": f"main is not checked out ({branch})"}
+    from runner import worktree as wt
+    try:
+        dirty = wt.dirty_tracked(root)
+    except wt.GitError as error:
+        return {**result, "reason": "dirty", "cause": str(error)}
+    if dirty:
+        return {**result, "reason": "dirty", "cause": "tracked changes: " + ", ".join(dirty[:10])}
+    builder = [sys.executable, str(root / "scripts" / "build_codex_plugin.py"), "--plugin", "factory"]
+    code, out = _run(root, builder + ["--check"])
+    if code != 0:
+        return {**result, "reason": "stale_plugins", "cause": out.splitlines()[-1][:300] if out else f"exit {code}"}
+    originals = {relative: (root / relative).read_bytes() if (root / relative).is_file() else None
+                 for relative in SKILL_FILES}
+    (root / SKILL_FILES[0]).write_text(candidate["text"], encoding="utf-8")
+    code, out = _run(root, builder)
+    if code != 0:
+        _restore(root, originals)
+        return {**result, "reason": "build_failed", "cause": out[-300:]}
+    code, out = _run(root, ["bash", str(root / "scripts" / "validate.sh")])
+    if code != 0:
+        _restore(root, originals)
+        return {**result, "reason": "validate", "cause": out[-300:]}
+    generated = provenance.policy_identity({"resolution": "direct-path"}, root=root)["sha256"]
+    old, new = confirmation["incumbent"].mean, confirmation["candidate"].mean
+    body = "\n".join([
+        f"The dream loop's {candidate['name']} beat the incumbent foreman skill on confirmation worlds it never saw.",
+        "", "| Policy | Confirmation mean |", "| --- | --- |",
+        f"| incumbent | {_fmt(old)} |", f"| {candidate['name']} | {_fmt(new)} |", "",
+        f"Dream: {dream_dir}", f"Source policy hash: {result['source_hash']}", f"Generated policy hash: {generated}",
+        "", "Roll back with `git revert` of this commit."])
+    _git(root, "add", "--", *SKILL_FILES)
+    code, out = _git(root, "-c", "commit.gpgsign=false", "commit", "--quiet", "-m",
+                     f"{DEPLOY_SUBJECT}{dream_dir.name} raises confirmation score {_fmt(old)} -> {_fmt(new)}",
+                     "-m", body, "--", *SKILL_FILES)
+    if code != 0:
+        _restore(root, originals)
+        return {**result, "reason": "commit_failed", "cause": out[-300:], "generated_hash": generated}
+    _, commit = _git(root, "rev-parse", "HEAD")
+    result.update({"generated_hash": generated, "commit": commit})
+    code, out = _git(root, "push", "origin", "main")
+    if code != 0:
+        return {**result, "reason": "push_failed", "cause": push_cause(out)}
+    echo(f"Deployed {commit[:12]}; make the installed plugin match again with `{REALIGN}`.")
+    return {**result, "deployed": True, "reason": "deployed", "realign": REALIGN}

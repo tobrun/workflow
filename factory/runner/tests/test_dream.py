@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import subprocess
@@ -11,7 +12,7 @@ import unittest
 from pathlib import Path
 
 from runner import config, dream, records
-from runner.tests.helpers import STUBS, FactoryTestCase
+from runner.tests.helpers import STUBS, FactoryTestCase, git, make_factory_repo
 
 ROOT = Path(__file__).resolve().parents[3]
 
@@ -277,8 +278,22 @@ def make_world(home: Path, run_id: str, repository: str, points: list[str], *, u
 
 
 class RoundTestCase(FactoryTestCase):
+    """Dream rounds against a throwaway copy of this repository, so no test can deploy into the real checkout."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        super().setUpClass()
+        cls._repo_tmp = tempfile.TemporaryDirectory(prefix="factory-repo-")
+        cls.factory_repo = make_factory_repo(Path(os.path.realpath(cls._repo_tmp.name)) / "workflow")
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        cls._repo_tmp.cleanup()
+        super().tearDownClass()
+
     def setUp(self) -> None:
         super().setUp()
+        os.environ["FACTORY_REPO_ROOT"] = str(self.factory_repo)
         self.files = {name: self.root / f"{name}.json" for name in ("replay", "candidate", "dream", "hindsight")}
         os.environ.update({"FACTORY_STUB_REPLAY": str(self.files["replay"]),
                            "FACTORY_STUB_REPLAY_CANDIDATE": str(self.files["candidate"]),
@@ -468,3 +483,217 @@ class ReadOnlyTests(RoundTestCase):
         self.assertEqual(self.call("dream", "--rounds", "1", "--no-deploy")[0], 0)
         self.assertTrue(self.replays())
         self.assertEqual(tree_hashes(run.dir), before)
+
+
+class Score:
+    def __init__(self, mean: float | None, name: str = "round-1"):
+        self.mean, self.name = mean, name
+
+
+def confirmation_views(worlds: int, points: int, repositories: list[str]) -> list:
+    views = []
+    for n in range(worlds):
+        ids = [f"build-{i + 1}" for i in range(points)]
+        world = {"repository": repositories[n % len(repositories)],
+                 "points": [{"id": p, "scorable": True} for p in ids]}
+        views.append(dream.WorldView(f"20260917-12{n:02d}-c", Path("/nonexistent"), world,
+                                     {p: {"accept": ["advance"]} for p in ids}))
+    return views
+
+
+CANDIDATE_LINE = "Read the gate reason before deciding."
+
+
+class DeployTests(FactoryTestCase):
+    def setUp(self) -> None:
+        super().setUp()
+        self.repo = make_factory_repo(self.root / "workflow")
+        (self.repo / ".dev" / "plan").mkdir(parents=True)
+        (self.repo / ".dev" / "plan" / "spec.md").write_text("untracked plan\n")
+        self.cfg = config.parse({})
+        self.source = self.repo / "factory" / "skills" / "foreman" / "SKILL.md"
+        self.generated = self.repo / "plugins" / "factory" / "skills" / "foreman" / "SKILL.md"
+        self.originals = (self.source.read_bytes(), self.generated.read_bytes())
+        self.dream_dir = self.home / "dreams" / "20260918-1015-dream"
+        self.dream_dir.mkdir(parents=True)
+        text = self.source.read_text().rstrip("\n") + f"\n{CANDIDATE_LINE}\n"
+        tree = dream.stage_plugin(text, self.dream_dir / "candidates" / "1" / "plugins" / "factory",
+                                  self.repo / "plugins" / "factory")
+        self.candidate = {"text": text, "tree": tree, "name": "round-1"}
+
+    def deploy(self, *, gain: float = 0.06, worlds: int = 6, points: int = 5,
+               repositories: tuple = ("github.com/acme/app", "github.com/acme/web"), partial: bool = False) -> dict:
+        views = confirmation_views(worlds, points, list(repositories)) if worlds else []
+        scores = {"incumbent": Score(0.5, "incumbent"), "candidate": Score(0.5 + gain)}
+        return dream.deploy(dream_dir=self.dream_dir, candidate=self.candidate, confirmation=scores,
+                            confirmation_worlds=views, partial=partial, cfg=self.cfg, root=self.repo, echo=lambda _: None)
+
+    def head(self) -> str:
+        return git(self.repo, "rev-parse", "HEAD")
+
+    def assert_untouched(self, head: str) -> None:
+        self.assertEqual(self.head(), head)
+        self.assertEqual((self.source.read_bytes(), self.generated.read_bytes()), self.originals)
+        self.assertEqual(git(self.repo, "status", "--porcelain", "--untracked-files=no"), "")
+
+    def test_a_winner_over_the_floor_and_the_margin_is_committed_and_pushed(self):
+        before = self.head()
+        decision_ = self.deploy(gain=0.06)
+        self.assertEqual((decision_["deployed"], decision_["reason"]), (True, "deployed"), decision_)
+        commit = self.head()
+        self.assertNotEqual(commit, before)
+        changed = git(self.repo, "diff-tree", "--no-commit-id", "--name-only", "-r", commit).splitlines()
+        self.assertEqual(sorted(changed), ["factory/skills/foreman/SKILL.md", "plugins/factory/skills/foreman/SKILL.md"])
+        self.assertEqual(git(self.repo, "rev-parse", "origin/main"), commit)
+        self.assertEqual(git(self.root / "workflow-origin.git", "rev-parse", "main"), commit)
+        self.assertIn(CANDIDATE_LINE, self.generated.read_text())
+        self.assertEqual(len(decision_["source_hash"]), 64)
+        self.assertEqual(decision_["generated_hash"], dream.provenance.tree_policy(self.repo / "plugins" / "factory")["sha256"])
+        message = git(self.repo, "log", "-1", "--format=%B")
+        self.assertIn("feat(foreman): dream 20260918-1015-dream raises confirmation score 0.500 -> 0.560", message)
+        self.assertIn(decision_["generated_hash"], message)
+        self.assertTrue((self.repo / ".dev" / "plan" / "spec.md").is_file())
+
+    def test_a_gain_under_the_margin_is_refused(self):
+        head = self.head()
+        self.assertEqual(self.deploy(gain=0.04)["reason"], "margin")
+        self.assert_untouched(head)
+
+    def test_the_margin_is_at_least_one_confirmation_point(self):
+        head = self.head()
+        decision_ = self.deploy(gain=0.08, worlds=6, points=1, repositories=("a", "b"))
+        self.assertEqual(decision_["reason"], "margin")
+        self.assertIn("needs a gain of 0.167", decision_["cause"])
+        decision_ = self.deploy(gain=0.08, worlds=10, points=1)
+        self.assertEqual(decision_["reason"], "margin")
+        self.assertIn("needs a gain of 0.100", decision_["cause"])
+        self.assert_untouched(head)
+
+    def test_one_remote_under_many_checkouts_is_one_repository_below_the_floor(self):
+        from runner import history
+        remotes = ["git@github.com:acme/app.git", "https://github.com/acme/app", "https://github.com/acme/app.git",
+                   "ssh://git@github.com/acme/app.git", "git@github.com:Acme/App.git"]
+        head = self.head()
+        decision_ = self.deploy(repositories=tuple(history.repo_key(r) for r in remotes))
+        self.assertEqual(decision_["reason"], "floor")
+        self.assertIn("from 1 repository", decision_["cause"])
+        self.assert_untouched(head)
+
+    def test_five_confirmation_worlds_are_below_the_floor(self):
+        head = self.head()
+        self.assertEqual(self.deploy(worlds=5)["reason"], "floor")
+        self.assert_untouched(head)
+
+    def test_no_confirmation_or_nothing_scorable_in_it_is_below_the_floor(self):
+        head = self.head()
+        self.assertEqual(self.deploy(worlds=0)["reason"], "floor")
+        self.assertEqual(self.deploy(points=0)["reason"], "floor")
+        self.assert_untouched(head)
+
+    def test_a_partial_round_never_deploys(self):
+        head = self.head()
+        self.assertEqual(self.deploy(partial=True)["reason"], "partial")
+        self.assert_untouched(head)
+
+    def test_a_failing_validate_restores_both_skill_files(self):
+        os.environ["FACTORY_TEST_VALIDATE_EXIT"] = "1"
+        head = self.head()
+        self.assertEqual(self.deploy()["reason"], "validate")
+        self.assert_untouched(head)
+
+    def test_a_failing_plugin_build_restores_both_skill_files(self):
+        head = self.head()
+        plugins = self.repo / "plugins"
+        plugins.chmod(0o555)
+        try:
+            self.assertEqual(self.deploy()["reason"], "build_failed")
+        finally:
+            plugins.chmod(0o755)
+        self.assert_untouched(head)
+
+    def test_a_tracked_change_refuses_the_deploy(self):
+        (self.repo / "factory" / "references" / "factory-run.md").write_text("edited\n")
+        head = self.head()
+        decision_ = self.deploy()
+        self.assertEqual(decision_["reason"], "dirty")
+        self.assertIn("factory/references/factory-run.md", decision_["cause"])
+        self.assertIn("dirty", __import__("runner.cli", fromlist=["cli"]).DEPLOY_FAILURES)
+        self.assertEqual(self.head(), head)
+
+    def test_a_stale_generated_tree_refuses_before_writing_the_skill(self):
+        (self.repo / "factory" / "references" / "factory-run.md").write_text("edited, never rebuilt\n")
+        git(self.repo, "commit", "--quiet", "-am", "edit the protocol without rebuilding")
+        head = self.head()
+        self.assertEqual(self.deploy()["reason"], "stale_plugins")
+        self.assert_untouched(head)
+
+    def test_a_commit_without_an_identity_restores_both_skill_files(self):
+        git(self.repo, "config", "--unset", "user.name")
+        git(self.repo, "config", "--unset", "user.email")
+        git(self.repo, "config", "user.useConfigOnly", "true")
+        (self.root / "empty-gitconfig").write_text("")
+        os.environ.update({"GIT_CONFIG_GLOBAL": str(self.root / "empty-gitconfig"),
+                           "GIT_CONFIG_SYSTEM": str(self.root / "empty-gitconfig")})
+        for name in ("GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL", "EMAIL"):
+            os.environ.pop(name, None)
+        head = self.head()
+        decision_ = self.deploy()
+        self.assertEqual(decision_["reason"], "commit_failed", decision_)
+        self.assertIn("commit_failed", __import__("runner.cli", fromlist=["cli"]).DEPLOY_FAILURES)
+        self.assert_untouched(head)
+
+    def test_a_push_to_a_vanished_origin_keeps_the_commit(self):
+        import shutil
+        shutil.rmtree(self.root / "workflow-origin.git")
+        before = self.head()
+        decision_ = self.deploy()
+        self.assertEqual(decision_["reason"], "push_failed")
+        self.assertEqual(decision_["cause"], "network")
+        self.assertNotEqual(self.head(), before)
+        self.assertEqual(decision_["commit"], self.head())
+        self.assertIn("push_failed", __import__("runner.cli", fromlist=["cli"]).DEPLOY_FAILURES)
+
+    def test_an_unpushed_deploy_is_pushed_again_before_any_new_one(self):
+        other = self.root / "other"
+        git(self.root, "clone", "--quiet", str(self.root / "workflow-origin.git"), str(other))
+        (other / "NOTES.md").write_text("someone else pushed first\n")
+        git(other, "add", "NOTES.md")
+        git(other, "commit", "--quiet", "-m", "docs: notes")
+        git(other, "push", "--quiet", "origin", "main")
+        first = self.deploy()
+        self.assertEqual((first["reason"], first["cause"]), ("push_failed", "non-fast-forward"))
+        head = self.head()
+        second = self.deploy()
+        self.assertEqual((second["reason"], second["cause"]), ("push_failed", "non-fast-forward"))
+        self.assertEqual(second["pending"], [head])
+        self.assertEqual(self.head(), head)
+
+    def test_a_deploy_never_writes_inside_a_run_directory(self):
+        from runner.tests.test_history import tree_hashes
+        run = self.queued_run()
+        before = tree_hashes(run.dir)
+        self.assertTrue(self.deploy()["deployed"])
+        self.assertEqual(tree_hashes(run.dir), before)
+
+
+class FullRoundDeployTests(RoundTestCase):
+    def test_a_winning_round_lands_on_the_fixture_main_with_its_policy_hash(self):
+        repo = make_factory_repo(self.root / "workflow")
+        os.environ["FACTORY_REPO_ROOT"] = str(repo)
+        self.configure(dream_floor_worlds=2, dream_floor_repos=1)
+        for n in range(4):
+            make_world(self.home, f"20260917-120{n}-a", "github.com/acme/app", ["build-1", "ship-1"])
+        code, out, _ = self.call("dream", "--rounds", "1")
+        self.assertEqual(code, 0, out)
+        decision_ = self.decision()
+        self.assertEqual((decision_["deployed"], decision_["reason"]), (True, "deployed"), decision_)
+        self.assertIn("codex plugin add factory@nurbot", out)
+        head = git(repo, "rev-parse", "HEAD")
+        self.assertEqual(decision_["commit"], head)
+        self.assertEqual(git(self.root / "workflow-origin.git", "rev-parse", "main"), head)
+        committed = hashlib.sha256()
+        for path in ("plugins/factory/skills/foreman/SKILL.md", "plugins/factory/references/factory-run.md"):
+            content = subprocess.run(["git", "-C", str(repo), "show", f"HEAD:{path}"], capture_output=True,
+                                     check=True).stdout
+            committed.update(hashlib.sha256(content).hexdigest().encode("ascii") + b"\n")
+        self.assertEqual(decision_["generated_hash"], committed.hexdigest())

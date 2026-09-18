@@ -479,3 +479,38 @@ class FactoryTestCase(unittest.TestCase):
             time.sleep(0.05)
         log = (run_dir / "worker.log").read_text(encoding="utf-8") if (run_dir / "worker.log").exists() else ""
         self.fail(f"run stayed {last.get('status')} at {last.get('stage')}, wanted {statuses}\n{log[-3000:]}")
+
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
+STUB_VALIDATE = """#!/usr/bin/env bash
+# The deploy fixture's stand-in for scripts/validate.sh: FACTORY_TEST_VALIDATE_EXIT picks the exit code.
+exit "${FACTORY_TEST_VALIDATE_EXIT:-0}"
+"""
+
+
+def make_factory_repo(dest: Path) -> Path:
+    """A throwaway copy of this repository that can host a dream deploy: the factory plugin sources, the plugin
+    build, a generated and committed in-sync `plugins/factory/`, a stub validate.sh, and a bare `origin`."""
+    import shutil
+    origin = dest.parent / f"{dest.name}-origin.git"
+    subprocess.run(["git", "init", "--quiet", "--bare", "-b", "main", str(origin)], check=True)
+    dest.mkdir(parents=True)
+    git(dest, "init", "--quiet", "-b", "main")
+    git(dest, "config", "user.name", "Factory Test")
+    git(dest, "config", "user.email", "factory-test@example.com")
+    git(dest, "config", "commit.gpgsign", "false")
+    ignore = shutil.ignore_patterns("__pycache__", "*.pyc")
+    for tree in (".claude-plugin", "skills", "references", "scripts"):
+        shutil.copytree(REPO_ROOT / "factory" / tree, dest / "factory" / tree, ignore=ignore)
+    (dest / "scripts").mkdir()
+    shutil.copyfile(REPO_ROOT / "scripts" / "build_codex_plugin.py", dest / "scripts" / "build_codex_plugin.py")
+    (dest / "scripts" / "validate.sh").write_text(STUB_VALIDATE, encoding="utf-8")
+    (dest / "scripts" / "validate.sh").chmod(0o755)
+    (dest / ".gitignore").write_text("__pycache__/\n", encoding="utf-8")
+    subprocess.run(["python3", "scripts/build_codex_plugin.py", "--plugin", "factory"], cwd=dest, check=True,
+                   capture_output=True)
+    git(dest, "add", "-A")
+    git(dest, "commit", "--quiet", "-m", "initial")
+    git(dest, "remote", "add", "origin", str(origin))
+    git(dest, "push", "--quiet", "-u", "origin", "main")
+    return dest

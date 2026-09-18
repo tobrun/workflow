@@ -72,13 +72,17 @@ def codex_home() -> Path:
     return Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex").expanduser()
 
 
-def skill_bundles(plugin_list: str | None = None) -> dict:
-    """The generated bundle beside the one Codex will actually load, and whether they are the same files."""
+def skill_bundles(plugin_list: str | None = None, *, root: Path | None = None) -> dict:
+    """The generated bundle beside the one Codex will actually load, and whether they are the same files.
+
+    `root` is the checkout whose generated tree counts; it defaults to this runner's own.
+    """
     if plugin_list is None:
         code, plugin_list = run_quiet([config.binary("codex"), "plugin", "list"], timeout=60)
         if code != 0:
             plugin_list = ""
-    generated = {"path": str(GENERATED), "sha256": tree_sha256(GENERATED)}
+    tree = Path(root) / "plugins" / "factory" if root else GENERATED
+    generated = {"path": str(tree), "sha256": tree_sha256(tree)}
     installed: dict = {"listed": False}
     match = PLUGIN_LINE.search(plugin_list or "")
     if match and match.group(2) == "installed":

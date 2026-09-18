@@ -144,6 +144,19 @@ class EvalWrapperTests(FactoryTestCase):
         return subprocess.run([sys.executable, str(ROOT / "factory" / "evals" / "foreman" / script), *args],
                               capture_output=True, text=True, env=dict(os.environ), timeout=120)
 
+    def test_the_eval_runner_passes_a_case_the_replay_stub_answers(self):
+        answers = self.root / "replay.json"
+        answers.write_text(json.dumps({"two-ideas-ship-4": {"action": "publish", "summary": "push the ship commits"}}))
+        os.environ["FACTORY_STUB_REPLAY"] = str(answers)
+        result = self.run_script("run.py", "--case", "two-ideas-ship-4", "--out", str(self.root / "eval"))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("PASS  two-ideas-ship-4: publish - push the ship commits", result.stdout)
+        answers.write_text(json.dumps({"two-ideas-ship-4": {"action": "park", "park": {
+            "reason": "r", "operator_action": "o"}}}))
+        result = self.run_script("run.py", "--case", "two-ideas-ship-4", "--out", str(self.root / "eval-2"))
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("FAIL  two-ideas-ship-4: park", result.stdout)
+
     def test_capturing_from_a_live_run_writes_the_case_and_defers_the_hand_label(self):
         run = self.queued_run(stage="build")
         attempt = run.begin_attempt("scope-review", host="codex", model="m", effort="low")

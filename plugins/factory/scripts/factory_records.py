@@ -27,6 +27,9 @@ __all__ = [
     "load_gauntlet",
     "DECISION_SCHEMA", "DECISION_ACTIONS", "DECISION_STAGES", "DECISION_EFFORTS", "PROBE_KINDS", "WAIT_THEN",
     "DECISION_OWNERS", "DECISION_REQUIRED", "validate_decision", "load_decision", "decision_json_schema",
+    "WORLD_SCHEMA", "LABELS_SCHEMA", "FAULTS_SCHEMA", "HINDSIGHT_SCHEMA", "FAULT_KINDS", "LABEL_SOURCES",
+    "SNAPSHOT_ORIGINS", "TURN_ORIGINS", "DECISION_SOURCES", "validate_world", "validate_labels", "validate_faults",
+    "validate_hindsight", "hindsight_json_schema",
 ]
 
 E2E_SCHEMA = "factory.e2e/1"
@@ -1248,5 +1251,223 @@ def decision_json_schema() -> dict:
                                                                             "evidence": strings})},
             "park": optional(obj({"reason": {"type": "string"}, "operator_action": {"type": "string"}})),
             "reason": nullable("string"),
+        }),
+    }
+
+
+# --- history worlds, hindsight labels, and the fault feed -----------------------------------
+
+WORLD_SCHEMA = "factory.world/1"
+LABELS_SCHEMA = "factory.labels/1"
+FAULTS_SCHEMA = "factory.faults/1"
+HINDSIGHT_SCHEMA = "factory.hindsight/1"
+FAULT_KINDS = ("harness", "stage", "environment", "policy")
+LABEL_SOURCES = ("model", "human")
+SNAPSHOT_ORIGINS = ("recorded", "reconstructed")
+TURN_ORIGINS = ("cold", "warm")
+# Who chose the recorded next step: a foreman decision, a foreman turn that fell back, or model.decide() alone.
+DECISION_SOURCES = ("foreman", "fallback", "auto")
+POINT_ID = re.compile(r"^(scope-review|build|ship)-[1-9][0-9]{0,3}$")
+LABEL_TEXT = {"note": 600, "summary": 400, "code_family": 100}
+
+
+def _actions(check: _Checker, obj: dict, key: str, where: str, *, non_empty: bool) -> list:
+    value = obj.get(key, [])
+    if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
+        check.add(f"{where}.{key}", "must be a list of action names")
+        return []
+    unknown = [v for v in value if v not in DECISION_ACTIONS]
+    if unknown:
+        check.add(f"{where}.{key}", f"unknown action(s) {', '.join(map(repr, unknown))}; "
+                                    f"known: {', '.join(DECISION_ACTIONS)}")
+    if non_empty and not value:
+        check.add(f"{where}.{key}", "must name at least one action")
+    if len(set(value)) != len(value):
+        check.add(f"{where}.{key}", "names an action twice")
+    return value
+
+
+def _label(check: _Checker, entry: object, where: str, *, keys: tuple, optional: tuple = ()) -> None:
+    if not isinstance(entry, dict):
+        check.add(where, "must be an object")
+        return
+    check.keys(entry, where, keys, optional)
+    accept = _actions(check, entry, "accept", where, non_empty=True)
+    reject = _actions(check, entry, "reject", where, non_empty=False)
+    both = sorted(set(accept) & set(reject))
+    if both:
+        check.add(where, f"accepts and rejects {', '.join(both)}")
+    if "allow_override" in entry and not isinstance(entry["allow_override"], bool):
+        check.add(f"{where}.allow_override", "must be true or false")
+    _text(check, entry, "note", where, LABEL_TEXT["note"], required="note" in keys)
+
+
+def _fault(check: _Checker, entry: object, where: str) -> None:
+    if not isinstance(entry, dict):
+        check.add(where, "must be an object")
+        return
+    check.keys(entry, where, ("kind", "code_family", "summary", "evidence", "attempts"), ("tokens",))
+    if entry.get("kind") not in FAULT_KINDS:
+        check.add(f"{where}.kind", f"must be one of {', '.join(FAULT_KINDS)}")
+    _text(check, entry, "code_family", where, LABEL_TEXT["code_family"], required=True)
+    _text(check, entry, "summary", where, LABEL_TEXT["summary"], required=True)
+    _strings(check, entry, "evidence", where, 20)
+    _bounded_int(check, entry, "attempts", where, 0, 10000, required=True)
+    if entry.get("tokens") is not None:
+        _bounded_int(check, entry, "tokens", where, 0, 10 ** 12, required=True)
+
+
+def validate_world(data: object, *, name: str = "world.json") -> dict:
+    """A factory.world/1 record: one finished run and its decision points, ready to replay."""
+    if not isinstance(data, dict) or data.get("schema") != WORLD_SCHEMA:
+        raise RecordError("record.unsupported_version", f"{name}: schema must be {WORLD_SCHEMA!r}")
+    check = _Checker(name)
+    check.keys(data, "world", ("schema", "run", "repository", "terminal_status", "decision_schema", "points",
+                               "source_sha256", "builder"),
+               ("runner_revision", "skill_hash", "skills_id", "built_at"))
+    run = data.get("run")
+    if not isinstance(run, dict) or not isinstance(run.get("id"), str) or not isinstance(run.get("attempts"), list):
+        check.add("world.run", "must be an object with an id and the ordered attempt summaries")
+    else:
+        for index, attempt in enumerate(run["attempts"]):
+            where = f"world.run.attempts[{index}]"
+            if not isinstance(attempt, dict):
+                check.add(where, "must be an object")
+                continue
+            check.keys(attempt, where, ("stage", "n", "outcome", "tokens"), ("kind", "code"))
+    check.string(data, "repository", "world", empty=False)
+    points = data.get("points")
+    if not isinstance(points, list):
+        check.add("world.points", "must be a list")
+        points = []
+    seen = set()
+    for index, point in enumerate(points):
+        where = f"world.points[{index}]"
+        if not isinstance(point, dict):
+            check.add(where, "must be an object")
+            continue
+        # The recorded decision and its source are optional: a pre-foreman attempt, or a turn that fell back,
+        # recorded no decision, and the point stays scorable against its label.
+        check.keys(point, where, ("id", "stage", "attempt", "event", "scorable", "snapshot", "plan"),
+                   ("recorded_decision", "decision_source", "origin", "turn", "unscorable_reason"))
+        if not isinstance(point.get("id"), str) or not POINT_ID.match(point["id"]):
+            check.add(f"{where}.id", "must be {stage}-{attempt} of a headless stage")
+        elif point["id"] in seen:
+            check.add(f"{where}.id", "appears twice")
+        else:
+            seen.add(point["id"])
+        if not isinstance(point.get("scorable"), bool):
+            check.add(f"{where}.scorable", "must be true or false")
+        if point.get("snapshot") not in SNAPSHOT_ORIGINS:
+            check.add(f"{where}.snapshot", f"must be one of {', '.join(SNAPSHOT_ORIGINS)}")
+        if "origin" in point and point["origin"] not in TURN_ORIGINS:
+            check.add(f"{where}.origin", f"must be one of {', '.join(TURN_ORIGINS)}")
+        if "decision_source" in point and point["decision_source"] not in DECISION_SOURCES:
+            check.add(f"{where}.decision_source", f"must be one of {', '.join(DECISION_SOURCES)}")
+        recorded = point.get("recorded_decision")
+        if recorded is not None and (not isinstance(recorded, dict) or not isinstance(recorded.get("action"), str)
+                                     or recorded.get("vocabulary") not in ("decision", "transition")):
+            check.add(f"{where}.recorded_decision", "must name an action and its vocabulary (decision or transition)")
+    check.raise_if_any()
+    return data
+
+
+def validate_labels(data: object, *, name: str = "labels.json") -> dict:
+    """A factory.labels/1 record: per point, the actions hindsight accepts and rejects, and who said so."""
+    if not isinstance(data, dict) or data.get("schema") != LABELS_SCHEMA:
+        raise RecordError("record.unsupported_version", f"{name}: schema must be {LABELS_SCHEMA!r}")
+    check = _Checker(name)
+    check.keys(data, "labels", ("schema", "run", "labels"), ("decision_schema", "labelled_at"))
+    labels = data.get("labels")
+    if not isinstance(labels, dict):
+        check.add("labels.labels", "must be an object keyed by point id")
+        labels = {}
+    for point, entry in labels.items():
+        where = f"labels.labels[{point!r}]"
+        if not POINT_ID.match(str(point)):
+            check.add(where, "is not a point id")
+        _label(check, entry, where, keys=("accept", "reject", "allow_override", "note", "label_source"),
+               optional=("labelled_at",))
+        if isinstance(entry, dict) and entry.get("label_source") not in LABEL_SOURCES:
+            check.add(f"{where}.label_source", f"must be one of {', '.join(LABEL_SOURCES)}")
+    check.raise_if_any()
+    return data
+
+
+def validate_faults(data: object, *, name: str = "faults.json") -> dict:
+    """A factory.faults/1 record: the run's faults by kind, with evidence and what they cost."""
+    if not isinstance(data, dict) or data.get("schema") != FAULTS_SCHEMA:
+        raise RecordError("record.unsupported_version", f"{name}: schema must be {FAULTS_SCHEMA!r}")
+    check = _Checker(name)
+    check.keys(data, "faults", ("schema", "run", "faults"), ("labelled_at",))
+    faults = data.get("faults")
+    if not isinstance(faults, list):
+        check.add("faults.faults", "must be a list")
+        faults = []
+    for index, entry in enumerate(faults):
+        _fault(check, entry, f"faults.faults[{index}]")
+    check.raise_if_any()
+    return data
+
+
+def validate_hindsight(data: object, *, name: str = "hindsight", points: tuple | list | None = None) -> dict:
+    """The labeller's one answer (factory.hindsight/1): a label per scorable point plus the run's faults.
+
+    With `points`, every named point needs exactly one label and no other point may carry one.
+    """
+    if not isinstance(data, dict):
+        raise RecordError("record.invalid", f"{name}: must be a JSON object")
+    data = _without_nulls(data)
+    if data.get("schema") != HINDSIGHT_SCHEMA:
+        raise RecordError("record.unsupported_version", f"{name}: schema must be {HINDSIGHT_SCHEMA!r}")
+    check = _Checker(name)
+    check.keys(data, "hindsight", ("schema", "labels", "faults"))
+    labels = data.get("labels")
+    if not isinstance(labels, list):
+        check.add("hindsight.labels", "must be a list")
+        labels = []
+    named = []
+    for index, entry in enumerate(labels):
+        where = f"hindsight.labels[{index}]"
+        _label(check, entry, where, keys=("point", "accept", "reject", "allow_override", "note"))
+        if isinstance(entry, dict):
+            named.append(entry.get("point"))
+    if len(set(named)) != len(named):
+        check.add("hindsight.labels", "labels a point twice")
+    if points is not None:
+        missing = sorted(set(points) - set(named))
+        extra = sorted(set(named) - set(points), key=str)
+        if missing:
+            check.add("hindsight.labels", f"no label for {', '.join(missing)}")
+        if extra:
+            check.add("hindsight.labels", f"labels unknown or unscorable point(s) {', '.join(map(str, extra))}")
+    faults = data.get("faults")
+    if not isinstance(faults, list):
+        check.add("hindsight.faults", "must be a list")
+        faults = []
+    for index, entry in enumerate(faults):
+        _fault(check, entry, f"hindsight.faults[{index}]")
+    check.raise_if_any()
+    return data
+
+
+def hindsight_json_schema() -> dict:
+    """The JSON Schema for the labeller's `--output-schema`; bounds and cross-field rules stay in the validator."""
+    def obj(props: dict) -> dict:
+        return {"type": "object", "properties": props, "required": list(props), "additionalProperties": False}
+
+    actions = {"type": "array", "items": {"type": "string", "enum": list(DECISION_ACTIONS)}}
+    return {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "title": HINDSIGHT_SCHEMA,
+        **obj({
+            "schema": {"type": "string", "enum": [HINDSIGHT_SCHEMA]},
+            "labels": {"type": "array", "items": obj({
+                "point": {"type": "string"}, "accept": actions, "reject": actions,
+                "allow_override": {"type": "boolean"}, "note": {"type": "string"}})},
+            "faults": {"type": "array", "items": obj({
+                "kind": {"type": "string", "enum": list(FAULT_KINDS)}, "code_family": {"type": "string"},
+                "summary": {"type": "string"}, "evidence": {"type": "array", "items": {"type": "string"}},
+                "attempts": {"type": "integer"}, "tokens": {"type": ["integer", "null"]}})},
         }),
     }

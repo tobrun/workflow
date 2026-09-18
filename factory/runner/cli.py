@@ -21,6 +21,7 @@ from runner import (FACTORY_ROOT, browser, commands, conditions, config, control
 from runner import worktree as wt
 from runner.model import (CANCELLED, DONE, NEEDS_HUMAN, NEW, PAUSED, QUEUED, RUNNING, SCOPING, InvalidTransition,
                           Run, SchemaError, parse_ts, utc_now)
+from runner.history import HistoryLocked
 from runner.pipeline import PIPELINE, gate_context, write_run_context
 
 STOPWORDS = {"a", "an", "the", "to", "for", "of", "in", "on", "and", "or", "with", "by", "from", "into", "at",
@@ -1018,6 +1019,45 @@ def cmd_report(args: argparse.Namespace, home: Path, cfg: config.Config) -> int:
     return 0
 
 
+def cmd_history(args: argparse.Namespace, home: Path, cfg: config.Config) -> int:
+    from runner import history
+    if args.history_command == "ls":
+        worlds = history.worlds(home)
+        if not worlds:
+            out("No worlds yet; `factory history build --all` builds them from finished runs.")
+            return 0
+        out(f"{len(worlds)} world(s) under {history.root(home)}")
+        for world_dir in worlds:
+            try:
+                world = history.load_world(world_dir)
+            except (OSError, json.JSONDecodeError, records.RecordError) as error:
+                out(f"  {world_dir.name}  unreadable: {error}")
+                continue
+            labels = history.load_labels(world_dir)
+            labelled = len((labels or {}).get("labels") or {})
+            scorable = sum(1 for p in world["points"] if p["scorable"])
+            out(f"  {world_dir.name}  {len(world['points'])} point(s), {scorable} scorable, {labelled} labelled, "
+                f"{world['terminal_status']}, {world['repository']}")
+        return 0
+    with history.HistoryLock(home):
+        if args.history_command == "build":
+            if not args.ids and not args.all:
+                raise CliError("name run ids or pass --all", 2)
+            dirs = history.run_dirs(home) if args.all else [resolve(home, ident, include_archive=True)
+                                                            for ident in args.ids]
+            counts = {"built": 0, "unchanged": 0, "skipped": 0}
+            for run_dir in dirs:
+                result = history.build(run_dir, home)
+                counts[result.status] += 1
+                if result.status == "built":
+                    out(f"built {result.run_id}")
+                for note in result.notes:
+                    out(f"  {note}")
+            out(f"History: {counts['built']} built, {counts['unchanged']} unchanged, {counts['skipped']} skipped.")
+            return 0
+    raise CliError(f"unknown history command {args.history_command}", 2)
+
+
 def cmd_gc(args: argparse.Namespace, home: Path, cfg: config.Config) -> int:
     archived, kept = [], []
     for run_dir, run, error in dashboard.load_runs(home / "runs"):
@@ -1533,6 +1573,14 @@ def parser() -> argparse.ArgumentParser:
                         help="group intervention, override, and fallback rates by the foreman policy hash")
     report.set_defaults(func=cmd_report)
 
+    hist = sub.add_parser("history", help="turn finished runs into replay worlds for the dream loop")
+    hist_sub = hist.add_subparsers(dest="history_command", required=True)
+    hist_build = hist_sub.add_parser("build", help="build or refresh the world of each finished run")
+    hist_build.add_argument("ids", nargs="*", help="run ids (default: none; use --all)")
+    hist_build.add_argument("--all", action="store_true", help="every run under runs/ and archive/")
+    hist_sub.add_parser("ls", help="list built worlds with their points and labels")
+    hist.set_defaults(func=cmd_history)
+
     rm = sub.add_parser("rm", help="remove one run and its worktree")
     rm.add_argument("id")
     rm.add_argument("--force", action="store_true")
@@ -1575,6 +1623,9 @@ def main(argv: list[str] | None = None) -> int:
     except config.ConfigError as error:
         print(f"Config error: {error}", file=sys.stderr)
         return 2
+    except HistoryLocked as error:
+        print(str(error), file=sys.stderr)
+        return 3
     except (CliError, control.ControlError, InvalidTransition, wt.GitError) as error:
         print(str(error), file=sys.stderr)
         return getattr(error, "code", 1)

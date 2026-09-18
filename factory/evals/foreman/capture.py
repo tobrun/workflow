@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import sys
 from pathlib import Path
 
@@ -21,44 +20,10 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
 from runner import config, foreman, gates  # noqa: E402
+from runner.history import as_of, redact  # noqa: E402
 from runner.model import Run  # noqa: E402
 
 STAGES = ("scope", "scope-review", "build", "ship")
-
-
-def as_of(run: Run, stage: str, n: int) -> Run:
-    """The run as it stood right after `stage` attempt `n` closed and before its decision."""
-    attempts = run.data["attempts"]
-    index = next(i for i, a in enumerate(attempts) if a["stage"] == stage and a["n"] == n)
-    kept = attempts[: index + 1]
-    data = json.loads(json.dumps(run.data))
-    data["attempts"] = kept
-    data["status"] = "running"
-    data["stage"] = stage
-    seen = {(a["stage"], a["n"]) for a in kept}
-    data["conditions"] = [c for c in data.get("conditions") or [] if (c.get("stage"), c.get("attempt")) in seen]
-    for key in ("decisions", "overrides", "foreman", "guidance", "next_action", "next_launch", "wait", "last_wait"):
-        data.pop(key, None)
-    for attempt in kept:
-        attempt.pop("foreman", None)
-        attempt.pop("transition", None)
-    return Run(run.dir, data)
-
-
-def redact(text: str, run: Run) -> str:
-    replacements = [
-        (str(run.worktree), "<worktree>"),
-        (str(run.dir), "<run_dir>"),
-        (str(run.data.get("repo") or ""), "<repo>"),
-        (run.id, "<run_id>"),
-        (str(Path.home()), "<home>"),
-    ]
-    for old, new in replacements:
-        if old:
-            text = text.replace(old, new)
-    text = re.sub(r"https://github\.com/[^/\s\"]+/[^/\s\"]+", "https://github.com/example/project", text)
-    text = re.sub(r"https://[a-z0-9.-]+\.atlassian\.net/browse/[A-Z0-9-]+", "https://example.atlassian.net/browse/KEY-1", text)
-    return text
 
 
 def main() -> int:

@@ -52,7 +52,7 @@ A test mapped outside its layer's globs is reported as a warning on the attempt,
 
 `workspace-write` matches the Codex sandbox the factory launches agents with (`workspace-write` with network access), so a check that passed for the agent behaves the same for the gate.
 A host without the enforcement tool fails the command with a repair step instead of running it unconfined.
-The runner points `npm_config_cache`, `UV_CACHE_DIR`, `PIP_CACHE_DIR`, `YARN_CACHE_FOLDER`, and `AGENT_BROWSER_SOCKET_DIR` at shared directories under `~/.factory/cache/` (a value already in the environment is kept and made writable).
+The runner points `npm_config_cache`, `UV_CACHE_DIR`, `PIP_CACHE_DIR`, `YARN_CACHE_FOLDER`, `BUN_INSTALL_CACHE_DIR`, and `AGENT_BROWSER_SOCKET_DIR` at shared directories under `~/.factory/cache/` (a value already in the environment is kept and made writable).
 
 ## The hosted browser
 

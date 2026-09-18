@@ -115,6 +115,8 @@ class CacheTests(unittest.TestCase):
         with unittest.mock.patch("runner.commands.cache_root", return_value=Path("/tmp/factory-cache-test")):
             additions, paths = commands.tool_caches(env, "workspace-write")
         self.assertEqual(additions["npm_config_cache"], "/tmp/factory-cache-test/npm")
+        # Bun keeps its install cache and the temp files beside it under ~/.bun, which the boundary denies.
+        self.assertEqual(additions["BUN_INSTALL_CACHE_DIR"], "/tmp/factory-cache-test/bun")
         self.assertEqual(additions["AGENT_BROWSER_SOCKET_DIR"], "/tmp/factory-cache-test/agent-browser")
         self.assertEqual(additions["AGENT_BROWSER_ARGS"], "--no-sandbox")
         self.assertNotIn("UV_CACHE_DIR", additions)

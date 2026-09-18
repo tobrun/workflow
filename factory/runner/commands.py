@@ -154,6 +154,8 @@ def temp_roots() -> list[Path]:
 # Package managers write their download caches under the user's home, which workspace-write denies; without a
 # writable cache `npm ci`, `npx`, and `uv run` fail with EPERM before doing any work.
 TOOL_CACHES = {"npm_config_cache": "npm", "UV_CACHE_DIR": "uv", "PIP_CACHE_DIR": "pip", "YARN_CACHE_FOLDER": "yarn",
+               # bun writes its install cache and temp files under ~/.bun unless told otherwise.
+               "BUN_INSTALL_CACHE_DIR": "bun",
                # agent-browser keeps its daemon socket and state here instead of ~/.agent-browser.
                "AGENT_BROWSER_SOCKET_DIR": "agent-browser"}
 # Chrome cannot start its own sandbox inside the OS sandbox, so browser e2e works by default only without it; the

@@ -1055,7 +1055,63 @@ def cmd_history(args: argparse.Namespace, home: Path, cfg: config.Config) -> int
                     out(f"  {note}")
             out(f"History: {counts['built']} built, {counts['unchanged']} unchanged, {counts['skipped']} skipped.")
             return 0
+        if args.history_command == "label":
+            return history_label(args, home, cfg)
     raise CliError(f"unknown history command {args.history_command}", 2)
+
+
+def history_label(args: argparse.Namespace, home: Path, cfg: config.Config) -> int:
+    from runner import history
+
+    def world_dir(ident: str) -> Path:
+        path = history.root(home) / ident
+        if not (path / "world.json").is_file():
+            matches = [w for w in history.worlds(home) if w.name.startswith(ident)]
+            if len(matches) != 1:
+                raise CliError(f"no single world matches {ident!r}; `factory history ls` lists them", 1)
+            path = matches[0]
+        return path
+
+    if args.set:
+        ident, point = args.set
+        if not args.accept:
+            raise CliError("--set needs --accept with at least one action", 2)
+        try:
+            entry = history.set_label(world_dir(ident), point, args.accept, args.reject, args.allow_override,
+                                      args.note)
+        except history.LabelError as error:
+            raise CliError(str(error), 1) from error
+        out(f"Labelled {ident} {point} by hand: accept {', '.join(entry['accept'])}"
+            + (f"; reject {', '.join(entry['reject'])}" if entry["reject"] else ""))
+        return 0
+    if args.check_cases:
+        report = history.check_hand_cases(home)
+        out(f"Hand cases: {report['cases']} total, {len(report['matched'])} matched, "
+            f"{len(report['unmatched'])} unmatched, {len(report['unlabelled'])} matched but unlabelled.")
+        for name in report["unmatched"]:
+            out(f"  unmatched {name}: no world point for its run, stage, and attempt yet")
+        for line in report["disagreements"]:
+            out(f"  disagreement {line}")
+        out(f"mean accept-set size {report['mean_accept_size'] if report['mean_accept_size'] is not None else '-'}")
+        return 0
+    if not args.ids and not args.all:
+        raise CliError("name world ids or pass --all", 2)
+    dirs = history.worlds(home) if args.all else [world_dir(ident) for ident in args.ids]
+    failed = []
+    for path in dirs:
+        result = history.label(path, cfg, relabel=args.relabel)
+        if result.status == "failed":
+            failed.append(result.run_id)
+            out(f"failed {result.run_id}: stays unlabelled and is excluded from scoring")
+            for problem in result.problems:
+                out(f"  {problem}")
+        else:
+            out(f"{result.status} {result.run_id}" + (f" ({result.kept_human} human label(s) kept)"
+                                                       if result.kept_human else ""))
+    if failed:
+        out(f"Labelling failed for {len(failed)} world(s): {', '.join(failed)}")
+        return 1
+    return 0
 
 
 def cmd_gc(args: argparse.Namespace, home: Path, cfg: config.Config) -> int:
@@ -1579,6 +1635,17 @@ def parser() -> argparse.ArgumentParser:
     hist_build.add_argument("ids", nargs="*", help="run ids (default: none; use --all)")
     hist_build.add_argument("--all", action="store_true", help="every run under runs/ and archive/")
     hist_sub.add_parser("ls", help="list built worlds with their points and labels")
+    hist_label = hist_sub.add_parser("label", help="label worlds with hindsight (paid), or record a label by hand")
+    hist_label.add_argument("ids", nargs="*", help="world (run) ids")
+    hist_label.add_argument("--all", action="store_true", help="every built world")
+    hist_label.add_argument("--relabel", action="store_true", help="regenerate model labels; human labels stay")
+    hist_label.add_argument("--check-cases", action="store_true",
+                            help="compare labels with the hand-labelled eval cases")
+    hist_label.add_argument("--set", nargs=2, metavar=("ID", "POINT"), help="record a human label for one point")
+    hist_label.add_argument("--accept", nargs="+", help="with --set: actions a correct foreman may choose")
+    hist_label.add_argument("--reject", nargs="*", default=[], help="with --set: actions that would be wrong")
+    hist_label.add_argument("--allow-override", action="store_true", help="with --set: an override is justified")
+    hist_label.add_argument("--note", help="with --set: why")
     hist.set_defaults(func=cmd_history)
 
     rm = sub.add_parser("rm", help="remove one run and its worktree")

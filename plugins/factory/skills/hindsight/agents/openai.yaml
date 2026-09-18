@@ -1,0 +1,6 @@
+interface:
+  display_name: "Hindsight"
+  short_description: "Label a finished factory run's decisions"
+  default_prompt: "Use $factory:hindsight to label the decision points of this finished factory run."
+policy:
+  allow_implicit_invocation: false

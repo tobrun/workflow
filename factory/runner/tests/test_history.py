@@ -131,6 +131,159 @@ class BuildFromRunsTests(HistoryTestCase):
         self.assertEqual(out, "")
 
 
+class LabelTests(HistoryTestCase):
+    def setUp(self) -> None:
+        super().setUp()
+        self.hindsight_path = self.root / "hindsight.json"
+        os.environ["FACTORY_STUB_HINDSIGHT"] = str(self.hindsight_path)
+
+    def hindsight(self, answer: object) -> None:
+        self.hindsight_path.write_text(json.dumps(answer))
+
+    def labeller_calls(self) -> list[dict]:
+        return [c for c in self.stub_calls("codex") if c["env"].get("FACTORY_ROLE") == "hindsight"]
+
+    def built_world(self) -> tuple[object, Path]:
+        run = self.finished_run(foreman="codex", decisions=[advance("scope-review"), advance("build"),
+                                                             advance("ship")])
+        self.assertEqual(self.call("history", "build", run.id)[0], 0)
+        return run, self.home / "history" / run.id
+
+    def test_one_labeller_session_labels_every_scorable_point(self):
+        self.hindsight({"schema": "factory.hindsight/1", "labels": [
+            {"point": p, "accept": ["advance"], "reject": ["park"], "allow_override": False,
+             "note": "advance: the gate passed"} for p in ("scope-review-1", "build-1", "ship-1")],
+            "faults": [{"kind": "harness", "code_family": "record.invalid", "summary": "s", "evidence": [],
+                        "attempts": 1, "tokens": None}]})
+        run, world_dir = self.built_world()
+        code, out, _ = self.call("history", "label", run.id)
+        self.assertEqual(code, 0, out)
+        labels = records.validate_labels(json.loads((world_dir / "labels.json").read_text()))
+        self.assertEqual(sorted(labels["labels"]), ["build-1", "scope-review-1", "ship-1"])
+        self.assertEqual({e["label_source"] for e in labels["labels"].values()}, {"model"})
+        faults = records.validate_faults(json.loads((world_dir / "faults.json").read_text()))
+        self.assertEqual(faults["faults"][0]["kind"], "harness")
+        calls = self.labeller_calls()
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(Path(calls[0]["cwd"]).resolve(), world_dir.resolve())
+        self.assertIn("read-only", calls[0]["argv"])
+        self.assertIn("--output-schema", calls[0]["argv"])
+
+    def test_a_human_label_survives_a_relabel_and_model_entries_are_regenerated(self):
+        self.hindsight("auto")
+        run, world_dir = self.built_world()
+        code, out, _ = self.call("history", "label", "--set", run.id, "build-1", "--accept", "regate", "repair",
+                                 "--reject", "launch", "--note", "only the result file was wrong")
+        self.assertEqual(code, 0, out)
+        human = json.loads((world_dir / "labels.json").read_text())["labels"]["build-1"]
+        self.assertEqual(human["label_source"], "human")
+        self.assertEqual(self.call("history", "label", run.id)[0], 0)
+        labels = json.loads((world_dir / "labels.json").read_text())
+        stub_value = labels["labels"]["ship-1"]["accept"]
+        labels["labels"]["ship-1"]["accept"] = ["cancel"]
+        labels["labels"]["ship-1"]["reject"] = []
+        (world_dir / "labels.json").write_text(json.dumps(labels))
+        before = len(self.labeller_calls())
+        code, out, _ = self.call("history", "label", run.id, "--relabel")
+        self.assertEqual(code, 0, out)
+        self.assertIn("1 human label(s) kept", out)
+        self.assertEqual(len(self.labeller_calls()), before + 1)
+        after = json.loads((world_dir / "labels.json").read_text())["labels"]
+        self.assertEqual(json.dumps(after["build-1"], sort_keys=True), json.dumps(human, sort_keys=True))
+        self.assertEqual(after["ship-1"]["accept"], stub_value)
+        self.assertEqual(after["ship-1"]["label_source"], "model")
+
+    def test_a_labeller_that_answers_outside_the_schema_twice_leaves_the_world_unlabelled(self):
+        self.hindsight("invalid")
+        run, world_dir = self.built_world()
+        code, out, _ = self.call("history", "label", run.id)
+        self.assertEqual(code, 1)
+        self.assertIn(f"failed {run.id}: stays unlabelled", out)
+        self.assertIn(f"Labelling failed for 1 world(s): {run.id}", out)
+        self.assertFalse((world_dir / "labels.json").exists())
+        self.assertEqual(len(self.labeller_calls()), 2)
+
+    def test_label_all_keeps_going_past_a_failed_world(self):
+        first, _ = self.built_world()
+        second, second_dir = self.built_world()
+        self.hindsight({first.id: "invalid", second.id: "auto"})
+        code, out, _ = self.call("history", "label", "--all")
+        self.assertEqual(code, 1)
+        self.assertIn(f"Labelling failed for 1 world(s): {first.id}", out)
+        self.assertIn(f"labelled {second.id}", out)
+        self.assertTrue((second_dir / "labels.json").is_file())
+
+
+class HandCaseTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory(prefix="hand-cases-")
+        self.root = Path(os.path.realpath(self._tmp.name))
+        self.home = self.root / "home"
+        self.cases = self.root / "cases"
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def case(self, name: str, created_at: str, accept: list[str], reject: list[str] | None = None) -> None:
+        case = self.cases / name
+        case.mkdir(parents=True)
+        (case / "digest.json").write_text(json.dumps({"schema": "factory.digest/1",
+                                                      "run": {"created_at": created_at}}))
+        (case / "expected.json").write_text(json.dumps({"schema": "factory.foreman-eval/1", "stage": "ship",
+                                                        "attempt": 4, "accept": accept, "reject": reject or []}))
+
+    def world(self, created_at: str, accept: list[str]) -> None:
+        run_dir = fixture_run(self.root, attempts=[attempt("ship", n) for n in (1, 2, 3, 4)])
+        data = json.loads((run_dir / "run.json").read_text())
+        data["created_at"] = created_at
+        (run_dir / "run.json").write_text(json.dumps(data))
+        world_dir = history.build(run_dir, self.home).world
+        history.set_label(world_dir, "ship-4", accept)
+
+    def test_a_label_wider_than_the_hand_case_is_one_disagreement(self):
+        self.world("2026-09-16T16:05:00Z", ["publish", "repair", "regate"])
+        self.case("two-ideas-ship-4", "2026-09-16T16:05:00Z", ["publish", "repair"])
+        report = history.check_hand_cases(self.home, self.cases)
+        self.assertEqual(report["disagreements"], ["two-ideas-ship-4: regate (label accepts, hand does not)"])
+        self.assertEqual(report["mean_accept_size"], 3)
+
+    def test_a_case_with_no_world_point_is_reported_unmatched(self):
+        self.world("2026-09-16T16:05:00Z", ["publish"])
+        self.case("stale-plugin-scope-review-1", "2026-09-16T10:06:00Z", ["repair"])
+        report = history.check_hand_cases(self.home, self.cases)
+        self.assertEqual(report["unmatched"], ["stale-plugin-scope-review-1"])
+        self.assertEqual(report["cases"], 1)
+
+
+class LabelRecordTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory(prefix="labels-")
+        self.root = Path(os.path.realpath(self._tmp.name))
+        self.world_dir = history.build(fixture_run(self.root, attempts=[attempt("build", 1)]), self.root / "home").world
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def test_a_fault_kind_outside_the_known_kinds_is_rejected(self):
+        with self.assertRaises(records.RecordError) as raised:
+            records.validate_hindsight({"schema": "factory.hindsight/1", "labels": [], "faults": [
+                {"kind": "cosmic-ray", "code_family": "x.y", "summary": "s", "evidence": [], "attempts": 1}]})
+        self.assertIn("kind", str(raised.exception))
+
+    def test_a_hand_label_naming_an_unknown_action_is_refused_without_a_write(self):
+        history.set_label(self.world_dir, "build-1", ["regate"])
+        before = (self.world_dir / "labels.json").read_bytes()
+        with self.assertRaises(history.LabelError) as raised:
+            history.set_label(self.world_dir, "build-1", ["teleport"])
+        self.assertIn("teleport", str(raised.exception))
+        self.assertEqual((self.world_dir / "labels.json").read_bytes(), before)
+
+    def test_a_hand_label_with_nothing_accepted_is_refused_without_a_write(self):
+        with self.assertRaises(history.LabelError):
+            history.set_label(self.world_dir, "build-1", [])
+        self.assertFalse((self.world_dir / "labels.json").exists())
+
+
 def fixture_run(root: Path, *, attempts: list[dict], conditions: list | None = None, turns: dict | None = None,
                 home: Path | None = None) -> Path:
     """A finished run fabricated on disk: run.json, attempt directories with inputs, and optional turn records."""

@@ -451,3 +451,168 @@ def load_labels(world_dir: Path) -> dict | None:
     except (OSError, json.JSONDecodeError, records.RecordError):
         return None
 
+
+# --- hindsight labels --------------------------------------------------------------------------
+
+GENERATED_SKILLS = Path(__file__).resolve().parents[2] / "plugins" / "factory" / "skills"
+HAND_CASES = Path(__file__).resolve().parents[1] / "evals" / "foreman" / "cases"
+LABEL_TRIES = 2
+
+
+@dataclass
+class LabelResult:
+    run_id: str
+    status: str  # labelled, unchanged, failed
+    problems: list[str] = field(default_factory=list)
+    kept_human: int = 0
+
+
+def scorable_points(world: dict) -> list[str]:
+    return [p["id"] for p in world["points"] if p["scorable"]]
+
+
+def label_prompt(world: dict, points: list[str]) -> str:
+    skill = GENERATED_SKILLS / "hindsight" / "SKILL.md"
+    return "\n".join([
+        f"Follow the skill at {skill}.",
+        "Read it and the foreman skill and protocol reference it links; do not use an installed factory plugin.",
+        "",
+        f"You label the finished factory run {world['run']['id']}, replayed as the world in the current directory.",
+        f"Label exactly these scorable points: {', '.join(points) or 'none'}.",
+        f"Reply with exactly one {records.HINDSIGHT_SCHEMA} JSON object.",
+    ]) + "\n"
+
+
+def _ask_labeller(world_dir: Path, world: dict, points: list[str], cfg: config.Config, attempt: int) -> tuple[dict | None, str | None]:
+    from runner import hosts
+    work = Path(world_dir) / "labelling" / str(attempt)
+    shutil.rmtree(work, ignore_errors=True)
+    work.mkdir(parents=True)
+    schema = work / "hindsight.schema.json"
+    schema.write_text(json.dumps(records.hindsight_json_schema(), indent=2) + "\n", encoding="utf-8")
+    last = work / "last-message.md"
+    argv = hosts.codex_foreman_argv(prompt=label_prompt(world, points), model=cfg.hindsight_model,
+                                    effort=cfg.hindsight_effort, sandbox="read-only", worktree=Path(world_dir),
+                                    writable=[], last_message=last, schema=schema)
+    env = {**os.environ, "FACTORY_ROLE": "hindsight", "FACTORY_WORLD": world["run"]["id"]}
+    try:
+        with open(work / "stdout.jsonl", "wb") as stdout, open(work / "stderr.log", "wb") as stderr:
+            code = subprocess.run(argv, cwd=world_dir, stdout=stdout, stderr=stderr, stdin=subprocess.DEVNULL,
+                                  env=env, timeout=cfg.foreman_turn_timeout_s).returncode
+    except (OSError, subprocess.TimeoutExpired) as error:
+        return None, f"labeller did not finish: {error}"
+    if code != 0:
+        return None, f"labeller exited {code}"
+    try:
+        text = last.read_text(encoding="utf-8").strip()
+        start, end = text.find("{"), text.rfind("}")
+        data = json.loads(text[start:end + 1] if start >= 0 and end > start else text)
+        return records.validate_hindsight(data, points=points), None
+    except (OSError, ValueError, records.RecordError) as error:
+        return None, f"{type(error).__name__}: {error}"
+
+
+def label(world_dir: Path, cfg: config.Config, *, relabel: bool = False) -> LabelResult:
+    """Label one world through the hindsight skill: one Codex session answers every scorable point.
+
+    Human labels always win the merge; model labels are replaced. A world whose labeller answers outside
+    `factory.hindsight/1` twice stays unlabelled and is excluded from scoring.
+    """
+    world_dir = Path(world_dir)
+    world = load_world(world_dir)
+    run_id = world["run"]["id"]
+    points = scorable_points(world)
+    existing = load_labels(world_dir)
+    entries = dict((existing or {}).get("labels") or {})
+    human = {k: v for k, v in entries.items() if v.get("label_source") == "human"}
+    if not relabel and existing and all(p in entries for p in points) and (world_dir / "faults.json").is_file():
+        return LabelResult(run_id, "unchanged", kept_human=len(human))
+    problems: list[str] = []
+    answer = None
+    for attempt in range(1, LABEL_TRIES + 1):
+        answer, problem = _ask_labeller(world_dir, world, points, cfg, attempt)
+        if answer is not None:
+            break
+        problems.append(f"try {attempt}: {problem}")
+    if answer is None:
+        return LabelResult(run_id, "failed", problems, kept_human=len(human))
+    now = utc_now()
+    merged = {}
+    for entry in answer["labels"]:
+        merged[entry["point"]] = {"accept": entry["accept"], "reject": entry["reject"],
+                                  "allow_override": entry["allow_override"], "note": entry["note"],
+                                  "label_source": "model", "labelled_at": now}
+    merged.update(human)
+    labels = records.validate_labels({"schema": records.LABELS_SCHEMA, "run": run_id,
+                                      "decision_schema": records.DECISION_SCHEMA, "labelled_at": now,
+                                      "labels": dict(sorted(merged.items()))})
+    faults = records.validate_faults({"schema": records.FAULTS_SCHEMA, "run": run_id, "labelled_at": now,
+                                      "faults": answer["faults"]})
+    atomic_write(world_dir / "labels.json", json.dumps(labels, indent=2) + "\n")
+    atomic_write(world_dir / "faults.json", json.dumps(faults, indent=2) + "\n")
+    return LabelResult(run_id, "labelled", kept_human=len(human))
+
+
+class LabelError(Exception):
+    pass
+
+
+def set_label(world_dir: Path, point: str, accept: list[str], reject: list[str] | None = None,
+              allow_override: bool = False, note: str | None = None) -> dict:
+    """Record a person's label for one point; it wins every later model relabel."""
+    world_dir = Path(world_dir)
+    world = load_world(world_dir)
+    if point not in {p["id"] for p in world["points"]}:
+        raise LabelError(f"{world['run']['id']} has no point {point!r}; points: "
+                         + ", ".join(p["id"] for p in world["points"]))
+    existing = load_labels(world_dir) or {"schema": records.LABELS_SCHEMA, "run": world["run"]["id"], "labels": {}}
+    entries = dict(existing["labels"])
+    entries[point] = {"accept": list(accept), "reject": list(reject or []), "allow_override": bool(allow_override),
+                      "note": note or "labelled by hand", "label_source": "human", "labelled_at": utc_now()}
+    document = {**existing, "labels": dict(sorted(entries.items()))}
+    try:
+        records.validate_labels(document)
+    except records.RecordError as error:
+        raise LabelError(str(error)) from error
+    atomic_write(world_dir / "labels.json", json.dumps(document, indent=2) + "\n")
+    return entries[point]
+
+
+def check_hand_cases(home: Path, cases: Path = HAND_CASES) -> dict:
+    """Compare world labels with the hand-labelled eval cases; the hand label wins every disagreement.
+
+    A case matches the world point whose run was created at the case digest's `run.created_at`, at the
+    case's stage and attempt. Every case is accounted for: matched, or reported unmatched.
+    """
+    index: dict[tuple, tuple[Path, dict]] = {}
+    for world_dir in worlds(home):
+        try:
+            world = load_world(world_dir)
+        except (OSError, ValueError, records.RecordError):
+            continue
+        for point in world["points"]:
+            index[(world["run"].get("created_at"), point["id"])] = (world_dir, point)
+    report = {"cases": 0, "matched": [], "unmatched": [], "disagreements": [], "unlabelled": [], "sizes": []}
+    for case in sorted(p for p in Path(cases).iterdir() if p.is_dir()):
+        report["cases"] += 1
+        expected = json.loads((case / "expected.json").read_text(encoding="utf-8"))
+        digest = json.loads((case / "digest.json").read_text(encoding="utf-8"))
+        key = ((digest.get("run") or {}).get("created_at"), f"{expected['stage']}-{expected['attempt']}")
+        if key not in index:
+            report["unmatched"].append(case.name)
+            continue
+        world_dir, point = index[key]
+        report["matched"].append(case.name)
+        entry = ((load_labels(world_dir) or {}).get("labels") or {}).get(point["id"])
+        if entry is None:
+            report["unlabelled"].append(case.name)
+            continue
+        report["sizes"].append(len(entry["accept"]))
+        hand, model = set(expected["accept"]), set(entry["accept"])
+        rejected = set(expected.get("reject") or [])
+        for action in sorted(hand ^ model):
+            side = ("hand accepts, label does not" if action in hand
+                    else "label accepts, hand rejects" if action in rejected else "label accepts, hand does not")
+            report["disagreements"].append(f"{case.name}: {action} ({side})")
+    report["mean_accept_size"] = round(sum(report["sizes"]) / len(report["sizes"]), 2) if report["sizes"] else None
+    return report

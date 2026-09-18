@@ -45,6 +45,15 @@ DEFAULTS = {
     "max_wait_minutes": 120,
     "max_run_hours": 24,
     "max_overrides_per_run": 2,
+    # The dream loop (runner/history.py, runner/dream.py): who labels finished runs and who revises the foreman
+    # skill, and what a revision must clear before it deploys itself.
+    "hindsight_model": "openai.gpt-5.6-luna",
+    "hindsight_effort": "medium",
+    "dream_model": "openai.gpt-5.6-luna",
+    "dream_effort": "medium",
+    "dream_margin": 0.05,
+    "dream_floor_worlds": 6,
+    "dream_floor_repos": 2,
     "repos": {},
 }
 
@@ -90,6 +99,13 @@ class Config:
     max_wait_minutes: float = 120
     max_run_hours: float = 24
     max_overrides_per_run: int = 2
+    hindsight_model: str = "openai.gpt-5.6-luna"
+    hindsight_effort: str = "medium"
+    dream_model: str = "openai.gpt-5.6-luna"
+    dream_effort: str = "medium"
+    dream_margin: float = 0.05
+    dream_floor_worlds: int = 6
+    dream_floor_repos: int = 2
     repos: dict = field(default_factory=dict)
     raw: dict = field(default_factory=dict)
 
@@ -136,6 +152,17 @@ def parse(data: object) -> Config:
         _positive_number(merged, key, integer=True)
     for key in ("foreman_turn_timeout_s", "max_wait_minutes", "max_run_hours"):
         _positive_number(merged, key, integer=False)
+    for key in ("hindsight_model", "dream_model"):
+        if not isinstance(merged[key], str) or not merged[key].strip():
+            raise ConfigError(f"config.json: '{key}' must be a model name, got {merged[key]!r}")
+    for key in ("hindsight_effort", "dream_effort"):
+        if merged[key] not in EFFORTS:
+            raise ConfigError(f"config.json: '{key}' must be one of {', '.join(EFFORTS)}, got {merged[key]!r}")
+    margin = merged["dream_margin"]
+    if isinstance(margin, bool) or not isinstance(margin, (int, float)) or not 0 <= margin < 1:
+        raise ConfigError(f"config.json: 'dream_margin' must be a number from 0 up to 1, got {margin!r}")
+    for key in ("dream_floor_worlds", "dream_floor_repos"):
+        _positive_number(merged, key, integer=True)
     overrides = merged["max_overrides_per_run"]
     if isinstance(overrides, bool) or not isinstance(overrides, int) or overrides < 0:
         raise ConfigError(f"config.json: 'max_overrides_per_run' must be a non-negative integer, got {overrides!r}")
@@ -176,6 +203,13 @@ def parse(data: object) -> Config:
         max_wait_minutes=merged["max_wait_minutes"],
         max_run_hours=merged["max_run_hours"],
         max_overrides_per_run=merged["max_overrides_per_run"],
+        hindsight_model=merged["hindsight_model"],
+        hindsight_effort=merged["hindsight_effort"],
+        dream_model=merged["dream_model"],
+        dream_effort=merged["dream_effort"],
+        dream_margin=float(merged["dream_margin"]),
+        dream_floor_worlds=merged["dream_floor_worlds"],
+        dream_floor_repos=merged["dream_floor_repos"],
         repos=repos,
         raw=data,
     )

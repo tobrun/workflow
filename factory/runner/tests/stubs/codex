@@ -95,6 +95,42 @@ def foreman_turn(argv):
     return int(step.get("exit", 0))
 
 
+def hindsight_turn(argv):
+    """Play the labeller from $FACTORY_STUB_HINDSIGHT for the world in the working directory.
+
+    The file holds one answer for every world, or a map from world (run) id to its answer. An answer is a
+    factory.hindsight/1 record, "invalid" (outside the schema), or "auto": a label accepting the recorded
+    foreman action (else advance) for every scorable point of world.json, and no faults.
+    """
+    last_message = option(argv, "-o")
+    path = os.environ.get("FACTORY_STUB_HINDSIGHT")
+    answers = json.loads(Path(path).read_text(encoding="utf-8")) if path and Path(path).exists() else "auto"
+    world = json.loads(Path("world.json").read_text(encoding="utf-8"))
+    answer = answers
+    if isinstance(answers, dict) and answers.get("schema") is None:
+        answer = answers.get(world["run"]["id"], "auto")
+    if answer == "invalid":
+        text = json.dumps({"schema": "factory.hindsight/1", "labels": [{"point": "nowhere-1", "accept": ["fly"]}]})
+    elif answer == "auto":
+        labels = []
+        for point in world["points"]:
+            if not point["scorable"]:
+                continue
+            recorded = (point.get("recorded_decision") or {})
+            action = recorded.get("action") if recorded.get("vocabulary") == "decision" else "advance"
+            labels.append({"point": point["id"], "accept": [action], "reject": ["cancel"] if action != "cancel" else [],
+                           "allow_override": False, "note": f"{action}: the stub labeller accepts it"})
+        text = json.dumps({"schema": "factory.hindsight/1", "labels": labels, "faults": []})
+    else:
+        text = json.dumps(answer)
+    emit({"type": "thread.started", "thread_id": "stub-hindsight"})
+    emit({"type": "item.completed", "item": {"type": "agent_message", "text": text}})
+    emit({"type": "turn.completed", "usage": {"input_tokens": 100, "cached_input_tokens": 0, "output_tokens": 10}})
+    if last_message:
+        Path(last_message).write_text(text + "\n", encoding="utf-8")
+    return 0
+
+
 def main():
     argv = sys.argv[1:]
     log = os.environ.get("FACTORY_STUB_LOG")
@@ -120,6 +156,8 @@ def main():
         return 64
     if os.environ.get("FACTORY_ROLE") == "foreman":
         return foreman_turn(argv)
+    if os.environ.get("FACTORY_ROLE") == "hindsight":
+        return hindsight_turn(argv)
 
     worktree = Path(option(argv, "-C") or os.getcwd())
     last_message = option(argv, "-o")

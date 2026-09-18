@@ -119,6 +119,11 @@ PLUGINS = {
                 "Decide a factory run's next step",
                 "Use $factory:foreman to decide what the factory runner does next for this run.",
             ),
+            "hindsight": (
+                "Hindsight",
+                "Label a finished factory run's decisions",
+                "Use $factory:hindsight to label the decision points of this finished factory run.",
+            ),
         },
     ),
 }

@@ -1,16 +1,14 @@
 """Approved intent and attempt handoffs: sealed at handoff, drift detected mechanically, inputs retained."""
 
-import contextlib
-import io
 import json
 import os
 import shutil
 from pathlib import Path
 
-from runner import cli, events, intent
+from runner import events, intent
 from runner.model import Run
-from runner.tests.helpers import (SCENARIO_MAP, SPEC, TESTS_PY, FactoryTestCase, build_step, git, happy_scenario,
-                                  make_repo, review_step, scope_files)
+from runner.tests.helpers import (SCENARIO_MAP, SPEC, TESTS_PY, FactoryTestCase, build_step, call_cli, git,
+                                  happy_scenario, make_repo, review_step, scope_files)
 
 SPEC_WITH_NON_GOAL = SPEC.replace(
     "Inputs: webhook deliveries. Outputs: each delivery id is processed once.\n",
@@ -20,10 +18,7 @@ SPEC_WITH_NON_GOAL = SPEC.replace(
 
 class IntentTestCase(FactoryTestCase):
     def call(self, *argv: str) -> tuple[int, str, str]:
-        stdout, stderr = io.StringIO(), io.StringIO()
-        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
-            code = cli.main(list(argv))
-        return code, stdout.getvalue(), stderr.getvalue()
+        return call_cli(*argv)
 
     def new_run(self, spec: str = SPEC_WITH_NON_GOAL) -> Path:
         self.claude([scope_files(spec)])

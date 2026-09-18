@@ -141,7 +141,8 @@ def replay_turn(argv):
 
     The prompt names the skill it follows; a skill under a dream's staged `candidates/` tree answers from
     $FACTORY_STUB_REPLAY_CANDIDATE, any other from $FACTORY_STUB_REPLAY. Each file maps a point directory name,
-    or `{world}/{point}`, to a decision object or "invalid"; an unmapped point parks.
+    or `{world}/{point}`, to a decision object, "invalid", or {"mode": "exit", "exit": N} (the host fails with
+    exit N and writes no message); an unmapped point parks.
     """
     prompt = argv[1]
     skill = prompt.split("Follow the skill at ", 1)[1].split("\n", 1)[0] if "Follow the skill at " in prompt else ""
@@ -151,6 +152,8 @@ def replay_turn(argv):
     point = os.environ.get("FACTORY_REPLAY_POINT", Path(os.getcwd()).name)
     world = Path(os.getcwd()).parent.parent.name
     step = answers.get(f"{world}/{point}", answers.get(point, answers.get("*")))
+    if isinstance(step, dict) and step.get("mode") == "exit":
+        return int(step.get("exit", 1))
     if step == "invalid":
         text = json.dumps({"schema": "factory.decision/1", "action": "fly", "summary": "s", "rationale": "r"})
     else:

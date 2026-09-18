@@ -170,6 +170,7 @@ class Replay:
     fresh: bool
     key: str
     skipped: bool = False  # the call cap was reached before this fresh call
+    failed: bool = False  # the host crashed, exited non-zero, or timed out twice: no policy answer, never scored
 
 
 def replay(point_dir: Path, plugin_tree: Path, cfg: config.Config, cache: Cache | None, *, repeat: int = 1,
@@ -177,6 +178,7 @@ def replay(point_dir: Path, plugin_tree: Path, cfg: config.Config, cache: Cache 
     """One cold foreman turn on a recorded point under `plugin_tree`'s skill; first passes come from the cache.
 
     Repeats 2..K are always fresh calls: a repeat is a draw, not a lookup. A fresh call needs `budget`.
+    A call the host did not finish is retried once; a second failure comes back `failed`, not as an answer.
     """
     point_dir = Path(point_dir)
     digest = hashlib.sha256((point_dir / "digest.json").read_bytes()).hexdigest()
@@ -187,12 +189,28 @@ def replay(point_dir: Path, plugin_tree: Path, cfg: config.Config, cache: Cache 
     hit = cache.get(key) if cached else None
     if hit is not None:
         return Replay(hit.get("decision"), hit.get("problem"), False, key)
-    if budget is not None and not budget.take():
+    fresh = _fresh(point_dir, plugin_tree, cfg, work, budget)
+    if fresh is None:
         return Replay(None, "the call cap was reached", False, key, skipped=True)
-    decision, problem, finished = _replay_call(point_dir, plugin_tree, cfg, work)
+    decision, problem, finished = fresh
     if finished and cached:
         cache.put(key, {"decision": decision, "problem": problem})
-    return Replay(decision, problem, True, key)
+    return Replay(decision, problem, True, key, failed=not finished)
+
+
+def _fresh(point_dir: Path, plugin_tree: Path, cfg: config.Config, work: Path | None,
+           budget: Budget | None) -> tuple[dict | None, str | None, bool] | None:
+    """A fresh call, tried a second time when the host did not finish; None once the call cap is reached.
+
+    A crash, a non-zero exit, or a timeout is an infrastructure failure, not a policy answer.
+    """
+    for _ in range(2):
+        if budget is not None and not budget.take():
+            return None
+        decision, problem, finished = _replay_call(point_dir, plugin_tree, cfg, work)
+        if finished:
+            break
+    return decision, problem, finished
 
 
 def _replay_call(point_dir: Path, plugin_tree: Path, cfg: config.Config,
@@ -458,6 +476,7 @@ class PolicyScore:
     worlds: dict = field(default_factory=dict)  # world id -> score or None
     points: list = field(default_factory=list)
     partial: bool = False
+    unreplayed: int = 0  # draws whose host failed twice: counted, never scored
 
     @property
     def mean(self) -> float | None:
@@ -466,34 +485,46 @@ class PolicyScore:
 
 def score_on(name: str, views: list[WorldView], tree: Path, cfg: config.Config, cache: Cache, budget: Budget,
              repeats: int, work: Path) -> PolicyScore:
-    """Replay a policy over every labelled scorable point of `views`; stops as soon as the call cap is reached."""
+    """Replay a policy over every labelled scorable point of `views`; stops as soon as the call cap is reached.
+
+    A draw whose host failed twice is no answer: it is counted in `unreplayed` and left out of the score, and a
+    point with no answered draw is left out of its world's score.
+    """
     result = PolicyScore(name)
     for view in views:
         entries = []
         for point in view.points():
-            label = view.labels[point["id"]]
-            scores, last = [], None
-            for repeat in range(1, repeats + 1):
-                answer = replay(view.dir / "points" / point["id"], tree, cfg, cache, repeat=repeat, world=view.id,
-                                work=work / view.id / point["id"] / str(repeat), budget=budget)
-                if answer.skipped:
-                    result.partial = True
-                    break
-                scores.append(score_point(answer.decision, label))
-                last = answer
-            if result.partial:
+            entry = _score_point_draws(result, view, point, tree, cfg, cache, budget, repeats, work)
+            if entry is None:
                 break
-            score = round(sum(scores) / len(scores), 6)
-            entry = {"world": view.id, "point": point["id"], "score": score, "scores": scores, "scorable": True,
-                     "origin": point.get("origin") or "auto", "decision": last.decision, "problem": last.problem,
-                     "label": {k: label[k] for k in ("accept", "reject", "allow_override")},
-                     "note": label.get("note")}
             entries.append(entry)
             result.points.append(entry)
         if result.partial:
             break
         result.worlds[view.id] = score_world(entries)
     return result
+
+
+def _score_point_draws(result: PolicyScore, view: WorldView, point: dict, tree: Path, cfg: config.Config,
+                       cache: Cache, budget: Budget, repeats: int, work: Path) -> dict | None:
+    """One point's repeats as a score entry; None when the call cap cut them short, which marks `result` partial."""
+    label = view.labels[point["id"]]
+    scores, last = [], None
+    for repeat in range(1, repeats + 1):
+        answer = replay(view.dir / "points" / point["id"], tree, cfg, cache, repeat=repeat, world=view.id,
+                        work=work / view.id / point["id"] / str(repeat), budget=budget)
+        if answer.skipped:
+            result.partial = True
+            return None
+        last = answer
+        if answer.failed:
+            result.unreplayed += 1
+            continue
+        scores.append(score_point(answer.decision, label))
+    score = round(sum(scores) / len(scores), 6) if scores else None
+    return {"world": view.id, "point": point["id"], "score": score, "scores": scores, "scorable": bool(scores),
+            "origin": point.get("origin") or "auto", "decision": last.decision, "problem": last.problem,
+            "label": {k: label[k] for k in ("accept", "reject", "allow_override")}, "note": label.get("note")}
 
 
 # --- the round -------------------------------------------------------------------------------
@@ -606,9 +637,12 @@ class _Dream:
     incumbent_text: str
     incumbent_policy: str  # the generated tree's policy hash when the dream read its incumbent
     echo: Callable[[str], None]
+    unreplayed: int = 0  # draws whose host failed twice, over every policy this dream scored
 
     def score(self, name: str, views: list[WorldView], tree: Path, repeats: int, work: str) -> PolicyScore:
-        return score_on(name, views, tree, self.cfg, self.cache, self.budget, repeats, self.dir / "replays" / work)
+        scored = score_on(name, views, tree, self.cfg, self.cache, self.budget, repeats, self.dir / "replays" / work)
+        self.unreplayed += scored.unreplayed
+        return scored
 
 
 def run(home: Path, cfg: config.Config, *, rounds: int = 3, repeats: int | None = None, max_calls: int = 1000,
@@ -632,7 +666,7 @@ def run(home: Path, cfg: config.Config, *, rounds: int = 3, repeats: int | None 
     decision = _decision(ctx, chosen, incumbent, candidates, best, confirmed, partial, confirmation)
     decision.update(deploy(dream_dir=ctx.dir, candidate=_candidate(ctx, best, incumbent), confirmation=confirmed,
                            confirmation_worlds=confirmation, partial=partial, cfg=cfg, root=root,
-                           enabled=deploy_enabled, echo=echo))
+                           enabled=deploy_enabled, echo=echo, unreplayed=ctx.unreplayed))
     (ctx.dir / "decision.json").write_text(json.dumps(decision, indent=2) + "\n", encoding="utf-8")
     report(ctx.dir, decision, incumbent, candidates, confirmed, views, selection, confirmation, unlabelled)
     echo(f"Dream {ctx.dir.name}: {'deployed' if decision['deployed'] else 'not deployed'} ({decision['reason']}). "
@@ -733,6 +767,7 @@ def _decision(ctx: _Dream, chosen: Split, incumbent: PolicyScore, candidates: li
                   "notes": chosen.notes, "confirmation_hash": chosen.confirmation_hash,
                   "rounds_served": rounds_served(ctx.dir.parent, chosen.confirmation_hash, ctx.dir)},
         "calls": {"fresh": ctx.budget.spent, "max": ctx.budget.limit}, "partial": partial,
+        "unreplayed": ctx.unreplayed,
         "best": best[0].name, "selection": {"incumbent": incumbent.mean,
                                             **{f"round-{c['round']}": c.get("score") for c in candidates}},
         "confirmation": {name: score.mean for name, score in confirmed.items()},
@@ -771,7 +806,9 @@ def _report_decision(decision: dict) -> list[str]:
             + (f" ({decision['cause']})" if decision.get("cause") else ""), "",
             (f"Best on selection: {decision['best']}. Fresh replay calls: {decision['calls']['fresh']} of "
              f"{decision['calls']['max']}" + (" - partial: the call cap was reached, so nothing deploys"
-                                              if decision["partial"] else "") + "."), ""]
+                                              if decision["partial"] else "") + "."),
+            (f"{decision['unreplayed']} replay draw(s) failed twice at the host and are unscored"
+             + ("; a dream with unreplayed points never deploys" if decision["unreplayed"] else "") + "."), ""]
 
 
 def _report_split(decision: dict, selection: list[WorldView], confirmation: list[WorldView],
@@ -806,7 +843,7 @@ def _selection_row(view: WorldView, incumbent: PolicyScore, candidates: list[dic
 def _report_origins(incumbent: PolicyScore) -> list[str]:
     lines = ["", "## Agreement by turn origin", "", "| Origin | Points | Incumbent mean score |", "| --- | --- | --- |"]
     for origin in ("cold", "warm", "auto"):
-        entries = [p for p in incumbent.points if p["origin"] == origin]
+        entries = [p for p in incumbent.points if p["origin"] == origin and p["scorable"]]
         label = origin if origin != "auto" else "auto (model.decide() points, listed separately)"
         lines.append(f"| {label} | {len(entries)} | "
                      f"{_fmt(sum(p['score'] for p in entries) / len(entries) if entries else None)} |")
@@ -869,10 +906,13 @@ def _report_candidates(candidates: list[dict]) -> list[str]:
 # --- the deploy gate -------------------------------------------------------------------------
 
 def gate(*, candidate: dict | None, confirmation: dict, confirmation_worlds: list, partial: bool,
-         cfg: config.Config) -> tuple[str | None, str | None]:
+         cfg: config.Config, unreplayed: int = 0) -> tuple[str | None, str | None]:
     """Why a candidate may not deploy, as (reason, cause); (None, None) when it clears every gate."""
     if partial:
         return "partial", "the call cap was reached mid-round"
+    if unreplayed:
+        return "unreplayed", (f"{unreplayed} replay draw(s) failed twice at the host (a crash, a non-zero exit, or "
+                              "a timeout), so the scores miss points")
     floor = _floor(confirmation_worlds, cfg)
     if floor:
         return "floor", floor
@@ -962,7 +1002,8 @@ def _restore(root: Path, originals: dict[str, bytes | None]) -> None:
 
 
 def deploy(*, dream_dir: Path, candidate: dict | None, confirmation: dict, confirmation_worlds: list,
-           partial: bool, cfg: config.Config, root: Path, enabled: bool = True, echo=print) -> dict:
+           partial: bool, cfg: config.Config, root: Path, enabled: bool = True, echo=print,
+           unreplayed: int = 0) -> dict:
     """Gate the best candidate and, when it clears every gate, commit it to main and push it to origin.
 
     Every repository path resolves under `root`. A failure before the commit leaves the working tree as it
@@ -975,7 +1016,7 @@ def deploy(*, dream_dir: Path, candidate: dict | None, confirmation: dict, confi
         return {**result, **_push_pending(root, pending, others)}
     builder = [sys.executable, str(root / "scripts" / "build_codex_plugin.py"), "--plugin", "factory"]
     refused = _refusal(root, builder, enabled, others, candidate=candidate, confirmation=confirmation,
-                       confirmation_worlds=confirmation_worlds, partial=partial, cfg=cfg)
+                       confirmation_worlds=confirmation_worlds, partial=partial, cfg=cfg, unreplayed=unreplayed)
     if refused:
         return {**result, "reason": refused[0], "cause": refused[1]}
     originals, failed = _write_skill(root, builder, candidate["text"])

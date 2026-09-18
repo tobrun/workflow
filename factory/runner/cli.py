@@ -1138,8 +1138,8 @@ def label_worlds(args: argparse.Namespace, home: Path, cfg: config.Config) -> in
     return 0
 
 
-DEPLOY_FAILURES = ("dirty", "branch", "unpushed_commits", "stale_plugins", "incumbent_changed", "build_failed",
-                   "validate", "commit_failed", "push_failed")
+DEPLOY_FAILURES = ("unreplayed", "dirty", "branch", "unpushed_commits", "stale_plugins", "incumbent_changed",
+                   "build_failed", "validate", "commit_failed", "push_failed")
 
 
 def cmd_dream(args: argparse.Namespace, home: Path, cfg: config.Config) -> int:

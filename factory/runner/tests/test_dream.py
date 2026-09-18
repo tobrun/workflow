@@ -190,6 +190,17 @@ class ReplayTests(FactoryTestCase):
         again = dream.replay(point, dream.GENERATED, self.cfg, self.cache, world="w")
         self.assertEqual((again.decision["action"], again.fresh), ("regate", True))
 
+    def test_a_replay_host_failure_is_retried_once_and_then_marked_failed_not_answered(self):
+        point = point_dir(self.root / "world", "build-1", plan=True)
+        self.replay_map.write_text(json.dumps({"build-1": {"mode": "exit", "exit": 1}}))
+        budget = dream.Budget(10)
+        failed = dream.replay(point, dream.GENERATED, self.cfg, self.cache, world="w", budget=budget)
+        self.assertEqual(len(self.replays()), 2)
+        self.assertEqual(budget.spent, 2)
+        self.assertEqual((failed.decision, failed.failed, failed.skipped), (None, True, False))
+        self.assertEqual(failed.problem, "replay exited 1")
+        self.assertIsNone(self.cache.get(failed.key))
+
     def test_a_replay_whose_host_cannot_start_did_not_finish(self):
         os.environ["FACTORY_CODEX_BIN"] = str(self.root / "no-such-codex")
         point = point_dir(self.root / "world", "build-1", plan=True)
@@ -1008,6 +1019,33 @@ class DeployTests(FactoryTestCase):
 
 
 class FullRoundDeployTests(RoundTestCase):
+    def test_an_incumbent_replay_outage_is_never_scored_as_a_wrong_answer(self):
+        """A Codex outage during the incumbent's confirmation repeats must not buy the candidate a deploy."""
+        repo = make_factory_repo(self.root / "workflow")
+        os.environ["FACTORY_REPO_ROOT"] = str(repo)
+        self.configure(dream_floor_worlds=2, dream_floor_repos=1)
+        for n in range(4):
+            make_world(self.home, f"20260917-120{n}-a", "github.com/acme/app", ["build-1", "ship-1"])
+        # Split by run: worlds 0 and 2 select, 1 and 3 confirm. The candidate wins selection on one point;
+        # on confirmation both policies answer alike, but every incumbent call there fails at the host.
+        outage = {"mode": "exit", "exit": 1}
+        incumbent = {"*": decision("advance"), "20260917-1200-a/build-1": decision("park"),
+                     **{f"20260917-120{n}-a/{p}": outage for n in (1, 3) for p in ("build-1", "ship-1")}}
+        self.files["replay"].write_text(json.dumps(incumbent))
+        self.files["candidate"].write_text(json.dumps({"*": decision("advance")}))
+        head = git(repo, "rev-parse", "HEAD")
+        code, out, _ = self.call("dream", "--rounds", "1")
+        decision_ = self.decision()
+        self.assertEqual((decision_["deployed"], decision_["reason"]), (False, "unreplayed"), decision_)
+        self.assertEqual(code, 1, out)
+        # Two repeats of four points, each tried twice: eight draws failed, sixteen calls.
+        self.assertEqual(decision_["unreplayed"], 8)
+        self.assertIsNone(decision_["confirmation"]["incumbent"])
+        self.assertEqual(decision_["confirmation"]["candidate"], 1.0)
+        self.assertIn("8 replay draw(s) failed", self.report())
+        self.assertEqual(git(repo, "rev-parse", "HEAD"), head)
+        self.assertEqual(git(self.root / "workflow-origin.git", "rev-parse", "main"), head)
+
     def test_a_winning_round_lands_on_the_fixture_main_with_its_policy_hash(self):
         repo = make_factory_repo(self.root / "workflow")
         os.environ["FACTORY_REPO_ROOT"] = str(repo)

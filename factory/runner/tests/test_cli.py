@@ -117,6 +117,70 @@ class ReportByPolicyTests(CliTestCase):
         self.assertEqual(json.loads(shown)["unknown"]["runs"], 1)
 
 
+class HistoryCommandTests(CliTestCase):
+    def built_world(self) -> Run:
+        from runner.worker import Worker
+        self.configure(foreman="off")
+        run = self.queued_run()
+        self.assertEqual(Worker(self.home, run.id, grace=1).run(), 0)
+        self.assertEqual(self.call("history", "build", run.id)[0], 0)
+        return run
+
+    def test_ls_lists_nothing_then_passes_over_an_unreadable_world(self):
+        code, shown, _ = self.call("history", "ls")
+        self.assertEqual(code, 0)
+        self.assertIn("No worlds yet", shown)
+        (self.home / "history" / "broken").mkdir(parents=True)
+        (self.home / "history" / "broken" / "world.json").write_text("{")
+        code, shown, _ = self.call("history", "ls")
+        self.assertEqual(code, 0)
+        self.assertIn("1 world(s) under", shown)
+        self.assertIn("broken  unreadable:", shown)
+
+    def test_build_and_label_need_ids_or_all(self):
+        for command in ("build", "label"):
+            with self.subTest(command=command):
+                code, _, err = self.call("history", command)
+                self.assertEqual(code, 2)
+                self.assertIn("ids or pass --all", err)
+
+    def test_a_hand_label_needs_accept_one_matching_world_and_a_real_point(self):
+        code, _, err = self.call("history", "label", "--set", "nope", "build-1")
+        self.assertEqual(code, 2)
+        self.assertIn("--set needs --accept", err)
+        code, _, err = self.call("history", "label", "--set", "nope", "build-1", "--accept", "publish")
+        self.assertEqual(code, 1)
+        self.assertIn("no single world matches 'nope'", err)
+        run = self.built_world()
+        code, _, err = self.call("history", "label", "--set", run.id[:-1], "nowhere-9", "--accept", "publish")
+        self.assertEqual(code, 1)
+        self.assertIn("has no point 'nowhere-9'", err)
+
+    def test_check_cases_reports_unmatched_cases_and_disagreements(self):
+        from unittest import mock
+
+        from runner import history
+        report = {"cases": 2, "matched": ["a"], "unmatched": ["b"], "unlabelled": [],
+                  "disagreements": ["a: regate (label accepts, hand does not)"], "mean_accept_size": None}
+        with mock.patch.object(history, "check_hand_cases", return_value=report):
+            code, shown, _ = self.call("history", "label", "--check-cases")
+        self.assertEqual(code, 0)
+        self.assertIn("Hand cases: 2 total, 1 matched, 1 unmatched, 0 matched but unlabelled.", shown)
+        self.assertIn("  unmatched b: no world point", shown)
+        self.assertIn("  disagreement a: regate", shown)
+        self.assertIn("mean accept-set size -", shown)
+
+
+class DreamArgumentTests(CliTestCase):
+    def test_rounds_and_max_calls_are_bounded_before_any_work(self):
+        for argv, message in ((("--rounds", "-1"), "--rounds must be 0 or more"),
+                              (("--max-calls", "0"), "--max-calls must be at least 1")):
+            with self.subTest(argv=argv):
+                code, _, err = self.call("dream", *argv)
+                self.assertEqual(code, 2)
+                self.assertIn(message, err)
+
+
 class OperatorTests(CliTestCase):
     def test_retry_with_note_reaches_the_prompt(self):
         run = self.parked("needs-human")

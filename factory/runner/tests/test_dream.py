@@ -10,9 +10,10 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from runner import config, dream, records
-from runner.tests.helpers import STUBS, FactoryTestCase, git, make_factory_repo
+from runner.tests.helpers import FactoryTestCase, call_cli, git, make_factory_repo
 
 ROOT = Path(__file__).resolve().parents[3]
 
@@ -65,11 +66,52 @@ class ScoreTests(unittest.TestCase):
         self.assertEqual(dream.score_policy([0.925, None, 0.5]), 0.7125)
 
     def test_another_decision_schema_is_a_cache_miss(self):
-        common = dict(policy="p", world="w", point="build-1", digest="d", model="m", effort="medium", repeat=1)
+        common = {"policy": "p", "world": "w", "point": "build-1", "digest": "d", "model": "m", "effort": "medium",
+                  "repeat": 1}
         self.assertNotEqual(dream.cache_key(schema="factory.decision/1", **common),
                             dream.cache_key(schema="factory.decision/2", **common))
         self.assertEqual(dream.cache_key(schema="factory.decision/1", **common),
                          dream.cache_key(schema="factory.decision/1", **common))
+
+    def test_scores_are_rounded_to_six_decimals(self):
+        with mock.patch.object(dream, "STEP_PENALTY", 1 / 3):
+            self.assertEqual(dream.score_point(decision("launch"), {"accept": ["repair", "launch"]}), 0.666667)
+        self.assertEqual(dream.score_world([{"score": 1}, {"score": 0}, {"score": 0}]), 0.333333)
+        self.assertEqual(dream.score_policy([1.0, 0.0, 0.0]), 0.333333)
+
+    def test_a_point_without_a_scorable_flag_counts(self):
+        self.assertEqual(dream.score_world([{"score": 0.5}]), 0.5)
+
+    def test_a_missing_final_message_is_a_problem_not_a_crash(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(dream.parse_decision(Path(tmp) / "last-message.md"),
+                             (None, "the replay wrote no final message"))
+
+    def test_a_decision_surrounded_by_prose_is_parsed(self):
+        body = json.dumps(decision("regate"))
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "last-message.md"
+            for text in (f"My decision:\n{body}. That is all.", f"{body}. That is all."):
+                path.write_text(text)
+                self.assertEqual(dream.parse_decision(path), (decision("regate"), None))
+
+    def test_a_message_without_an_opening_brace_is_parsed_whole(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "last-message.md"
+            path.write_text('"}"')
+            parsed, problem = dream.parse_decision(path)
+        self.assertIsNone(parsed)
+        self.assertTrue(problem.startswith("RecordError: "), problem)
+
+
+class MissingEventFilesTests(unittest.TestCase):
+    def test_only_files_lines_are_read_and_only_named_paths_that_are_absent_are_missing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            point = Path(tmp)
+            (point / "gate.json").write_text("{}")
+            (point / "event.md").write_text("Factory run r: event attempt.finished.\n"
+                                            "Files: gate gate.json; bare; stderr <run_dir>/stderr.log\n")
+            self.assertEqual(dream.missing_event_files(point), ["stderr <run_dir>/stderr.log"])
 
 
 def point_dir(root: Path, name: str, *, plan: bool, files: tuple[str, ...] = ("gate.json",)) -> Path:
@@ -138,11 +180,29 @@ class ReplayTests(FactoryTestCase):
         self.assertIn("stderr <run_dir>/attempts/build-1/stderr.log", full_prompt)
         self.assertIn(str(dream.GENERATED / "skills" / "foreman" / "SKILL.md"), full_prompt)
 
+    def test_a_replay_that_exits_non_zero_is_reported_and_never_cached(self):
+        point = point_dir(self.root / "world", "build-1", plan=True)
+        self.replay_map.write_text("not json")
+        failed = dream.replay(point, dream.GENERATED, self.cfg, self.cache, world="w")
+        self.assertEqual((failed.decision, failed.fresh), (None, True))
+        self.assertRegex(failed.problem, r"^replay exited [1-9]")
+        self.replay_map.write_text(json.dumps({"build-1": decision("regate")}))
+        again = dream.replay(point, dream.GENERATED, self.cfg, self.cache, world="w")
+        self.assertEqual((again.decision["action"], again.fresh), ("regate", True))
+
+    def test_a_replay_whose_host_cannot_start_did_not_finish(self):
+        os.environ["FACTORY_CODEX_BIN"] = str(self.root / "no-such-codex")
+        point = point_dir(self.root / "world", "build-1", plan=True)
+        answer = dream.replay(point, dream.GENERATED, self.cfg, self.cache, world="w")
+        self.assertIsNone(answer.decision)
+        self.assertIn("replay did not finish", answer.problem)
+        self.assertIsNone(self.cache.get(answer.key))
+
 
 class EvalWrapperTests(FactoryTestCase):
     def run_script(self, script: str, *args: str) -> subprocess.CompletedProcess:
         return subprocess.run([sys.executable, str(ROOT / "factory" / "evals" / "foreman" / script), *args],
-                              capture_output=True, text=True, env=dict(os.environ), timeout=120)
+                              capture_output=True, text=True, env=dict(os.environ), timeout=120, check=False)
 
     def test_the_eval_runner_passes_a_case_the_replay_stub_answers(self):
         answers = self.root / "replay.json"
@@ -204,6 +264,20 @@ class SplitTests(unittest.TestCase):
         self.assertEqual((len(chosen.selection), len(chosen.confirmation)), (2, 2))
         self.assertIn("the repository rule could not apply", " ".join(chosen.notes))
 
+    def test_whole_repositories_stop_once_both_confirmation_targets_are_met(self):
+        chosen = dream.split(self.worlds({"a": 3, "b": 3, "c": 3, "d": 3}))
+        self.assertEqual(chosen.rule, "whole-repo")
+        self.assertEqual({w.split("-")[1][0] for w in chosen.confirmation}, {"a", "b"})
+        self.assertEqual(len(chosen.selection), 6)
+        self.assertIn("github.com/acme/a, github.com/acme/b", chosen.notes[0])
+
+    def test_a_repository_with_one_world_splits_by_run_and_is_named(self):
+        chosen = dream.split(self.worlds({"a": 3, "b": 1}))
+        self.assertEqual(chosen.rule, "split-by-run")
+        self.assertEqual(chosen.confirmation, ["20260917-a01-run", "20260917-b00-run"])
+        self.assertEqual(chosen.notes, [("repository github.com/acme/b holds fewer than two worlds and could not span "
+                                         "both sets")])
+
     def test_input_order_never_changes_the_split(self):
         worlds = self.worlds({"a": 3, "b": 2, "c": 4})
         self.assertEqual(dream.split(worlds), dream.split(list(reversed(worlds))))
@@ -213,6 +287,23 @@ class SplitTests(unittest.TestCase):
         chosen = dream.split(self.worlds({"a": 1}))
         self.assertEqual((chosen.rule, chosen.confirmation), ("too-small", []))
         self.assertEqual(len(chosen.confirmation_hash), 64)
+
+    def test_two_worlds_are_enough_to_hold_one_back(self):
+        chosen = dream.split(self.worlds({"a": 2}))
+        self.assertEqual((chosen.rule, chosen.selection, chosen.confirmation),
+                         ("split-by-run", ["20260917-a00-run"], ["20260917-a01-run"]))
+
+    def test_whole_repositories_continue_until_the_repository_target_is_met_too(self):
+        chosen = dream.split(self.worlds({"a": 6, "b": 1, "c": 1, "d": 1}))
+        self.assertEqual(chosen.rule, "whole-repo")
+        self.assertEqual({w.split("-")[1][0] for w in chosen.confirmation}, {"a", "b"})
+        self.assertEqual(len(chosen.confirmation), 7)
+
+    def test_two_repositories_of_two_or_more_worlds_split_each_repository_by_run(self):
+        chosen = dream.split(self.worlds({"a": 3, "b": 2}))
+        self.assertEqual(chosen.rule, "split-by-run")
+        self.assertEqual(chosen.confirmation, ["20260917-a01-run", "20260917-b01-run"])
+        self.assertEqual(chosen.notes, ["two repositories: each one feeds both sets, split by run"])
 
 
 INCUMBENT = (ROOT / "factory" / "skills" / "foreman" / "SKILL.md").read_text(encoding="utf-8")
@@ -257,6 +348,96 @@ class CandidateCheckTests(unittest.TestCase):
 
     def test_a_sentence_routing_the_decision_to_a_person_is_rejected(self):
         self.assertEqual(self.check(self.with_line("When unsure, ask the operator which stage to launch.")), "F03")
+
+    def test_a_skill_without_the_incumbent_frontmatter_is_rejected(self):
+        self.assertEqual(self.check("Preface.\n" + INCUMBENT), "frontmatter")
+
+    def test_an_em_dash_is_rejected(self):
+        self.assertEqual(self.check(self.with_line("Regate first \u2014 then advance.")), "emdash")
+
+    def test_any_run_id_shape_is_rejected_even_from_an_unseen_run(self):
+        self.assertEqual(self.check(self.with_line("As run 20250101-0900-other showed, regate first.")), "denylist")
+
+    def filled(self, lines: int, *, newline: bool) -> str:
+        text = INCUMBENT + "Keep it short.\n" * (lines - INCUMBENT.count("\n"))
+        return text if newline else text.rstrip("\n")
+
+    def test_exactly_the_line_limit_passes_with_or_without_a_final_newline(self):
+        self.assertIsNone(self.check(self.filled(150, newline=True)))
+        self.assertIsNone(self.check(self.filled(150, newline=False)))
+
+    def test_one_line_past_the_limit_without_a_final_newline_is_rejected(self):
+        self.assertEqual(dream.check_candidate(self.filled(151, newline=False), self.deny, INCUMBENT),
+                         ("length", "151 lines, the limit is 150"))
+
+    def test_a_changed_frontmatter_is_rejected(self):
+        text = INCUMBENT.replace("name: foreman\n", "name: foreman-two\n", 1)
+        self.assertEqual(self.check(text), "frontmatter")
+
+    def test_the_f03_detail_quotes_the_whole_phrase(self):
+        failed = dream.check_candidate(self.with_line("When unsure, ask the operator which stage to launch."),
+                                       self.deny, INCUMBENT)
+        self.assertEqual(failed, ("F03", "routes a decision to a person: 'ask the operator'"))
+
+    def test_a_github_token_of_the_minimum_length_is_rejected_with_the_truncated_pattern(self):
+        token = "ghp_" + "a" * 30
+        failed = dream.check_candidate(self.with_line(f"Never print {token} in guidance."), self.deny, INCUMBENT)
+        self.assertEqual(failed, ("secret", "a credential-shaped literal matching \\b(?:gh[pousr]_[0-9A-Za-z]{30,"))
+        self.assertIsNone(self.check(self.with_line(f"Never print {token[:-1]} in guidance.")))
+
+
+class WindowTests(unittest.TestCase):
+    def test_a_window_is_exactly_forty_normalized_characters(self):
+        text = "".join(chr(ord("a") + i % 26) for i in range(41))
+        self.assertEqual(dream._windows(text[:39]), set())
+        self.assertEqual(dream._windows(text[:40]), {hash(text[:40])})
+        self.assertEqual(dream._windows(text), {hash(text[:40]), hash(text[1:])})
+
+    def test_a_gate_reason_is_read_from_a_json_object_and_falls_back_to_the_raw_text(self):
+        self.assertEqual(dream._gate_reason('{"reason": "the gate failed"}'), "the gate failed")
+        self.assertEqual(dream._gate_reason('{"reason": null}'), "")
+        self.assertEqual(dream._gate_reason("[1]"), "[1]")
+        self.assertEqual(dream._gate_reason("not json"), "not json")
+
+
+class DenylistTests(unittest.TestCase):
+    def test_an_unreadable_digest_and_a_raw_gate_record_still_feed_the_denylist(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            world = make_world(Path(tmp), "20260917-1200-a", "github.com/acme/app", ["build-1", "ship-1"],
+                               labelled=False, reason="the gate passed")
+            (world / "points" / "build-1" / "digest.json").unlink()
+            (world / "points" / "build-1" / "gate.json").write_text("the playwright config pins port 4173 today")
+            (world / "points" / "ship-1" / "digest.json").write_text(json.dumps({
+                "run": {"branch": "factory/fixture-branch"}, "pr": {"number": 4821}}))
+            deny = dream.denylist([world])
+        self.assertTrue({"20260917-1200-a", "github.com/acme/app", "fixture", "factory/fixture-branch", "#4821",
+                         "pull/4821"} <= deny.literals)
+        self.assertTrue(dream._windows("the playwright config pins port 4173 today") <= deny.shingles)
+
+    def test_literals_of_four_characters_or_more_are_kept_from_the_digest_run(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            world = make_world(Path(tmp), "20260917-1200-a", "github.com/acme/app", ["build-1", "ship-1"],
+                               labelled=False)
+            (world / "points" / "build-1" / "digest.json").write_text(json.dumps({"run": {"branch": "abc",
+                                                                                         "plan": "plan-a"}}))
+            (world / "points" / "ship-1" / "digest.json").write_text(json.dumps({"run": {"branch": "wxyz"}}))
+            deny = dream.denylist([world])
+        self.assertTrue({"plan-a", "wxyz"} <= deny.literals)
+        self.assertNotIn("abc", deny.literals)
+        self.assertNotIn("", deny.literals)
+
+    def test_the_shingles_are_the_gate_reason_the_agent_message_and_the_event_reason(self):
+        gate = "the playwright config pins port 4173 but vite serves on 5173"
+        message = '{"reason": "an agent message that happens to be a json object"}'
+        with tempfile.TemporaryDirectory() as tmp:
+            world = make_world(Path(tmp), "20260917-1200-a", "github.com/acme/app", ["build-1"], labelled=False,
+                               reason="the event reason is long enough to leave windows behind")
+            point = world / "points" / "build-1"
+            (point / "gate.json").write_text(json.dumps({"passed": False, "reason": gate}))
+            (point / "last-message.md").write_text(message)
+            deny = dream.denylist([world])
+        self.assertEqual(deny.shingles, dream._windows(gate) | dream._windows(message)
+                         | dream._windows("the event reason is long enough to leave windows behind"))
 
 
 def make_world(home: Path, run_id: str, repository: str, points: list[str], *, unscorable: tuple = (),
@@ -322,13 +503,7 @@ class RoundTestCase(FactoryTestCase):
         self.files["dream"].write_text(json.dumps({"1": step}))
 
     def call(self, *argv: str) -> tuple[int, str, str]:
-        import contextlib
-        import io
-        from runner import cli
-        stdout, stderr = io.StringIO(), io.StringIO()
-        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
-            code = cli.main(list(argv))
-        return code, stdout.getvalue(), stderr.getvalue()
+        return call_cli(*argv)
 
     def replays(self, *, candidate: bool | None = None) -> list[dict]:
         calls = [c for c in self.stub_calls("codex") if c["env"].get("FACTORY_ROLE") == "replay"]
@@ -396,7 +571,7 @@ class RoundTests(RoundTestCase):
         from runner import history
         make_world(self.home, "20260917-1200-a", "github.com/acme/app", ["build-1"])
         with history.HistoryLock(self.home):
-            code, out, err = self.call("dream", "--rounds", "1")
+            code, _out, err = self.call("dream", "--rounds", "1")
         self.assertEqual(code, 3)
         self.assertIn("history.lock", err)
         self.assertFalse((self.home / "dreams").exists())
@@ -467,6 +642,35 @@ class RoundTests(RoundTestCase):
         self.assertIn("Rejected by `denylist`", self.report())
         self.assertEqual(self.decision()["best"], "incumbent")
 
+    def test_a_dream_session_that_writes_no_skill_is_a_rejected_round(self):
+        make_world(self.home, "20260917-1200-a", "github.com/acme/app", ["build-1"])
+        self.dream_step("none")
+        code, out, _ = self.call("dream", "--rounds", "1")
+        self.assertEqual(code, 0, out)
+        self.assertIn("round 1: no candidate (the dream session wrote no SKILL.md)", out)
+        self.assertEqual(self.replays(candidate=True), [])
+        self.assertEqual(self.decision()["best"], "incumbent")
+        self.assertIn("Rejected by `session`: the dream session wrote no SKILL.md", self.report())
+
+    def test_the_call_cap_inside_a_candidate_round_ends_the_dream(self):
+        make_world(self.home, "20260917-1200-a", "github.com/acme/app", ["build-1", "ship-1"])
+        code, out, _ = self.call("dream", "--rounds", "2", "--max-calls", "3")
+        self.assertEqual(code, 0, out)
+        decision_ = self.decision()
+        self.assertEqual((decision_["partial"], decision_["reason"]), (True, "partial"))
+        self.assertEqual(decision_["selection"], {"incumbent": 0.0, "round-1": None})
+        self.assertEqual(len(self.replays(candidate=True)), 1)
+        self.assertFalse((self.dream_dir() / "rounds" / "2").exists())
+        self.assertIn("Selection score - (partial)", self.report())
+
+    def test_rounds_served_counts_earlier_dreams_on_the_same_confirmation_set(self):
+        dreams = self.home / "dreams"
+        for name, body in (("current", {"split": {"confirmation_hash": "h"}}), ("a", {"split": {"confirmation_hash": "h"}}),
+                           ("b", "{"), ("c", {"split": {"confirmation_hash": "other"}}), ("d", [])):
+            (dreams / name).mkdir(parents=True)
+            (dreams / name / "decision.json").write_text(body if isinstance(body, str) else json.dumps(body))
+        self.assertEqual(dream.rounds_served(dreams, "h", dreams / "current"), 1)
+
     def test_a_world_without_a_scorable_point_is_never_replayed(self):
         from runner import history
         unscored = make_world(self.home, "20260917-1200-a", "github.com/acme/app", ["build-1"], unscorable=("build-1",))
@@ -496,6 +700,18 @@ class ReadOnlyTests(RoundTestCase):
         self.assertEqual(self.call("dream", "--rounds", "1", "--no-deploy")[0], 0)
         self.assertTrue(self.replays())
         self.assertEqual(tree_hashes(run.dir), before)
+
+
+class PushCauseTests(unittest.TestCase):
+    def test_a_push_failure_is_named_by_its_cause(self):
+        self.assertEqual(dream.push_cause("! [rejected] main -> main (fetch first)"), "non-fast-forward")
+        self.assertEqual(dream.push_cause("fatal: unable to access 'https://x/': Could not resolve host"), "network")
+        self.assertEqual(dream.push_cause("remote: hook declined\nerror: failed to push some refs"),
+                         "error: failed to push some refs")
+        self.assertEqual(dream.push_cause(""), "git push failed")
+
+    def test_an_unknown_cause_is_its_last_line_cut_at_300_characters(self):
+        self.assertEqual(dream.push_cause("remote: hook declined\n" + "x" * 301), "x" * 300)
 
 
 class Score:
@@ -535,11 +751,13 @@ class DeployTests(FactoryTestCase):
         self.candidate = {"text": text, "tree": tree, "name": "round-1"}
 
     def deploy(self, *, gain: float = 0.06, worlds: int = 6, points: int = 5,
-               repositories: tuple = ("github.com/acme/app", "github.com/acme/web"), partial: bool = False) -> dict:
+               repositories: tuple = ("github.com/acme/app", "github.com/acme/web"), partial: bool = False,
+               enabled: bool = True, winner: bool = True) -> dict:
         views = confirmation_views(worlds, points, list(repositories)) if worlds else []
         scores = {"incumbent": Score(0.5, "incumbent"), "candidate": Score(0.5 + gain)}
-        return dream.deploy(dream_dir=self.dream_dir, candidate=self.candidate, confirmation=scores,
-                            confirmation_worlds=views, partial=partial, cfg=self.cfg, root=self.repo, echo=lambda _: None)
+        return dream.deploy(dream_dir=self.dream_dir, candidate=self.candidate if winner else None,
+                            confirmation=scores, confirmation_worlds=views, partial=partial, cfg=self.cfg,
+                            root=self.repo, enabled=enabled, echo=lambda _: None)
 
     def head(self) -> str:
         return git(self.repo, "rev-parse", "HEAD")
@@ -606,6 +824,42 @@ class DeployTests(FactoryTestCase):
     def test_a_partial_round_never_deploys(self):
         head = self.head()
         self.assertEqual(self.deploy(partial=True)["reason"], "partial")
+        self.assert_untouched(head)
+
+    def test_no_candidate_over_the_floor_leaves_the_incumbent(self):
+        head = self.head()
+        decision_ = self.deploy(winner=False)
+        self.assertEqual(decision_["reason"], "incumbent")
+        self.assertNotIn("source_hash", decision_)
+        self.assert_untouched(head)
+
+    def test_no_deploy_stops_a_winner_before_the_checkout_is_touched(self):
+        head = self.head()
+        self.assertEqual(self.deploy(enabled=False)["reason"], "no_deploy")
+        self.assert_untouched(head)
+
+    def test_a_checkout_off_main_refuses_the_deploy(self):
+        git(self.repo, "checkout", "-q", "-b", "side")
+        head = self.head()
+        decision_ = self.deploy()
+        self.assertEqual((decision_["reason"], decision_["cause"]), ("branch", "main is not checked out (side)"))
+        self.assert_untouched(head)
+
+    def test_an_unreadable_index_refuses_the_deploy_as_dirty(self):
+        head = self.head()
+        (self.repo / ".git" / "index").write_bytes(b"not an index")
+        decision_ = self.deploy()
+        self.assertEqual(decision_["reason"], "dirty")
+        self.assertIn("index", decision_["cause"])
+        self.assertEqual(self.head(), head)
+        self.assertEqual((self.source.read_bytes(), self.generated.read_bytes()), self.originals)
+
+    def test_an_unpushed_deploy_that_now_pushes_adds_nothing_new(self):
+        git(self.repo, "commit", "--quiet", "--allow-empty", "-m", "feat(foreman): dream 20260917-0900-dream raises it")
+        head = self.head()
+        decision_ = self.deploy()
+        self.assertEqual((decision_["deployed"], decision_["reason"], decision_["pending"]), (False, "pushed_pending", [head]))
+        self.assertEqual(git(self.root / "workflow-origin.git", "rev-parse", "main"), head)
         self.assert_untouched(head)
 
     def test_a_failing_validate_restores_both_skill_files(self):

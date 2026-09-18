@@ -1,7 +1,5 @@
 """Runtime provenance and repository readiness: what ran, and whether it can run, before the expensive part."""
 
-import contextlib
-import io
 import json
 import os
 import shutil
@@ -11,7 +9,8 @@ from unittest import mock
 
 from runner import cli, events, provenance
 from runner.model import Run
-from runner.tests.helpers import CONTRACT, SPEC, FactoryTestCase, git, happy_scenario, make_repo, review_step, scope_files
+from runner.tests.helpers import (CONTRACT, SPEC, FactoryTestCase, call_cli, git, happy_scenario, make_repo,
+                                  review_step, scope_files)
 from runner.worker import Worker
 
 GENERATED = provenance.GENERATED
@@ -19,10 +18,7 @@ GENERATED = provenance.GENERATED
 
 class ProvenanceTestCase(FactoryTestCase):
     def call(self, *argv: str) -> tuple[int, str, str]:
-        stdout, stderr = io.StringIO(), io.StringIO()
-        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
-            code = cli.main(list(argv))
-        return code, stdout.getvalue(), stderr.getvalue()
+        return call_cli(*argv)
 
     def drifted_copy(self, where: Path) -> Path:
         shutil.copytree(GENERATED, where, ignore=shutil.ignore_patterns("__pycache__"))

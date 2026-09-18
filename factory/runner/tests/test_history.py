@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import contextlib
 import hashlib
-import io
 import json
 import os
 import shutil
@@ -13,8 +11,9 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from runner import cli, history, records
-from runner.tests.helpers import FactoryTestCase, happy_scenario
+from runner import history, records
+from runner.model import Run
+from runner.tests.helpers import FactoryTestCase, call_cli
 from runner.worker import Worker
 
 
@@ -29,10 +28,7 @@ def tree_hashes(root: Path) -> dict[str, str]:
 
 class HistoryTestCase(FactoryTestCase):
     def call(self, *argv: str) -> tuple[int, str, str]:
-        stdout, stderr = io.StringIO(), io.StringIO()
-        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
-            code = cli.main(list(argv))
-        return code, stdout.getvalue(), stderr.getvalue()
+        return call_cli(*argv)
 
     def finished_run(self, *, foreman: str = "off", decisions: list | None = None):
         self.configure(foreman=foreman)
@@ -203,6 +199,16 @@ class LabelTests(HistoryTestCase):
         self.assertFalse((world_dir / "labels.json").exists())
         self.assertEqual(len(self.labeller_calls()), 2)
 
+    def test_a_fully_labelled_world_is_unchanged_without_a_labeller_session(self):
+        self.hindsight("auto")
+        run, _ = self.built_world()
+        self.assertEqual(self.call("history", "label", run.id)[0], 0)
+        before = len(self.labeller_calls())
+        code, out, _ = self.call("history", "label", run.id)
+        self.assertEqual(code, 0, out)
+        self.assertIn(f"unchanged {run.id}", out)
+        self.assertEqual(len(self.labeller_calls()), before)
+
     def test_label_all_keeps_going_past_a_failed_world(self):
         first, _ = self.built_world()
         second, second_dir = self.built_world()
@@ -254,6 +260,18 @@ class HandCaseTests(unittest.TestCase):
         self.assertEqual(report["unmatched"], ["stale-plugin-scope-review-1"])
         self.assertEqual(report["cases"], 1)
 
+    def test_an_unlabelled_point_is_reported_and_an_unreadable_world_is_passed_over(self):
+        run_dir = fixture_run(self.root, attempts=[attempt("ship", n) for n in (1, 2, 3, 4)])
+        history.build(run_dir, self.home)
+        broken = history.root(self.home) / "20260101-0000-broken"
+        broken.mkdir()
+        (broken / "world.json").write_text("{not json")
+        self.case("fixture-ship-4", "2026-09-17T12:00:00Z", ["publish"])
+        report = history.check_hand_cases(self.home, self.cases)
+        self.assertEqual(report["matched"], ["fixture-ship-4"])
+        self.assertEqual(report["unlabelled"], ["fixture-ship-4"])
+        self.assertIsNone(report["mean_accept_size"])
+
 
 class LabelRecordTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -282,6 +300,16 @@ class LabelRecordTests(unittest.TestCase):
         with self.assertRaises(history.LabelError):
             history.set_label(self.world_dir, "build-1", [])
         self.assertFalse((self.world_dir / "labels.json").exists())
+
+    def test_a_hand_label_for_a_point_the_world_lacks_names_the_points_there_are(self):
+        with self.assertRaises(history.LabelError) as raised:
+            history.set_label(self.world_dir, "ship-9", ["publish"])
+        self.assertIn("has no point 'ship-9'; points: build-1", str(raised.exception))
+        self.assertFalse((self.world_dir / "labels.json").exists())
+
+    def test_an_unreadable_labels_file_reads_as_unlabelled(self):
+        (self.world_dir / "labels.json").write_text("{not json")
+        self.assertIsNone(history.load_labels(self.world_dir))
 
 
 def fixture_run(root: Path, *, attempts: list[dict], conditions: list | None = None, turns: dict | None = None,
@@ -350,6 +378,11 @@ class BuildRulesTests(unittest.TestCase):
         self.assertEqual(history.repo_key("https://github.com/Acme/App.git"), "github.com/acme/app")
         self.assertNotEqual(history.repo_key("git@github.com:acme/app.git"), history.repo_key("git@github.com:acme/web"))
         self.assertNotIn("/", history.repo_key("/Users/someone/project").split(":", 1)[1])
+
+    def test_a_path_key_is_the_directory_name_and_ten_hex_characters_of_the_path_hash(self):
+        path = str(self.root / "project.git")
+        digest = hashlib.sha256(path.encode("utf-8")).hexdigest()
+        self.assertEqual(history.repo_key(path), f"path:project-{digest[:10]}")
 
     def test_no_absolute_path_survives_and_the_run_id_stays_only_where_the_format_puts_it(self):
         run_dir = fixture_run(self.root, home=Path.home(), attempts=[
@@ -424,6 +457,65 @@ class BuildRulesTests(unittest.TestCase):
         self.assertTrue(point["scorable"])
         self.assertFalse((result.world / "points" / "build-1" / "plan").exists())
         self.assertIn("no inputs/ directory", " ".join(result.notes))
+
+    def test_a_fallback_turn_without_its_digest_is_reconstructed_and_names_its_missing_files(self):
+        gate = self.root / "runs/20260917-1200-fixture/attempts/build-1/gate.json"
+        run_dir = fixture_run(self.root, attempts=[attempt("build", 1, foreman={"turn": 1, "dir": "foreman/turns/1"})],
+                              turns={1: {"record": {"schema": "factory.foreman-turn/2", "turn": 1, "cold": False,
+                                                    "source": "fallback", "decision": None,
+                                                    "event": {"kind": "attempt.finished", "outcome": "done", "files": {
+                                                        "gate": str(gate), "result": str(self.root / "gone.json")}}},
+                                         "digest": {}, "prompt": "Factory run 20260917-1200-fixture: event x.\n"}})
+        (run_dir / "foreman" / "turns" / "1" / "digest.json").unlink()
+        result = history.build(run_dir, self.home)
+        point = history.load_world(result.world)["points"][0]
+        self.assertEqual((point["decision_source"], point["origin"], point["snapshot"]),
+                         ("fallback", "warm", "reconstructed"))
+        self.assertNotIn("recorded_decision", point)
+        self.assertEqual(point["event"]["missing_files"], ["result"])
+        self.assertTrue((result.world / "points" / "build-1" / "gate.json").is_file())
+
+    def test_an_attempt_whose_turn_record_is_unreadable_is_skipped_with_its_error(self):
+        run_dir = fixture_run(self.root, attempts=[attempt("build", 1, foreman={"turn": 1, "dir": "foreman/turns/1"}),
+                                                   attempt("ship", 1)],
+                              turns={1: {"record": {"turn": "first", "source": "foreman"}, "digest": {}, "prompt": ""}})
+        result = history.build(run_dir, self.home)
+        self.assertEqual([p["id"] for p in history.load_world(result.world)["points"]], ["ship-1"])
+        self.assertTrue(any("build-1: attempt skipped, unreadable (ValueError" in note for note in result.notes),
+                        result.notes)
+
+    def test_a_forced_rebuild_keeps_the_labels(self):
+        run_dir = fixture_run(self.root, attempts=[attempt("build", 1)])
+        world_dir = history.build(run_dir, self.home).world
+        label = history.set_label(world_dir, "build-1", ["regate"])
+        self.assertEqual(history.build(run_dir, self.home).status, "unchanged")
+        self.assertEqual(history.build(run_dir, self.home, force=True).status, "built")
+        self.assertEqual(history.load_labels(world_dir)["labels"]["build-1"], label)
+
+    def test_a_json_file_that_does_not_parse_is_copied_as_rewritten_text(self):
+        run_dir = fixture_run(self.root, attempts=[attempt("build", 1)])
+        (run_dir / "attempts" / "build-1" / "gate.json").write_text(f"truncated {{ {run_dir}/worktree/app.py")
+        result = history.build(run_dir, self.home)
+        self.assertEqual((result.world / "points" / "build-1" / "gate.json").read_text(),
+                         "truncated { <worktree>/app.py")
+
+    def test_without_git_the_repository_is_keyed_by_its_path(self):
+        run = Run.load(fixture_run(self.root, attempts=[attempt("build", 1)]))
+        with mock.patch.dict(os.environ, {"PATH": ""}):
+            key = history.repository(run)
+        self.assertEqual(key, history.repo_key(run.data["repo"]))
+        self.assertTrue(key.startswith("path:project-"), key)
+
+    def test_a_home_without_history_has_no_worlds(self):
+        self.assertEqual(history.worlds(self.home), [])
+
+    def test_redact_takes_paths_the_run_id_and_remote_urls_out_of_a_case(self):
+        run = Run.load(fixture_run(self.root, attempts=[attempt("build", 1)]))
+        text = (f"{run.worktree}/app.py {run.dir}/note {run.data['repo']} {run.id} {Path.home()}/.config "
+                "https://github.com/acme/app/pull/3 https://acme.atlassian.net/browse/APP-12")
+        self.assertEqual(history.redact(text, run),
+                         "<worktree>/app.py <run_dir>/note <repo> <run_id> <home>/.config "
+                         "https://github.com/example/project/pull/3 https://example.atlassian.net/browse/KEY-1")
 
 
 if __name__ == "__main__":

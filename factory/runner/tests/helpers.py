@@ -246,6 +246,18 @@ def git(cwd: Path, *args: str) -> str:
     return subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, text=True).stdout.strip()
 
 
+def call_cli(*argv: str) -> tuple[int, str, str]:
+    """Run the factory CLI in-process and return (exit code, stdout, stderr)."""
+    import contextlib
+    import io
+
+    from runner import cli
+    stdout, stderr = io.StringIO(), io.StringIO()
+    with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+        code = cli.main(list(argv))
+    return code, stdout.getvalue(), stderr.getvalue()
+
+
 def make_repo(root: Path, name: str = "project") -> Path:
     origin = root / f"{name}-origin.git"
     repo = root / name

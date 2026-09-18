@@ -43,6 +43,7 @@ class ForemanTestCase(FactoryTestCase):
     def call(self, *argv: str) -> tuple[int, str]:
         import contextlib
         import io
+
         from runner import cli
         stdout = io.StringIO()
         with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(io.StringIO()):
@@ -901,6 +902,7 @@ class PolicyIdentityTests(ForemanTestCase):
 
     def test_a_first_schema_turn_record_loads_without_a_policy(self):
         import tempfile
+
         from runner import foreman
         with tempfile.TemporaryDirectory() as tmp:
             turn_dir = Path(tmp) / "foreman" / "turns" / "1"
@@ -920,6 +922,7 @@ class PolicyIdentityTests(ForemanTestCase):
 class PolicyHashTests(unittest.TestCase):
     def test_one_byte_of_the_protocol_reference_changes_the_policy_hash(self):
         import tempfile
+
         from runner import provenance
         with tempfile.TemporaryDirectory() as tmp:
             tree = Path(tmp) / "plugins" / "factory"
@@ -934,6 +937,40 @@ class PolicyHashTests(unittest.TestCase):
             after = provenance.policy_identity({"resolution": "direct-path"}, root=Path(tmp))
             self.assertNotEqual(before["sha256"], after["sha256"])
             self.assertEqual(before["skill"], after["skill"])
+
+    def policy_tree(self, root: Path, skill: str) -> Path:
+        (root / "skills" / "foreman").mkdir(parents=True)
+        (root / "references").mkdir()
+        (root / "skills" / "foreman" / "SKILL.md").write_text(skill)
+        (root / "references" / "factory-run.md").write_text("# Protocol\n")
+        return root
+
+    def test_the_policy_is_the_installed_tree_only_when_codex_loads_an_installed_path(self):
+        import tempfile
+
+        from runner import provenance
+        with tempfile.TemporaryDirectory() as tmp:
+            generated = self.policy_tree(Path(tmp) / "plugins" / "factory", "# Generated\n")
+            installed = self.policy_tree(Path(tmp) / "installed", "# Installed\n")
+            generated_policy, installed_policy = provenance.tree_policy(generated), provenance.tree_policy(installed)
+            self.assertNotEqual(generated_policy["sha256"], installed_policy["sha256"])
+            cases = [
+                ({"resolution": "installed-plugin", "installed": {"path": str(installed)}}, installed_policy),
+                ({"resolution": "installed-plugin", "installed": {"path": None}}, generated_policy),
+                ({"resolution": "installed-plugin"}, generated_policy),
+                ({"resolution": "direct-path", "installed": {"path": str(installed)}}, generated_policy),
+                (None, generated_policy),
+            ]
+            for bundles, expected in cases:
+                with self.subTest(bundles=bundles):
+                    self.assertEqual(provenance.policy_identity(bundles, root=Path(tmp)), expected)
+
+    def test_without_a_root_the_policy_is_the_repository_generated_tree(self):
+        from runner import provenance
+        expected = provenance.tree_policy(provenance.REPO_ROOT / "plugins" / "factory")
+        self.assertEqual(provenance.policy_identity(None), expected)
+        self.assertEqual(expected["skill"], str(provenance.REPO_ROOT / "plugins" / "factory" / "skills" / "foreman"
+                                                / "SKILL.md"))
 
 
 class OperatorSurfaceTests(ForemanTestCase):

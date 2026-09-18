@@ -4,8 +4,6 @@ Crashes come from `FACTORY_FAULT` points (see runner/faults.py), so every bounda
 deterministically instead of by timing guesses.
 """
 
-import contextlib
-import io
 import json
 import os
 import signal
@@ -17,17 +15,23 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from runner import cli, events, executor, supervise
+from runner import events, executor, supervise
 from runner.model import Run
-from runner.tests.helpers import STUBS, FactoryTestCase, build_step, git, happy_scenario, review_step, ship_step
+from runner.tests.helpers import (
+    STUBS,
+    FactoryTestCase,
+    build_step,
+    call_cli,
+    git,
+    happy_scenario,
+    review_step,
+    ship_step,
+)
 
 
 class RecoveryTestCase(FactoryTestCase):
     def call(self, *argv: str) -> tuple[int, str, str]:
-        stdout, stderr = io.StringIO(), io.StringIO()
-        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
-            code = cli.main(list(argv))
-        return code, stdout.getvalue(), stderr.getvalue()
+        return call_cli(*argv)
 
     def start(self, run: Run, fault: str | None = None) -> None:
         """Start a detached worker for a queued run, optionally with a one-shot fault."""

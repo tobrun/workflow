@@ -243,5 +243,156 @@ class LayoutTests(unittest.TestCase):
         self.assertIn("does not match its sha256 [record.evidence]", result.stderr)
 
 
+def world(**overrides) -> dict:
+    record = {"schema": "factory.world/1", "run": {"id": "r1", "attempts": [
+                  {"stage": "build", "n": 1, "outcome": "done", "tokens": 10}]},
+              "repository": "/repo", "terminal_status": "done", "decision_schema": "factory.decision/1",
+              "source_sha256": "0" * 64, "builder": "test",
+              "points": [{"id": "build-1", "stage": "build", "attempt": 1, "event": {}, "scorable": True,
+                          "snapshot": "recorded", "plan": False, "origin": "cold", "decision_source": "foreman",
+                          "recorded_decision": {"action": "advance", "vocabulary": "decision"}}]}
+    record.update(overrides)
+    return record
+
+
+def label(**overrides) -> dict:
+    entry = {"accept": ["advance"], "reject": ["park"], "allow_override": False, "note": "the gate passed"}
+    entry.update(overrides)
+    return entry
+
+
+class HistoryRecordTests(unittest.TestCase):
+    def assertInvalid(self, validate, data: object, needle: str, **kwargs) -> None:
+        with self.assertRaises(records.RecordError) as caught:
+            validate(data, **kwargs)
+        self.assertEqual(caught.exception.code, "record.invalid")
+        self.assertIn(needle, str(caught.exception))
+
+    def test_world_accepts_a_replayable_run(self):
+        self.assertEqual(records.validate_world(world())["run"]["id"], "r1")
+
+    def test_world_rejections(self):
+        point = world()["points"][0]
+        cases = [
+            ({"run": None}, "world.run: must be an object with an id"),
+            ({"run": {"id": "r1", "attempts": ["x"]}}, "world.run.attempts[0]: must be an object"),
+            ({"run": {"id": "r1", "attempts": [{"stage": "build"}]}}, "world.run.attempts[0]: missing 'n'"),
+            ({"repository": " "}, "world.repository: must be a non-empty string"),
+            ({"points": {}}, "world.points: must be a list"),
+            ({"points": [1]}, "world.points[0]: must be an object"),
+            ({"points": [{**point, "id": "design-1"}]}, "world.points[0].id: must be {stage}-{attempt}"),
+            ({"points": [point, point]}, "world.points[1].id: appears twice"),
+            ({"points": [{**point, "scorable": "yes"}]}, "world.points[0].scorable: must be true or false"),
+            ({"points": [{**point, "snapshot": "guessed"}]}, "world.points[0].snapshot: must be one of"),
+            ({"points": [{**point, "origin": "hot"}]}, "world.points[0].origin: must be one of cold, warm"),
+            ({"points": [{**point, "decision_source": "human"}]}, "world.points[0].decision_source: must be one of"),
+            ({"points": [{**point, "recorded_decision": "advance"}]}, "world.points[0].recorded_decision: must name"),
+            ({"points": [{**point, "recorded_decision": {"action": "advance", "vocabulary": "x"}}]},
+             "world.points[0].recorded_decision: must name"),
+        ]
+        for overrides, needle in cases:
+            with self.subTest(needle=needle):
+                self.assertInvalid(records.validate_world, world(**overrides), needle)
+        with self.assertRaises(records.RecordError) as caught:
+            records.validate_world({"schema": "factory.world/2"})
+        self.assertEqual(caught.exception.code, "record.unsupported_version")
+
+    def test_labels_rejections(self):
+        def labels(entries: object) -> dict:
+            return {"schema": "factory.labels/1", "run": "r1", "labels": entries}
+
+        ok = label(label_source="model")
+        self.assertEqual(records.validate_labels(labels({"build-1": ok}))["run"], "r1")
+        cases = [
+            (labels([]), "labels.labels: must be an object keyed by point id"),
+            (labels({"design-1": ok}), "labels.labels['design-1']: is not a point id"),
+            (labels({"build-1": "advance"}), "labels.labels['build-1']: must be an object"),
+            (labels({"build-1": label(label_source="oracle")}), "labels.labels['build-1'].label_source: must be one"),
+            (labels({"build-1": {**ok, "accept": "advance"}}), ".accept: must be a list of action names"),
+            (labels({"build-1": {**ok, "accept": ["fly"]}}), ".accept: unknown action(s) 'fly'; known: launch"),
+            (labels({"build-1": {**ok, "accept": []}}), ".accept: must name at least one action"),
+            (labels({"build-1": {**ok, "reject": ["park", "park"]}}), ".reject: names an action twice"),
+            (labels({"build-1": {**ok, "reject": ["advance"]}}), "['build-1']: accepts and rejects advance"),
+            (labels({"build-1": {**ok, "allow_override": "no"}}), ".allow_override: must be true or false"),
+            (labels({"build-1": {**ok, "note": ""}}), ".note: must be a non-empty string"),
+        ]
+        for data, needle in cases:
+            with self.subTest(needle=needle):
+                self.assertInvalid(records.validate_labels, data, needle)
+        with self.assertRaises(records.RecordError) as caught:
+            records.validate_labels({"schema": "factory.labels/2"})
+        self.assertEqual(caught.exception.code, "record.unsupported_version")
+
+    def test_hindsight_rejections(self):
+        def hindsight(labels: object, faults: object = ()) -> dict:
+            return {"schema": "factory.hindsight/1", "labels": labels, "faults": list(faults)}
+
+        ok = label(point="build-1")
+        fault = {"kind": "stage", "code_family": "gate", "summary": "tests failed", "evidence": [], "attempts": 1}
+        self.assertEqual(records.validate_hindsight(hindsight([ok], [fault]), points=["build-1"])["labels"], [ok])
+        cases = [
+            (hindsight({}), "hindsight.labels: must be a list", None),
+            (hindsight([ok, ok]), "hindsight.labels: labels a point twice", None),
+            (hindsight(["x"]), "hindsight.labels[0]: must be an object", None),
+            (hindsight([]), "hindsight.labels: no label for build-1", ["build-1"]),
+            (hindsight([ok, label(point="ship-1")]), "labels unknown or unscorable point(s) ship-1", ["build-1"]),
+            ({**hindsight([ok]), "faults": {}}, "hindsight.faults: must be a list", None),
+            (hindsight([ok], [{**fault, "kind": "cosmic"}]), "hindsight.faults[0].kind: must be one of", None),
+        ]
+        for data, needle, points in cases:
+            with self.subTest(needle=needle):
+                self.assertInvalid(records.validate_hindsight, data, needle, points=points)
+        with self.assertRaises(records.RecordError) as caught:
+            records.validate_hindsight([])
+        self.assertEqual(caught.exception.code, "record.invalid")
+        with self.assertRaises(records.RecordError) as caught:
+            records.validate_hindsight({"schema": "factory.hindsight/2"})
+        self.assertEqual(caught.exception.code, "record.unsupported_version")
+        whole = hindsight([ok], [fault])
+        self.assertEqual(records.validate_hindsight(whole, points=["build-1"]), whole)
+
+    def test_labels_require_a_note(self):
+        note_free = {k: v for k, v in label(label_source="model").items() if k != "note"}
+        data = {"schema": "factory.labels/1", "run": "r1", "labels": {"build-1": note_free}}
+        self.assertInvalid(records.validate_labels, data, "labels.labels['build-1'].note: required")
+
+    def test_faults_accept_the_bounds(self):
+        low = {"kind": "harness", "code_family": "gate", "summary": "tests failed", "evidence": [], "attempts": 0,
+               "tokens": 0}
+        high = {**low, "evidence": [f"e{n}" for n in range(20)], "attempts": 10000, "tokens": 10 ** 12}
+        data = {"schema": "factory.faults/1", "run": "r1", "faults": [low, high]}
+        self.assertEqual(records.validate_faults(data), data)
+
+    def test_faults_rejections(self):
+        def faults(*entries: object) -> dict:
+            return {"schema": "factory.faults/1", "run": "r1", "faults": list(entries)}
+
+        fault = {"kind": "stage", "code_family": "gate", "summary": "tests failed", "evidence": [], "attempts": 1}
+
+        def without(key: str) -> dict:
+            return {k: v for k, v in fault.items() if k != key}
+
+        tokens = "must be an integer between 0 and 1000000000000"
+        cases = [
+            ({**faults(), "faults": {}}, "faults.faults: must be a list"),
+            (faults("x"), "faults.faults[0]: must be an object"),
+            (faults(without("code_family")), "faults.faults[0].code_family: required"),
+            (faults(without("summary")), "faults.faults[0].summary: required"),
+            (faults(without("attempts")), "faults.faults[0].attempts: required"),
+            (faults({**fault, "evidence": [f"e{n}" for n in range(21)]}), ".evidence: more than 20 entries"),
+            (faults({**fault, "attempts": -1}), ".attempts: must be an integer between 0 and 10000"),
+            (faults({**fault, "attempts": 10001}), ".attempts: must be an integer between 0 and 10000"),
+            (faults({**fault, "tokens": -1}), f".tokens: {tokens}"),
+            (faults({**fault, "tokens": 10 ** 12 + 1}), f".tokens: {tokens}"),
+        ]
+        for data, needle in cases:
+            with self.subTest(needle=needle):
+                self.assertInvalid(records.validate_faults, data, needle)
+        for data in ([], {"schema": "factory.faults/2", "run": "r1", "faults": []}):
+            with self.subTest(data=data), self.assertRaises(records.RecordError) as caught:
+                records.validate_faults(data)
+            self.assertEqual(caught.exception.code, "record.unsupported_version")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -146,3 +146,40 @@ class ByPolicyTests(unittest.TestCase):
         self.assertEqual(groups["a" * 64]["override"], {"count": 1, "n": 2, "rate": 0.5})
         self.assertEqual(groups["b" * 64]["intervention"], {"count": 1, "n": 1, "rate": 1.0})
         self.assertEqual(groups["unknown"]["runs"], 1)
+
+    def test_unreadable_foreign_and_unnumbered_turn_records_carry_no_policy(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir, _ = self.make_run(Path(tmp), "a", [("a" * 64, "foreman")] * 4)
+            turns = run_dir / "foreman" / "turns"
+            (turns / "2" / "decision.json").write_text("{")
+            (turns / "3" / "decision.json").write_text("[]")
+            (turns / "4").rename(turns / "x")
+            self.assertEqual(outcomes.turn_policies(run_dir), {1: "a" * 64})
+
+    def test_a_done_run_whose_events_record_a_park_counts_as_intervened(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            parked = self.make_run(root, "a", [("a" * 64, "foreman")])
+            (parked[0] / "events.jsonl").write_text(json.dumps({"event": "run.needs_human"}) + "\n")
+            clean = self.make_run(root, "b", [("b" * 64, "foreman")])
+            (clean[0] / "events.jsonl").write_text(json.dumps({"event": "run.done"}) + "\n")
+            groups = outcomes.by_policy([parked, clean, self.make_run(root, "c", [("c" * 64, "foreman")])])
+        self.assertEqual(groups["a" * 64]["intervention"], {"count": 1, "n": 1, "rate": 1.0})
+        self.assertEqual(groups["b" * 64]["intervention"], {"count": 0, "n": 1, "rate": 0.0})
+        self.assertEqual(groups["c" * 64]["intervention"], {"count": 0, "n": 1, "rate": 0.0})
+
+    def test_only_the_turns_an_override_names_count_as_overridden(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            groups = outcomes.by_policy([self.make_run(Path(tmp), "a", [("a" * 64, "foreman")] * 3, overrides=1)])
+        self.assertEqual(groups["a" * 64]["override"]["count"], 1)
+        self.assertEqual(groups["a" * 64]["turns"], 3)
+
+    def test_only_fallback_turns_count_as_fallbacks(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            turns = [("a" * 64, "fallback")] + [("a" * 64, "foreman")] * 3
+            groups = outcomes.by_policy([self.make_run(Path(tmp), "a", turns)])
+        self.assertEqual(groups["a" * 64]["fallback"], {"count": 1, "n": 4, "rate": 0.25})

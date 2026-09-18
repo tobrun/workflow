@@ -1114,6 +1114,29 @@ def history_label(args: argparse.Namespace, home: Path, cfg: config.Config) -> i
     return 0
 
 
+DEPLOY_FAILURES = ("dirty", "branch", "stale_plugins", "build_failed", "validate", "commit_failed", "push_failed")
+
+
+def cmd_dream(args: argparse.Namespace, home: Path, cfg: config.Config) -> int:
+    """Score the foreman skill on history, ask for revisions, and deploy a winner that clears every gate. Paid."""
+    from runner import dream, history
+    if args.repeats is not None and args.repeats < 1:
+        raise CliError(f"--repeats must be at least 1, got {args.repeats}", 2)
+    if args.rounds < 0:
+        raise CliError(f"--rounds must be 0 or more, got {args.rounds}", 2)
+    if args.max_calls < 1:
+        raise CliError(f"--max-calls must be at least 1, got {args.max_calls}", 2)
+    known = [w.name for w in history.worlds(home)]
+    unknown = [w for w in args.worlds or [] if w not in known]
+    if unknown:
+        raise CliError(f"unknown world(s) {', '.join(unknown)}; known: {', '.join(known) or 'none yet'}", 2)
+    with history.HistoryLock(home):
+        _, decision = dream.run(home, cfg, rounds=args.rounds, repeats=args.repeats, max_calls=args.max_calls,
+                                deploy_enabled=not args.no_deploy, world_ids=args.worlds, echo=out)
+    out(f"decision {decision['reason']}" + (f": {decision['cause']}" if decision.get("cause") else ""))
+    return 1 if decision["reason"] in DEPLOY_FAILURES else 0
+
+
 def cmd_gc(args: argparse.Namespace, home: Path, cfg: config.Config) -> int:
     archived, kept = [], []
     for run_dir, run, error in dashboard.load_runs(home / "runs"):
@@ -1647,6 +1670,15 @@ def parser() -> argparse.ArgumentParser:
     hist_label.add_argument("--allow-override", action="store_true", help="with --set: an override is justified")
     hist_label.add_argument("--note", help="with --set: why")
     hist.set_defaults(func=cmd_history)
+
+    dreamer = sub.add_parser("dream", help="improve the foreman skill offline from history and deploy a winner (paid)")
+    dreamer.add_argument("--rounds", type=int, default=3, help="revisions to ask for (default 3)")
+    dreamer.add_argument("--repeats", type=int,
+                         help="replays per point; overrides both defaults (1 on selection, 2 on confirmation)")
+    dreamer.add_argument("--max-calls", type=int, default=1000, help="cap on fresh replay calls (default 1000)")
+    dreamer.add_argument("--no-deploy", action="store_true", help="report and keep candidates, never commit")
+    dreamer.add_argument("--worlds", nargs="+", help="dream over these world ids only")
+    dreamer.set_defaults(func=cmd_dream)
 
     rm = sub.add_parser("rm", help="remove one run and its worktree")
     rm.add_argument("id")

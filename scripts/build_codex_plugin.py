@@ -124,6 +124,11 @@ PLUGINS = {
                 "Label a finished factory run's decisions",
                 "Use $factory:hindsight to label the decision points of this finished factory run.",
             ),
+            "dream": (
+                "Dream",
+                "Revise the foreman skill from replays",
+                "Use $factory:dream to revise the foreman skill from this round's replay traces.",
+            ),
         },
     ),
 }

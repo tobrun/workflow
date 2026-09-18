@@ -163,6 +163,39 @@ def replay_turn(argv):
 
 
 
+def dream_turn(argv):
+    """Play the dream skill from $FACTORY_STUB_DREAM, keyed on the round in $FACTORY_DREAM_ROUND.
+
+    The file maps a round number to a step: {"text": "..."} writes that skill, {"append": "..."} appends a
+    line to the current skill the prompt names, {"replace": [old, new]} edits it, "none" writes nothing.
+    A missing round appends a harmless sentence.
+    """
+    prompt = argv[1]
+    current = Path(prompt.split("The current skill is at ", 1)[1].split(".\n", 1)[0])
+    output = Path(prompt.split("Write the revised skill to ", 1)[1].split("\n", 1)[0].rstrip("."))
+    path = os.environ.get("FACTORY_STUB_DREAM")
+    steps = json.loads(Path(path).read_text(encoding="utf-8")) if path and Path(path).exists() else {}
+    step = steps.get(os.environ.get("FACTORY_DREAM_ROUND", "1"), {"append": "Read the gate reason before deciding."})
+    text = current.read_text(encoding="utf-8")
+    if step != "none":
+        if "text" in step:
+            text = step["text"]
+        if "replace" in step:
+            text = text.replace(step["replace"][0], step["replace"][1])
+        if "append" in step:
+            text = text.rstrip("\n") + "\n" + step["append"] + "\n"
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(text, encoding="utf-8")
+    message = json.dumps({"summary": "stub dream revision"})
+    emit({"type": "thread.started", "thread_id": "stub-dream"})
+    emit({"type": "item.completed", "item": {"type": "agent_message", "text": message}})
+    emit({"type": "turn.completed", "usage": {"input_tokens": 100, "cached_input_tokens": 0, "output_tokens": 10}})
+    last_message = option(argv, "-o")
+    if last_message:
+        Path(last_message).write_text(message + "\n", encoding="utf-8")
+    return 0
+
+
 def main():
     argv = sys.argv[1:]
     log = os.environ.get("FACTORY_STUB_LOG")
@@ -192,6 +225,8 @@ def main():
         return hindsight_turn(argv)
     if os.environ.get("FACTORY_ROLE") == "replay":
         return replay_turn(argv)
+    if os.environ.get("FACTORY_ROLE") == "dream":
+        return dream_turn(argv)
 
     worktree = Path(option(argv, "-C") or os.getcwd())
     last_message = option(argv, "-o")

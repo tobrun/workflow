@@ -158,3 +158,313 @@ class EvalWrapperTests(FactoryTestCase):
         self.assertIn("skipped, status running is not terminal", result.stdout)
         self.assertIn("factory history label --set", result.stdout)
         self.assertFalse((self.home / "history" / run.id).exists())
+
+
+class SplitTests(unittest.TestCase):
+    def worlds(self, per_repo: dict[str, int]) -> list[dict]:
+        return [{"id": f"20260917-{repo}{n:02d}-run", "repository": f"github.com/acme/{repo}"}
+                for repo, count in per_repo.items() for n in range(count)]
+
+    def test_three_repositories_hold_whole_repositories_back_for_confirmation(self):
+        chosen = dream.split(self.worlds({"a": 3, "b": 3, "c": 3}))
+        self.assertEqual(chosen.rule, "whole-repo")
+        repo_of = {w["id"]: w["repository"] for w in self.worlds({"a": 3, "b": 3, "c": 3})}
+        confirmation_repos = {repo_of[w] for w in chosen.confirmation}
+        selection_repos = {repo_of[w] for w in chosen.selection}
+        self.assertFalse(confirmation_repos & selection_repos)
+        self.assertGreaterEqual(len(chosen.confirmation), 6)
+        self.assertGreaterEqual(len(confirmation_repos), 2)
+
+    def test_two_repositories_each_feed_both_sets(self):
+        worlds = self.worlds({"a": 4, "b": 4})
+        chosen = dream.split(worlds)
+        repo_of = {w["id"]: w["repository"] for w in worlds}
+        self.assertEqual(chosen.rule, "split-by-run")
+        self.assertEqual({repo_of[w] for w in chosen.selection}, {"github.com/acme/a", "github.com/acme/b"})
+        self.assertEqual({repo_of[w] for w in chosen.confirmation}, {"github.com/acme/a", "github.com/acme/b"})
+        self.assertEqual(len(chosen.confirmation), 4)
+
+    def test_one_repository_splits_by_run_and_says_the_repository_rule_could_not_apply(self):
+        chosen = dream.split(self.worlds({"a": 4}))
+        self.assertEqual(chosen.rule, "split-by-run")
+        self.assertEqual((len(chosen.selection), len(chosen.confirmation)), (2, 2))
+        self.assertIn("the repository rule could not apply", " ".join(chosen.notes))
+
+    def test_input_order_never_changes_the_split(self):
+        worlds = self.worlds({"a": 3, "b": 2, "c": 4})
+        self.assertEqual(dream.split(worlds), dream.split(list(reversed(worlds))))
+        self.assertEqual(dream.split(worlds).confirmation_hash, dream.split(worlds[::2] + worlds[1::2]).confirmation_hash)
+
+    def test_a_single_world_leaves_confirmation_empty(self):
+        chosen = dream.split(self.worlds({"a": 1}))
+        self.assertEqual((chosen.rule, chosen.confirmation), ("too-small", []))
+        self.assertEqual(len(chosen.confirmation_hash), 64)
+
+
+INCUMBENT = (ROOT / "factory" / "skills" / "foreman" / "SKILL.md").read_text(encoding="utf-8")
+
+
+class CandidateCheckTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.deny = dream.Denylist({"20260917-1200-fixture", "github.com/acme/app"},
+                                   dream._windows("the playwright config pins port 4173 but vite serves on 5173"))
+
+    def check(self, text: str) -> str | None:
+        failed = dream.check_candidate(text, self.deny, INCUMBENT)
+        return failed[0] if failed else None
+
+    def with_line(self, line: str) -> str:
+        return INCUMBENT.rstrip("\n") + "\n" + line + "\n"
+
+    def test_the_incumbent_passes_its_own_checks(self):
+        self.assertIsNone(self.check(INCUMBENT))
+
+    def test_a_forty_character_run_of_a_recorded_gate_reason_is_rejected(self):
+        self.assertEqual(self.check(self.with_line("Remember: the Playwright config pins port 4173 but Vite serves.")),
+                         "shingle")
+
+    def test_an_aws_key_shaped_literal_is_rejected(self):
+        self.assertEqual(self.check(self.with_line("Never print AKIA" + "IOSFODNN7EXAMPLE in guidance.")), "secret")
+
+    def test_the_short_slack_token_from_the_recorded_condition_is_rejected(self):
+        self.assertEqual(self.check(self.with_line("A token like xoxb-" + "1234567890-abcdefghijklmn is a secret.")),
+                         "secret")
+
+    def test_a_selection_run_id_is_rejected(self):
+        self.assertEqual(self.check(self.with_line("As run 20260917-1200-fixture showed, regate first.")), "denylist")
+
+    def test_a_skill_past_the_line_limit_is_rejected(self):
+        lines = INCUMBENT.count("\n")
+        self.assertEqual(self.check(INCUMBENT + "Keep it short.\n" * (151 - lines)), "length")
+
+    def test_a_decision_table_without_rescope_is_rejected(self):
+        text = "\n".join(line for line in INCUMBENT.splitlines() if not line.startswith("| `rescope`")) + "\n"
+        self.assertEqual(self.check(text), "actions")
+
+    def test_a_sentence_routing_the_decision_to_a_person_is_rejected(self):
+        self.assertEqual(self.check(self.with_line("When unsure, ask the operator which stage to launch.")), "F03")
+
+
+def make_world(home: Path, run_id: str, repository: str, points: list[str], *, unscorable: tuple = (),
+               labelled: bool = True, accept: tuple = ("advance",), reason: str = "the gate passed") -> Path:
+    """A world written straight to disk: points with a digest and an event, and human labels."""
+    from runner import history
+    world_dir = home / "history" / run_id
+    entries = []
+    for point in points:
+        stage, n = point.rsplit("-", 1)
+        pdir = world_dir / "points" / point
+        pdir.mkdir(parents=True)
+        (pdir / "digest.json").write_text(json.dumps({"schema": "factory.digest/1", "generated_at": "2026-09-17T12:00:00Z",
+                                                      "run": {"id": run_id, "plan": "fixture"}, "attempts": []}))
+        (pdir / "event.md").write_text(f"Factory run {run_id}: event attempt.finished.\n{stage} attempt {n} ended done.\n"
+                                       "Files: gate gate.json\n")
+        (pdir / "gate.json").write_text(json.dumps({"passed": True, "reason": reason}))
+        entries.append({"id": point, "stage": stage, "attempt": int(n), "scorable": point not in unscorable,
+                        "snapshot": "recorded", "plan": False, "origin": "cold", "decision_source": "foreman",
+                        "event": {"kind": "attempt.finished", "outcome": "done", "reason": reason}})
+    world = {"schema": "factory.world/1", "run": {"id": run_id, "plan": "fixture", "attempts": []},
+             "repository": repository, "terminal_status": "done", "decision_schema": "factory.decision/1",
+             "source_sha256": "0" * 64, "builder": "test", "points": entries}
+    (world_dir / "world.json").write_text(json.dumps(records.validate_world(world)))
+    if labelled:
+        # The labeller writes labels.json even when no point is scorable; it then holds no entries.
+        (world_dir / "labels.json").write_text(json.dumps({"schema": "factory.labels/1", "run": run_id, "labels": {}}))
+        for point in points:
+            if point not in unscorable:
+                history.set_label(world_dir, point, list(accept))
+    return world_dir
+
+
+class RoundTestCase(FactoryTestCase):
+    def setUp(self) -> None:
+        super().setUp()
+        self.files = {name: self.root / f"{name}.json" for name in ("replay", "candidate", "dream", "hindsight")}
+        os.environ.update({"FACTORY_STUB_REPLAY": str(self.files["replay"]),
+                           "FACTORY_STUB_REPLAY_CANDIDATE": str(self.files["candidate"]),
+                           "FACTORY_STUB_DREAM": str(self.files["dream"]),
+                           "FACTORY_STUB_HINDSIGHT": str(self.files["hindsight"])})
+        self.answers(incumbent=decision("park"), candidate=decision("advance"))
+
+    def answers(self, *, incumbent: dict, candidate: dict) -> None:
+        self.files["replay"].write_text(json.dumps({"*": incumbent}))
+        self.files["candidate"].write_text(json.dumps({"*": candidate}))
+
+    def dream_step(self, step: object) -> None:
+        self.files["dream"].write_text(json.dumps({"1": step}))
+
+    def call(self, *argv: str) -> tuple[int, str, str]:
+        import contextlib
+        import io
+        from runner import cli
+        stdout, stderr = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+            code = cli.main(list(argv))
+        return code, stdout.getvalue(), stderr.getvalue()
+
+    def replays(self, *, candidate: bool | None = None) -> list[dict]:
+        calls = [c for c in self.stub_calls("codex") if c["env"].get("FACTORY_ROLE") == "replay"]
+        if candidate is None:
+            return calls
+        return [c for c in calls if ("/candidates/" in c["argv"][1].split("\n", 1)[0]) == candidate]
+
+    def dream_dir(self) -> Path:
+        dirs = sorted(p for p in (self.home / "dreams").iterdir() if p.name != "cache")
+        return dirs[-1]
+
+    def decision(self) -> dict:
+        return json.loads((self.dream_dir() / "decision.json").read_text())
+
+    def report(self) -> str:
+        return (self.dream_dir() / "report.md").read_text()
+
+
+class RoundTests(RoundTestCase):
+    def test_a_candidate_that_scores_higher_on_selection_is_named_best(self):
+        world = make_world(self.home, "20260917-1200-a", "github.com/acme/app", ["build-1", "ship-1"])
+        (world / "faults.json").write_text(json.dumps({"schema": "factory.faults/1", "run": world.name, "faults": [
+            {"kind": "harness", "code_family": "record.invalid", "summary": "s", "evidence": [], "attempts": 2,
+             "tokens": 900}]}))
+        code, out, _ = self.call("dream", "--rounds", "1")
+        self.assertEqual(code, 0, out)
+        decision_ = self.decision()
+        self.assertEqual(decision_["best"], "round-1")
+        self.assertEqual(decision_["selection"], {"incumbent": 0.0, "round-1": 1.0})
+        self.assertIn("Best on selection: round-1", self.report())
+        self.assertIn("| **policy** | 0.000 | 1.000 |", self.report())
+        self.assertIn("| harness | record.invalid | 1 | 2 | 900 | 1 |", self.report())
+        incumbent_points = sorted(Path(c["cwd"]).name for c in self.replays(candidate=False))
+        candidate_points = sorted(Path(c["cwd"]).name for c in self.replays(candidate=True))
+        self.assertEqual(incumbent_points, ["build-1", "ship-1"])
+        self.assertEqual(candidate_points, incumbent_points)
+        staged = self.dream_dir() / "candidates" / "1" / "plugins" / "factory"
+        self.assertTrue((staged / "references" / "factory-run.md").is_file())
+        skill = (staged / "skills" / "foreman" / "SKILL.md").read_text()
+        self.assertIn("Read the gate reason before deciding.", skill)
+        self.assertNotIn("disable-model-invocation", skill)
+
+    def test_a_candidate_that_scores_lower_leaves_the_incumbent_best(self):
+        self.answers(incumbent=decision("advance"), candidate=decision("park"))
+        make_world(self.home, "20260917-1200-a", "github.com/acme/app", ["build-1"])
+        self.assertEqual(self.call("dream", "--rounds", "1")[0], 0)
+        decision_ = self.decision()
+        self.assertEqual(decision_["best"], "incumbent")
+        self.assertEqual(decision_["selection"], {"incumbent": 1.0, "round-1": 0.0})
+        self.assertFalse(decision_["deployed"])
+        self.assertNotIn("commit", decision_)
+        self.assertIn("Best on selection: incumbent", self.report())
+
+    def test_the_call_cap_ends_the_round_partial_without_a_deploy(self):
+        make_world(self.home, "20260917-1200-a", "github.com/acme/app", ["build-1", "build-2", "ship-1"])
+        code, out, _ = self.call("dream", "--rounds", "1", "--max-calls", "2")
+        self.assertEqual(code, 0, out)
+        decision_ = self.decision()
+        self.assertTrue(decision_["partial"])
+        self.assertEqual((decision_["deployed"], decision_["reason"]), (False, "partial"))
+        self.assertEqual(len(self.replays()), 2)
+        self.assertIn("partial: the call cap was reached, so nothing deploys", self.report())
+
+    def test_a_second_dream_while_the_history_lock_is_held_does_no_work(self):
+        from runner import history
+        make_world(self.home, "20260917-1200-a", "github.com/acme/app", ["build-1"])
+        with history.HistoryLock(self.home):
+            code, out, err = self.call("dream", "--rounds", "1")
+        self.assertEqual(code, 3)
+        self.assertIn("history.lock", err)
+        self.assertFalse((self.home / "dreams").exists())
+        self.assertEqual(self.replays(), [])
+
+    def test_zero_repeats_is_refused_before_any_paid_call(self):
+        make_world(self.home, "20260917-1200-a", "github.com/acme/app", ["build-1"])
+        code, _, err = self.call("dream", "--repeats", "0")
+        self.assertEqual(code, 2)
+        self.assertIn("--repeats must be at least 1", err)
+        self.assertEqual(self.stub_calls("codex"), [])
+
+    def test_an_unknown_world_is_refused_with_the_known_ids(self):
+        make_world(self.home, "20260917-1200-a", "github.com/acme/app", ["build-1"])
+        code, _, err = self.call("dream", "--worlds", "20990101-0000-nope")
+        self.assertEqual(code, 2)
+        self.assertIn("unknown world(s) 20990101-0000-nope; known: 20260917-1200-a", err)
+        self.assertEqual(self.stub_calls("codex"), [])
+
+    def test_confirmation_is_scored_for_both_policies_and_its_set_is_tracked(self):
+        for n in range(4):
+            make_world(self.home, f"20260917-120{n}-a", "github.com/acme/app", ["build-1"])
+        self.assertEqual(self.call("dream", "--rounds", "1")[0], 0)
+        decision_ = self.decision()
+        confirmation = decision_["split"]["confirmation"]
+        self.assertEqual(confirmation, ["20260917-1201-a", "20260917-1203-a"])
+        confirmed_by = {(Path(c["cwd"]).parent.parent.name, "/candidates/" in c["argv"][1].split("\n", 1)[0])
+                        for c in self.replays()}
+        for world in confirmation:
+            self.assertIn((world, False), confirmed_by)
+            self.assertIn((world, True), confirmed_by)
+        self.assertEqual(decision_["confirmation"], {"incumbent": 0.0, "candidate": 1.0})
+        self.assertEqual(decision_["reason"], "floor")
+        self.assertEqual(len(decision_["split"]["confirmation_hash"]), 64)
+        self.assertIn("Applied rule: split-by-run", self.report())
+        self.assertIn("has served 0 earlier dream(s)", self.report())
+        self.assertIn("| round-1 | 1.000 |", self.report())
+        self.assertEqual(self.call("dream", "--rounds", "1")[0], 0)
+        self.assertIn("has served 1 earlier dream(s)", self.report())
+
+    def test_one_world_leaves_confirmation_empty_and_the_floor_refuses(self):
+        make_world(self.home, "20260917-1200-a", "github.com/acme/app", ["build-1"])
+        code, out, _ = self.call("dream", "--rounds", "1")
+        self.assertEqual(code, 0)
+        self.assertIn("decision floor", out)
+        self.assertEqual(self.decision()["reason"], "floor")
+        self.assertEqual(self.decision()["split"]["confirmation"], [])
+        self.assertIn("| (none) | confirmation was not scored |", self.report())
+
+    def test_unlabelled_worlds_are_excluded_and_named(self):
+        make_world(self.home, "20260917-1200-a", "github.com/acme/app", ["build-1"])
+        make_world(self.home, "20260917-1201-a", "github.com/acme/app", ["build-1"])
+        make_world(self.home, "20260917-1202-a", "github.com/acme/app", ["build-1"], labelled=False)
+        self.answers(incumbent=decision("advance"), candidate=decision("advance"))
+        self.assertEqual(self.call("dream", "--rounds", "1", "--no-deploy")[0], 0)
+        self.assertEqual(self.decision()["selection"]["incumbent"], 1.0)
+        self.assertEqual(self.decision()["split"]["selection"] + self.decision()["split"]["confirmation"],
+                         ["20260917-1200-a", "20260917-1201-a"])
+        self.assertIn("excluded: 20260917-1202-a has no labels", self.report())
+        self.assertFalse([c for c in self.replays() if "20260917-1202-a" in c["cwd"]])
+
+    def test_a_candidate_naming_a_selection_run_is_rejected_before_any_replay(self):
+        make_world(self.home, "20260917-1200-a", "github.com/acme/app", ["build-1"])
+        self.dream_step({"append": "As run 20260917-1200-a showed, regate first."})
+        self.assertEqual(self.call("dream", "--rounds", "1")[0], 0)
+        self.assertEqual(self.replays(candidate=True), [])
+        self.assertEqual(len(self.replays(candidate=False)), 1)
+        self.assertIn("Rejected by `denylist`", self.report())
+        self.assertEqual(self.decision()["best"], "incumbent")
+
+    def test_a_world_without_a_scorable_point_is_never_replayed(self):
+        from runner import history
+        unscored = make_world(self.home, "20260917-1200-a", "github.com/acme/app", ["build-1"], unscorable=("build-1",))
+        # Even a hand label never makes a hard-stop point scorable.
+        history.set_label(unscored, "build-1", ["park"])
+        make_world(self.home, "20260917-1201-a", "github.com/acme/app", ["build-1"])
+        make_world(self.home, "20260917-1202-a", "github.com/acme/app", ["build-1"])
+        self.assertEqual(self.call("dream", "--rounds", "1", "--no-deploy")[0], 0)
+        self.assertEqual(self.decision()["split"]["selection"], ["20260917-1200-a", "20260917-1202-a"])
+        self.assertFalse([c for c in self.replays() if "20260917-1200-a" in c["cwd"]])
+        self.assertEqual(self.decision()["selection"]["incumbent"], 0.0)
+        self.assertIn("excluded: 20260917-1200-a has no scorable labelled point", self.report())
+
+
+class ReadOnlyTests(RoundTestCase):
+    def test_labelling_and_dreaming_never_write_inside_a_run_directory(self):
+        from runner.tests.test_history import tree_hashes
+        from runner.worker import Worker
+        self.configure(foreman="codex")
+        self.foreman([{"action": "advance", "stage": s} for s in ("scope-review", "build", "ship")])
+        run = self.queued_run()
+        self.assertEqual(Worker(self.home, run.id, grace=1).run(), 0)
+        self.assertEqual(self.call("history", "build", "--all")[0], 0)
+        before = tree_hashes(run.dir)
+        self.files["hindsight"].write_text(json.dumps("auto"))
+        self.assertEqual(self.call("history", "label", "--all")[0], 0)
+        self.assertEqual(self.call("dream", "--rounds", "1", "--no-deploy")[0], 0)
+        self.assertTrue(self.replays())
+        self.assertEqual(tree_hashes(run.dir), before)

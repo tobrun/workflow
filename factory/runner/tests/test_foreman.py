@@ -40,6 +40,15 @@ class ForemanTestCase(FactoryTestCase):
     def event_names(self, run: Run) -> list[str]:
         return [e["event"] for e in events.read(run.dir)]
 
+    def call(self, *argv: str) -> tuple[int, str]:
+        import contextlib
+        import io
+        from runner import cli
+        stdout = io.StringIO()
+        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(io.StringIO()):
+            code = cli.main(list(argv))
+        return code, stdout.getvalue()
+
 
 class OffTests(ForemanTestCase):
     def test_off_never_consults_and_records_nothing(self):
@@ -855,19 +864,82 @@ class LifecycleTests(ForemanTestCase):
         self.assertTrue(data["foreman"]["restarted_after_fallbacks"])
 
 
-class OperatorSurfaceTests(ForemanTestCase):
+class PolicyIdentityTests(ForemanTestCase):
+    """Every turn records the policy it ran under and the digest it was shown."""
+
     def setUp(self) -> None:
         super().setUp()
         self.configure(foreman="codex")
 
-    def call(self, *argv: str) -> tuple[int, str]:
-        import contextlib
-        import io
-        from runner import cli
-        stdout = io.StringIO()
-        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(io.StringIO()):
-            code = cli.main(list(argv))
-        return code, stdout.getvalue()
+    def test_each_turn_keeps_its_digest_snapshot_and_the_session_policy_hash(self):
+        scenario = happy_scenario()
+        # The build attempt outlasts a second, so the second turn's digest is generated later than the first's.
+        scenario["build"] = [{**scenario["build"][0], "sleep": 1.1}]
+        self.scenario(scenario)
+        self.foreman([advance("scope-review"), park()])
+        run = self.queued_run()
+        data = self.work(run)
+        self.assertEqual(data["status"], "needs-human")
+        turns = run.dir / "foreman" / "turns"
+        live = (run.dir / "foreman" / "digest.json").read_bytes()
+        self.assertEqual((turns / "2" / "digest.json").read_bytes(), live)
+        first = json.loads((turns / "1" / "digest.json").read_text())
+        second = json.loads((turns / "2" / "digest.json").read_text())
+        self.assertEqual(first["schema"], "factory.digest/1")
+        self.assertLess(first["generated_at"], second["generated_at"])
+        records_ = [json.loads((turns / n / "decision.json").read_text()) for n in ("1", "2")]
+        self.assertEqual([r["schema"] for r in records_], ["factory.foreman-turn/2"] * 2)
+        self.assertEqual([r["cold"] for r in records_], [True, False])
+        hashes = {r["policy"]["sha256"] for r in records_}
+        self.assertEqual(len(hashes), 1)
+        self.assertRegex(hashes.pop(), r"^[0-9a-f]{64}$")
+        self.assertTrue(records_[0]["policy"]["skill"].endswith("skills/foreman/SKILL.md"))
+        self.assertTrue(records_[0]["policy"]["references"].endswith("references/factory-run.md"))
+        code, listed = self.call("foreman", run.id)
+        self.assertEqual(code, 0)
+        self.assertIn(f"policy {records_[0]['policy']['sha256'][:12]}", listed)
+
+    def test_a_first_schema_turn_record_loads_without_a_policy(self):
+        import tempfile
+        from runner import foreman
+        with tempfile.TemporaryDirectory() as tmp:
+            turn_dir = Path(tmp) / "foreman" / "turns" / "1"
+            turn_dir.mkdir(parents=True)
+            (turn_dir / "decision.json").write_text(json.dumps({
+                "schema": "factory.foreman-turn/1", "turn": 1, "cold": True, "decision": {
+                    "schema": "factory.decision/1", "action": "regate", "stage": "build", "summary": "s",
+                    "rationale": "r"}, "source": "foreman", "reason": None, "thread_id": "t", "usage": {},
+                "seconds": 1, "extra": {}}))
+            run = Run(Path(tmp), {"id": "r", "attempts": []})
+            turn = foreman.load_turn(run, {"foreman": {"turn": 1, "dir": "foreman/turns/1"}})
+            self.assertIsNotNone(turn)
+            self.assertEqual(turn.decision["action"], "regate")
+            self.assertIsNone(turn.policy)
+
+
+class PolicyHashTests(unittest.TestCase):
+    def test_one_byte_of_the_protocol_reference_changes_the_policy_hash(self):
+        import tempfile
+        from runner import provenance
+        with tempfile.TemporaryDirectory() as tmp:
+            tree = Path(tmp) / "plugins" / "factory"
+            (tree / "skills" / "foreman").mkdir(parents=True)
+            (tree / "references").mkdir()
+            (tree / "skills" / "foreman" / "SKILL.md").write_text("# Foreman\n")
+            (tree / "references" / "factory-run.md").write_text("# Protocol\n")
+            before = provenance.policy_identity({"resolution": "direct-path"}, root=Path(tmp))
+            self.assertEqual(before["skill"], str(tree / "skills" / "foreman" / "SKILL.md"))
+            self.assertEqual(before["references"], str(tree / "references" / "factory-run.md"))
+            (tree / "references" / "factory-run.md").write_text("# Protocol!\n")
+            after = provenance.policy_identity({"resolution": "direct-path"}, root=Path(tmp))
+            self.assertNotEqual(before["sha256"], after["sha256"])
+            self.assertEqual(before["skill"], after["skill"])
+
+
+class OperatorSurfaceTests(ForemanTestCase):
+    def setUp(self) -> None:
+        super().setUp()
+        self.configure(foreman="codex")
 
     def test_show_and_foreman_print_the_session_decisions_and_caps(self):
         scenario = happy_scenario()
@@ -889,7 +961,7 @@ class OperatorSurfaceTests(ForemanTestCase):
         code, listed = self.call("foreman", run.id)
         self.assertEqual(code, 0)
         self.assertIn("Foreman of", listed)
-        self.assertIn("turn   1  scope-review-1  advance (applied)", listed)
+        self.assertIn("turn   1  scope-review-1  advance (applied, policy ", listed)
         code, turn = self.call("foreman", run.id, "--turn", "2")
         self.assertEqual(code, 0)
         self.assertIn("build attempt 1 (stage) ended blocked [result.missing]", turn)

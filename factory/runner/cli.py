@@ -648,6 +648,7 @@ def cmd_foreman(args: argparse.Namespace, home: Path, cfg: config.Config) -> int
         out(f"Foreman turn {args.turn} of {run.id}: {record.get('source')}"
             + (f" ({record.get('reason')})" if record.get("reason") else "") + f", {record.get('seconds')}s, "
             f"{'cold start' if record.get('cold') else 'resumed'} session {record.get('thread_id')}")
+        out(f"policy     {(record.get('policy') or {}).get('sha256') or 'unknown'}")
         out()
         out("prompt")
         for line in (turn_dir / "prompt.txt").read_text(encoding="utf-8").splitlines() if (turn_dir / "prompt.txt").exists() else []:
@@ -673,15 +674,19 @@ def cmd_foreman(args: argparse.Namespace, home: Path, cfg: config.Config) -> int
         f"in {usage.get('input', 0)} / out {usage.get('output', 0)} tokens.")
     out()
     out("decisions")
+    from runner import outcomes
+    policies = outcomes.turn_policies(run.dir)
     for decision in run.data.get("decisions") or []:
+        policy = f"policy {policies.get(decision['turn'], 'unknown')[:12]}"
         if decision.get("source") == "foreman":
             applied = "applied" if decision.get("applied") else "recorded, not applied"
             target = decision.get("target")
             where = f" {target}" if target and target != decision.get("stage") else ""
             out(f"  turn {decision['turn']:>3}  {decision['stage']}-{decision['attempt']}  {decision['action']}{where} "
-                f"({applied}): {decision.get('summary')}")
+                f"({applied}, {policy}): {decision.get('summary')}")
         else:
-            out(f"  turn {decision['turn']:>3}  {decision['stage']}-{decision['attempt']}  no decision: {decision.get('reason')}")
+            out(f"  turn {decision['turn']:>3}  {decision['stage']}-{decision['attempt']}  no decision ({policy}): "
+                f"{decision.get('reason')}")
     if not run.data.get("decisions"):
         out("  none yet")
     if run.data.get("overrides"):
@@ -971,6 +976,21 @@ def cmd_outcome(args: argparse.Namespace, home: Path, cfg: config.Config) -> int
 def cmd_report(args: argparse.Namespace, home: Path, cfg: config.Config) -> int:
     from runner import outcomes
     runs = [(d, r) for root in (home / "runs", home / "archive") for d, r, _ in dashboard.load_runs(root) if r]
+    if args.by_policy:
+        groups = outcomes.by_policy(runs)
+        if args.json:
+            out(json.dumps(groups, indent=2))
+            return 0
+
+        def ratio(entry: dict) -> str:
+            return f"{entry['count']}/{entry['n']}" + (f" ({entry['rate']:.0%})" if entry["rate"] is not None else "")
+
+        out(f"{len(groups)} foreman policy group(s); `unknown` is turns recorded before the policy hash")
+        for sha, entry in groups.items():
+            out(f"{sha[:12] if sha != 'unknown' else 'unknown':<12}  runs {entry['runs']}  turns {entry['turns']}  "
+                f"intervention {ratio(entry['intervention'])}  override {ratio(entry['override'])}  "
+                f"fallback {ratio(entry['fallback'])}")
+        return 0
     summary = outcomes.summarize(runs)
     if args.json:
         out(json.dumps(summary, indent=2))
@@ -1509,6 +1529,8 @@ def parser() -> argparse.ArgumentParser:
 
     report = sub.add_parser("report", help="summarize outcomes across runs, with sample sizes")
     report.add_argument("--json", action="store_true")
+    report.add_argument("--by-policy", action="store_true",
+                        help="group intervention, override, and fallback rates by the foreman policy hash")
     report.set_defaults(func=cmd_report)
 
     rm = sub.add_parser("rm", help="remove one run and its worktree")

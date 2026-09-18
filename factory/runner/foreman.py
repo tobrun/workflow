@@ -22,6 +22,8 @@ from runner.model import HEADLESS, Run, atomic_write, utc_now
 DIR = "foreman"
 GENERATED_SKILL = FACTORY_ROOT.parent / "plugins" / "factory" / "skills" / "foreman" / "SKILL.md"
 DIGEST_SCHEMA = "factory.digest/1"
+TURN_SCHEMA = "factory.foreman-turn/2"
+TURN_SCHEMAS = ("factory.foreman-turn/1", TURN_SCHEMA)
 SOURCES = ("foreman", "fallback")
 
 
@@ -38,6 +40,7 @@ class Turn:
     seconds: float
     receipt: executor.Receipt | None = None
     extra: dict = field(default_factory=dict)
+    policy: dict | None = None
 
 
 def state(run: Run) -> dict:
@@ -266,12 +269,15 @@ def _turn(run: Run, cfg: config.Config, event: dict, *, n: int, cold: bool, dige
     turn_dir = run.dir / DIR / "turns" / str(n)
     turn_dir.mkdir(parents=True, exist_ok=True)
     schema_path = write_schema(run)
-    if cold:
+    if cold or not st.get("policy"):
         bundles = provenance.skill_bundles()
-        prompt = start_prompt(run, cfg, event, digest_path, bundles)
-    else:
-        prompt = event_message(run, cfg, event)
+        # A warm turn's prompt names no skill: it runs under the policy its session's cold turn resolved.
+        st["policy"] = provenance.policy_identity(bundles)
+    prompt = start_prompt(run, cfg, event, digest_path, bundles) if cold else event_message(run, cfg, event)
+    policy = dict(st["policy"])
     (turn_dir / "prompt.txt").write_text(prompt, encoding="utf-8")
+    # The digest this turn was shown, kept per turn: consult rewrites the live one at every event.
+    (turn_dir / "digest.json").write_bytes(digest_path.read_bytes())
     # Hands only when its decisions are applied: a shadow foreman may look but never touch.
     sandbox = "workspace-write" if cfg.foreman == "codex" else "read-only"
     sandbox_env, cache_paths = commands.tool_caches(dict(os.environ), sandbox)
@@ -320,10 +326,12 @@ def _turn(run: Run, cfg: config.Config, event: dict, *, n: int, cold: bool, dige
                                       "reverted, decision refused: source changes go through a repair or launch")
             extra["reverted"] = hands["touched"]
     turn = Turn(n=n, dir=turn_dir, cold=cold, decision=decision, source="foreman" if decision else "fallback",
-                reason=reason, thread_id=stream.thread_id, usage=usage, seconds=seconds, receipt=receipt, extra=extra)
-    record = {"schema": "factory.foreman-turn/1", "turn": n, "cold": cold, "event": event, "decision": decision,
+                reason=reason, thread_id=stream.thread_id, usage=usage, seconds=seconds, receipt=receipt, extra=extra,
+                policy=policy)
+    record = {"schema": TURN_SCHEMA, "turn": n, "cold": cold, "event": event, "decision": decision,
               "source": turn.source, "reason": reason, "thread_id": stream.thread_id, "usage": usage,
-              "seconds": seconds, "receipt": receipt.to_json(), "sandbox": sandbox, "extra": extra}
+              "seconds": seconds, "receipt": receipt.to_json(), "sandbox": sandbox, "extra": extra,
+              "policy": policy}
     atomic_write(turn_dir / "decision.json", json.dumps(record, indent=2, default=str) + "\n")
     return turn
 
@@ -447,6 +455,8 @@ def load_turn(run: Run, attempt: dict) -> Turn | None:
         data = json.loads((turn_dir / "decision.json").read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return None
+    if not isinstance(data, dict) or data.get("schema") not in TURN_SCHEMAS:
+        return None
     decision = data.get("decision")
     if decision is not None:
         try:
@@ -458,7 +468,7 @@ def load_turn(run: Run, attempt: dict) -> Turn | None:
                 reason=data.get("reason") if decision is None else None, thread_id=data.get("thread_id"),
                 usage=data.get("usage") or {}, seconds=float(data.get("seconds") or 0),
                 extra={**(data.get("extra") or {}), **({"restarted": summary["restarted"]} if summary.get("restarted")
-                                                       else {})})
+                                                       else {})}, policy=data.get("policy"))
 
 
 def turn_events(attempt: dict, turn: Turn) -> list:

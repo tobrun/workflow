@@ -24,9 +24,10 @@ ANNOTATIONS = ("rework", "rejection", "regression", "intervention")
 # Runner-owned records and selected evidence; raw host streams (stdout.jsonl) stay local because they are large
 # and may contain unredacted tool output.
 RUN_FILES = ("run.json", "events.jsonl", "request.md", OUTCOMES)
-RUN_TREES = ("intent", "checkpoints", "reports", "evidence", "plan")
+RUN_TREES = ("intent", "checkpoints", "reports", "evidence", "plan", "foreman")
 ATTEMPT_FILES = ("gate.json", "receipt.json", "runtime.json", "outputs.json", "request.json", "executor.json",
-                 "last-message.md", "subphase.json")
+                 "last-message.md", "subphase.json", "stderr.log")
+RAW_STREAMS = ("stdout.jsonl",)
 ATTEMPT_TREES = ("gate", "inputs")
 
 
@@ -37,7 +38,7 @@ class ExportError(Exception):
 def selected(run_dir: Path) -> list[Path]:
     chosen = [run_dir / name for name in RUN_FILES if (run_dir / name).is_file()]
     for tree in RUN_TREES:
-        chosen += sorted(p for p in (run_dir / tree).rglob("*") if p.is_file())
+        chosen += sorted(p for p in (run_dir / tree).rglob("*") if p.is_file() and p.name not in RAW_STREAMS)
     for attempt in sorted(p for p in (run_dir / "attempts").glob("*") if p.is_dir()):
         chosen += [attempt / name for name in ATTEMPT_FILES if (attempt / name).is_file()]
         for tree in ATTEMPT_TREES:
@@ -211,3 +212,56 @@ def summarize(runs: list[tuple[Path, object]]) -> dict:
             "active_operator_minutes": {"total": active_minutes, "runs_measured": active_known,
                                         "runs_unknown": len(runs) - active_known},
             "elapsed_interactive_scope_seconds": scope_seconds}
+
+
+def turn_policies(run_dir: Path) -> dict[int, str]:
+    """The policy hash each foreman turn recorded, by turn number; turns from before the hash are absent."""
+    hashes = {}
+    for record in sorted((run_dir / "foreman" / "turns").glob("*/decision.json")):
+        try:
+            data = json.loads(record.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        sha = ((data or {}).get("policy") or {}).get("sha256") if isinstance(data, dict) else None
+        if sha and str(record.parent.name).isdigit():
+            hashes[int(record.parent.name)] = sha
+    return hashes
+
+
+def by_policy(runs: list[tuple[Path, object]]) -> dict:
+    """Intervention, override, and fallback rates per foreman policy hash; runs and turns without one are `unknown`.
+
+    A run that changed policy mid-way (a session restart after a deploy) counts in each group it ran under.
+    """
+    groups: dict[str, dict] = {}
+
+    def group(sha: str) -> dict:
+        return groups.setdefault(sha, {"runs": set(), "intervened": set(), "turns": 0, "fallbacks": 0, "overrides": 0})
+
+    for run_dir, run in runs:
+        hashes = turn_policies(run_dir)
+        decisions = run.data.get("decisions") or []
+        overridden = {entry.get("turn") for entry in run.data.get("overrides") or []}
+        events = (run_dir / "events.jsonl").read_text(encoding="utf-8") if (run_dir / "events.jsonl").is_file() else ""
+        intervened = run.status == "needs-human" or '"event": "run.needs_human"' in events
+        seen = set()
+        for decision in decisions:
+            sha = hashes.get(decision.get("turn"), "unknown")
+            entry = group(sha)
+            entry["turns"] += 1
+            entry["fallbacks"] += decision.get("source") == "fallback"
+            entry["overrides"] += decision.get("turn") in overridden
+            seen.add(sha)
+        for sha in seen or {"unknown"}:
+            group(sha)["runs"].add(run.id)
+            if intervened:
+                group(sha)["intervened"].add(run.id)
+
+    def rate(part: int, whole: int) -> dict:
+        return {"count": part, "n": whole, "rate": round(part / whole, 3) if whole else None}
+
+    return {sha: {"runs": len(entry["runs"]), "turns": entry["turns"],
+                  "intervention": rate(len(entry["intervened"]), len(entry["runs"])),
+                  "override": rate(entry["overrides"], entry["turns"]),
+                  "fallback": rate(entry["fallbacks"], entry["turns"])}
+            for sha, entry in sorted(groups.items())}

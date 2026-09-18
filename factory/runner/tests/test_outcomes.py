@@ -4,6 +4,8 @@ import contextlib
 import io
 import json
 import shutil
+import unittest
+from pathlib import Path
 
 from runner import cli, outcomes
 from runner.model import Run
@@ -90,3 +92,57 @@ class OutcomeTests(FactoryTestCase):
         self.assertIn("operator time 25 min measured on 1 run(s); unknown for 0", shown)
         summary = json.loads(self.call("report", "--json")[1])
         self.assertEqual(summary["regression"], {"count": 0, "n": 1, "rate": 0.0})
+
+
+class ForemanExportTests(OutcomeTests):
+    def test_an_export_carries_the_foreman_turns_without_raw_streams(self):
+        self.configure(foreman="codex")
+        self.foreman([{"action": "advance", "stage": stage} for stage in ("scope-review", "build", "ship")])
+        run = self.done_run()
+        self.assertTrue((run.dir / "foreman" / "turns" / "1" / "stdout.jsonl").is_file())
+        (run.dir / "attempts" / "build-1" / "stderr.log").write_text("host noise\n")
+        code, shown = self.call("export", run.id)
+        self.assertEqual(code, 0, shown)
+        files = json.loads((self.home / "exports" / run.id / "manifest.json").read_text())["files"]
+        self.assertIn("foreman/turns/1/decision.json", files)
+        self.assertIn("foreman/turns/1/digest.json", files)
+        self.assertIn("attempts/build-1/stderr.log", files)
+        self.assertFalse([name for name in files if name.startswith("foreman/") and name.endswith("stdout.jsonl")])
+
+
+class ByPolicyTests(unittest.TestCase):
+    """`factory report --by-policy`: rates grouped by the policy hash each foreman turn recorded."""
+
+    def make_run(self, root: Path, run_id: str, turns: list[tuple[str | None, str]], *, status: str = "done",
+                 overrides: int = 0) -> tuple[Path, Run]:
+        run_dir = root / run_id
+        decisions = []
+        for n, (sha, source) in enumerate(turns, start=1):
+            turn_dir = run_dir / "foreman" / "turns" / str(n)
+            turn_dir.mkdir(parents=True)
+            record = {"schema": "factory.foreman-turn/2" if sha else "factory.foreman-turn/1", "turn": n,
+                      "source": source}
+            if sha:
+                record["policy"] = {"skill": "s", "references": "r", "sha256": sha}
+            (turn_dir / "decision.json").write_text(json.dumps(record))
+            decisions.append({"turn": n, "source": source, "stage": "build", "attempt": n})
+        run_dir.mkdir(parents=True, exist_ok=True)
+        data = {"id": run_id, "status": status, "attempts": [], "decisions": decisions,
+                "overrides": [{"turn": 1, "stage": "build", "attempt": 1, "gate_code": "a.b",
+                               "justification": "j"}] * overrides}
+        return run_dir, Run(run_dir, data)
+
+    def test_two_policies_and_an_unhashed_run_make_three_groups(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            runs = [self.make_run(root, "a", [("a" * 64, "foreman"), ("a" * 64, "fallback")], overrides=1),
+                    self.make_run(root, "b", [("b" * 64, "foreman")], status="needs-human"),
+                    self.make_run(root, "c", [(None, "foreman")])]
+            groups = outcomes.by_policy(runs)
+        self.assertEqual(sorted(groups), sorted(["a" * 64, "b" * 64, "unknown"]))
+        self.assertEqual(groups["a" * 64]["turns"], 2)
+        self.assertEqual(groups["a" * 64]["fallback"], {"count": 1, "n": 2, "rate": 0.5})
+        self.assertEqual(groups["a" * 64]["override"], {"count": 1, "n": 2, "rate": 0.5})
+        self.assertEqual(groups["b" * 64]["intervention"], {"count": 1, "n": 1, "rate": 1.0})
+        self.assertEqual(groups["unknown"]["runs"], 1)

@@ -110,6 +110,31 @@ def skill_bundles(plugin_list: str | None = None) -> dict:
     }
 
 
+FOREMAN_SKILL = Path("skills") / "foreman" / "SKILL.md"
+PROTOCOL = Path("references") / "factory-run.md"
+
+
+def tree_policy(tree: Path) -> dict:
+    """The foreman policy a plugin tree carries: its skill, the protocol reference it links, and one hash over both.
+
+    The hash covers the two files' contents, so a change to either one is a different policy.
+    """
+    skill, references = Path(tree) / FOREMAN_SKILL, Path(tree) / PROTOCOL
+    digest = hashlib.sha256()
+    for path in (skill, references):
+        content = path.read_bytes() if path.is_file() else b""
+        digest.update(hashlib.sha256(content).hexdigest().encode("ascii") + b"\n")
+    return {"skill": str(skill), "references": str(references), "sha256": digest.hexdigest()}
+
+
+def policy_identity(bundles: dict | None = None, *, root: Path | None = None) -> dict:
+    """The policy the foreman reads: the installed plugin's copy when Codex loads it, else the generated tree."""
+    installed = (bundles or {}).get("installed") or {}
+    if (bundles or {}).get("resolution") == "installed-plugin" and installed.get("path"):
+        return tree_policy(Path(installed["path"]))
+    return tree_policy(Path(root or REPO_ROOT) / "plugins" / "factory")
+
+
 def generated_is_current() -> tuple[bool, str]:
     code, output = run_quiet([sys.executable, str(REPO_ROOT / "scripts" / "build_codex_plugin.py"), "--check",
                               "--plugin", "factory"], timeout=120)

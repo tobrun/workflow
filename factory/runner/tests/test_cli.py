@@ -104,6 +104,19 @@ class OutputTests(CliTestCase):
         self.assertIn("Done: pull request", stdout)
 
 
+class ReportByPolicyTests(CliTestCase):
+    def test_runs_without_a_policy_hash_report_as_unknown(self):
+        from runner.worker import Worker
+        run = self.queued_run()
+        Worker(self.home, run.id, grace=1).run()
+        code, shown, _ = self.call("report", "--by-policy")
+        self.assertEqual(code, 0)
+        self.assertIn("1 foreman policy group(s)", shown)
+        self.assertIn("unknown       runs 1  turns 0", shown)
+        code, shown, _ = self.call("report", "--by-policy", "--json")
+        self.assertEqual(json.loads(shown)["unknown"]["runs"], 1)
+
+
 class OperatorTests(CliTestCase):
     def test_retry_with_note_reaches_the_prompt(self):
         run = self.parked("needs-human")

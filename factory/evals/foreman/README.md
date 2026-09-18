@@ -3,11 +3,13 @@
 Status: maintained
 
 Cases captured from real runs at the moment the foreman would have been asked: the digest as it stood after one attempt, the event message for that attempt, and the actions a correct foreman may or may not choose.
-They exist so a skill or model change is measured against the failures that used to park runs before the default flips to `"foreman": "codex"`.
+They exist so a skill or model change is measured against the failures that used to park runs, and they are the hindsight labeller's check set: `factory history label --check-cases` matches each case to its history world point and prints every disagreement, where the hand label wins.
 
 - `cases/<name>/digest.json` - the run's digest after the named attempt, with repository identity redacted.
 - `cases/<name>/event.md` - the `attempt.finished` message for that attempt.
 - `cases/<name>/expected.json` - `accept` and `reject` action lists, an optional `allow_override`, and a note.
+
+`run.py` and `capture.py` are thin wrappers over the dream loop in `runner/dream.py` and `runner/history.py`: `run.py` replays each case as a point with `dream.replay` and scores it with `dream.score_point`, and `capture.py` also builds the run's history world and records the case's accept and reject lists as a human label once the run has finished.
 
 Capture a new case from a run on this machine:
 

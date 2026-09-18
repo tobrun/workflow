@@ -129,7 +129,7 @@ Pi ships `dev` only: Pi uses a flat skill namespace, so the factory's `scope`, `
 | `factory show <id> [--json]` | Show status, stage, retries, blocker, attempts, artifacts, PR, worktree, and exact next command. |
 | `factory logs <id> [--stage name] [--attempt n] [-f] [--raw]` | Render Codex events compactly or stream raw JSONL. |
 | `factory retry <id> [--reset-budget] [--note text] [--rescope] [--detach]` | Queue a new attempt for a `needs-human` or `cancelled` run and watch it; `--reset-budget` restores the retry budget; `--rescope` reopens interactive scope to change the approved intent. |
-| `factory foreman <id> [--turn n] [--json]` | Show the foreman session, its decisions, overrides, and caps; `--turn` prints one turn's prompt, decision, and record. |
+| `factory foreman <id> [--turn n] [--json]` | Show the foreman session, its decisions with the policy hash each turn ran under, overrides, and caps; `--turn` prints one turn's prompt, decision, record, and policy. |
 | `factory intent <id> [--json]` | Show the sealed approved intent (request, non-goals, scenario ids), scenarios added later, and each attempt's decision delta. |
 | `factory inputs <id> --stage name [--attempt n] [--file name]` | Show which plan files an attempt started from, how they changed, or print one snapshotted file. |
 | `factory resume <id> [--detach]` | Continue a `paused` run, or recover a queued or running run whose worker died, and watch it. |
@@ -138,8 +138,13 @@ Pi ships `dev` only: Pi uses a flat skill namespace, so the factory's `scope`, `
 | `factory cancel <id>` | Write cancellation intent; the attempt's guard stops the agent, and with no live worker the command stops a surviving execution by its verified identity before cancelling. |
 | `factory export <id> [--out DIR] [--comment]` | Write a portable evidence bundle (run records, approved intent, receipts, checkpoints, reports, evidence) with a checksummed `manifest.json` to `~/.factory/exports/{id}`; `--comment` links it from the PR by manifest digest. `factory export <bundle> --verify` checks a copy anywhere. |
 | `factory outcome <id> [--annotate rework\|rejection\|regression\|intervention] [--note text] [--active-minutes n] [--eval-case path]` | Append the PR's current state (merged, closed-unmerged, open, unknown) or an operator annotation to `outcomes.jsonl`; the recorded completion is never rewritten. |
-| `factory report [--json]` | Summarize success, intervention, rework, regressions, failure categories, and usage across runs, each rate with its sample size; active operator time counts only measured annotations. |
+| `factory report [--json] [--by-policy]` | Summarize success, intervention, rework, regressions, failure categories, and usage across runs, each rate with its sample size; active operator time counts only measured annotations. `--by-policy` groups intervention, override, and fallback rates by the foreman policy hash, `unknown` for turns recorded before it. |
 | `factory gc [--dry-run]` | Archive merged completed runs, exporting each bundle first; `exports/` is never removed. |
+| `factory history build [id ...] [--all]` | Build or refresh the replay world of each finished run under `~/.factory/history/`; see [History and dreams](#history-and-dreams). |
+| `factory history ls` | List the worlds with their points, scorable points, labels, status, and repository. |
+| `factory history label [id ...] [--all] [--relabel] [--check-cases]` | Label worlds with the hindsight skill (paid, one Codex session per world); `--relabel` regenerates model labels; `--check-cases` compares labels with the hand-labelled eval cases. |
+| `factory history label --set <id> <point> --accept ... [--reject ...] [--allow-override] [--note text]` | Record a human label for one point; no relabel ever overwrites it. |
+| `factory dream [--rounds N] [--repeats K] [--max-calls N] [--no-deploy] [--worlds id ...]` | Score the foreman skill on history, ask the dream skill for revisions, and deploy one that wins on held-out worlds (paid). |
 | `factory rm <id> --force` | Explicitly remove one run and worktree; refuses while an execution of the run is still live. |
 | `factory dashboard [--open]` | Regenerate the static board and optionally open it. |
 | `factory doctor [--json] [-v] [--repo PATH [--run-setup]] [--smoke]` | Check binaries, auth, that Codex loads exactly the generated skills, the browser the runner would host, config, slots, runtime permissions, and worktree health; `--repo` checks a repository's contract, environment names, commands, token forwarding, and sandboxed worktree Git; `--run-setup` runs its setup commands in a throwaway worktree; `--smoke` makes one cached, paid Codex call per model; `-v` also lists passing checks. |
@@ -231,7 +236,15 @@ The runtime root is `~/.factory`, overridden by `FACTORY_HOME`.
                        request.json, executor.json, receipt.json (the guarded execution),
                        inputs/ (plan files the attempt started from), outputs.json, gate/ (gate command receipts),
                        subphase.json (the gate subphase running now and its reuse decisions)
+    foreman/turns/{n}/ one foreman turn: prompt.txt, decision.json (factory.foreman-turn/2, with its policy hash),
+                       digest.json (the digest that turn was shown), last-message.md, stdout.jsonl
   archive/{run-id}/    merged, garbage-collected runs without their worktree; plan/ keeps .dev/{plan}
+  exports/{run-id}/    checksummed evidence bundles, foreman turns included; never removed by gc
+  history.lock         held by `factory history build`, `history label`, and `dream`, one at a time
+  history/{run-id}/    one replay world per finished run: world.json, points/{stage}-{n}/, labels.json,
+                       faults.json, outcomes.jsonl, note
+  dreams/{dream-id}/   report.md, traces.jsonl, candidates/{round}/plugins/factory/, decision.json
+  dreams/cache/        replay answers shared across dreams
 ```
 
 ## Configuration
@@ -257,6 +270,10 @@ The runtime root is `~/.factory`, overridden by `FACTORY_HOME`.
 | `max_wait_minutes` | `120` | Total waiting per stage on transient faults. |
 | `max_run_hours` | `24` | Wall clock after which a run parks. |
 | `max_overrides_per_run` | `2` | Gate overrides the foreman may record per run. |
+| `hindsight_model`, `hindsight_effort` | `openai.gpt-5.6-luna`, `medium` | The labeller's Codex model and effort for `factory history label`. |
+| `dream_model`, `dream_effort` | `openai.gpt-5.6-luna`, `medium` | The dream skill's Codex model and effort; replays use `foreman_model` and `foreman_effort`. |
+| `dream_margin` | `0.05` | Confirmation gain a revision needs over the incumbent, raised to one confirmation point's worth on small sets. |
+| `dream_floor_worlds`, `dream_floor_repos` | `6`, `2` | Confirmation worlds and repositories below which a dream reports but never deploys. |
 | `stop_on_repeated_reason` | `false` | Park after two consecutive identical retryable blocks at one stage. Independently, a retry that fails with the same failure code and leaves the commit and plan files unchanged always parks as "no progress". |
 | `stage_poll_seconds` | `10` | Slot wait interval. |
 | `heartbeat_seconds` | `30` | Worker heartbeat interval. |
@@ -294,6 +311,28 @@ Every override lands in `run.json`, in `factory show`, in an `## Overrides` sect
 With `"foreman": "shadow"` the decision is recorded under `runs/{id}/foreman/turns/{n}/` and in `run.json` (`decisions`) while `model.decide()` still chooses, which is how decisions are collected from real runs at no risk; a shadow turn is read-only, a `codex` turn may edit `.dev/` and push.
 A turn that fails, times out, or answers outside the schema is retried once and then falls back to `model.decide()`, recorded as `foreman.fallback`; a lost session, a changed thread id, a context past `foreman_context_tokens`, or two fallbacks in a row restart the session from a fresh digest.
 `factory foreman <id>` lists the session and its decisions, `--turn N` prints one turn's prompt, decision, and record, and the watch view and `factory show` print each decision as it lands.
+Every turn record is `factory.foreman-turn/2`: it names the policy the turn ran under, one sha256 over the generated foreman skill and the `references/factory-run.md` it links, resolved on the session's cold turn and kept for its warm turns, and each turn keeps the digest it was shown.
+`factory report --by-policy` compares rates across policy hashes, so a revision that made things worse is visible and `git revert` rolls it back.
+
+## History and dreams
+
+The dream loop improves the foreman skill offline from finished runs, the way Dream-RSI improves an exploration policy from recorded trees.
+
+- A **world** is one finished run (`done`, `needs-human`, `cancelled`, or `paused`) turned into `factory.world/1` by `factory history build`: one decision point per headless attempt that reached a decision, holding the digest the foreman saw (`recorded`, or rebuilt from `run.json` as `reconstructed` for older runs), the event message, the files it names, and the plan the attempt started from.
+  Absolute paths become point-relative or placeholders; a hard-stop point stays in the world unscored; a run whose `run.json` is unchanged is not rebuilt; history never writes inside a run directory.
+- A **label** (`factory.labels/1`) says, per scorable point, which actions a correct foreman may choose (`accept`), which are wrong (`reject`), and whether an override is justified.
+  The hindsight skill writes model labels and the run's faults (`factory.faults/1`: harness, stage, environment, or policy) in one session per world; `factory history label --set` writes a human label that no relabel overwrites.
+  `--check-cases` compares labels with the hand cases in `evals/foreman/cases/`, whose hand label always wins.
+- The **score** of a replayed decision is 1 when it is the cheapest accepted action, minus 0.15 per step up the ladder (`regate`, `publish`, `advance` at 0; `wait`, `repair` at 1; `launch` at 2; `park`, `rescope`, `cancel` at 3), and 0 when it is not accepted, malformed, or an override the label does not allow; a world scores the mean of its points and a policy the mean of its worlds.
+- The **split** holds worlds back for confirmation by run: whole repositories never seen in selection when there are three or more, each repository in both sets when there are two.
+  The dream skill sees only selection traces; a candidate that fails a deterministic check (frontmatter, decision table, 150 lines, em dash, F03, credential shapes, selection identities, 40-character runs of recorded text) is rejected before any replay; the incumbent stays in the pool.
+- The **floor** (`dream_floor_worlds` from `dream_floor_repos`) and the **margin** (`max(dream_margin, 1 / confirmation points)`) must both clear, and the round must not have hit `--max-calls`, before anything deploys; below them a dream still writes its report and candidates.
+- The **deploy** writes `factory/skills/foreman/SKILL.md`, rebuilds `plugins/factory`, runs `scripts/validate.sh`, commits the two skill files on `main` as `feat(foreman): dream {id} raises confirmation score {old} -> {new}` with the score table and both policy hashes, and pushes to `origin`.
+  Runs pick it up on their next cold turn; `codex plugin add factory@nurbot` realigns the installed plugin.
+  Roll a revision back with `git revert` of its commit.
+
+Replays are cached under `~/.factory/dreams/cache/` by policy hash, world, point, snapshot hash, decision schema, model, effort, and repeat ordinal; `factory dream` reports the fault ranking across worlds for a person to act on.
+`factory history` and `factory dream` never run inside `scripts/validate.sh`: labelling and dreaming are paid.
 
 ## Skill resolution
 
@@ -305,7 +344,7 @@ To always read the generated skills by path, set `FACTORY_DIRECT_SKILL_PATH=1` b
 
 ## Testing
 
-All runner tests are offline and use stub `codex`, `claude`, `gh`, `acli`, and `chrome` binaries from `runner/tests/stubs/`, selected through `FACTORY_CODEX_BIN`, `FACTORY_CLAUDE_BIN`, `FACTORY_GH_BIN`, `FACTORY_ACLI_BIN`, `FACTORY_BROWSER_BIN`, and an isolated `FACTORY_HOME`; the test config sets `"browser": "off"` except where a test hosts the stub browser.
+All runner tests are offline and use stub `codex`, `claude`, `gh`, `acli`, and `chrome` binaries from `runner/tests/stubs/`, selected through `FACTORY_CODEX_BIN`, `FACTORY_CLAUDE_BIN`, `FACTORY_GH_BIN`, `FACTORY_ACLI_BIN`, `FACTORY_BROWSER_BIN`, and an isolated `FACTORY_HOME`, with `FACTORY_REPO_ROOT` pointing a dream's deploy at a throwaway copy of this repository; the test config sets `"browser": "off"` except where a test hosts the stub browser.
 One test attaches a real `agent-browser` session to a hosted Chrome from inside a sandboxed command and is skipped where those are absent.
 
 ```bash

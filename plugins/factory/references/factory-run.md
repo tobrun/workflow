@@ -129,6 +129,7 @@ So the result file never replaces the skill's own deterministic loops: run `lint
 
 With `"foreman": "codex"` in `~/.factory/config.json`, one long-lived Codex session per run decides what the runner does after every attempt: launch a stage again with guidance, repair one thing, judge the gate again, publish, wait for a transient fault, advance, park with an exact operator action, rescope, or cancel.
 Its skill is `skills/foreman/SKILL.md` and its decision record is `factory.decision/1` in `scripts/factory_records.py`.
+Every turn record (`factory.foreman-turn/2`) names the policy hash it ran under, one sha256 over the generated foreman skill and this file, so a change to either is a new policy; `factory report --by-policy` compares policies, and the dream loop (`factory dream`) revises the foreman skill from replayed history and deploys a revision only when it wins on runs it never saw.
 For a stage skill nothing changes except the `guidance` and `history` fields above and the way a failure comes back: a retry may arrive as a `repair` attempt, a short prompt asking for exactly one fix followed by the full gate, and the stage may be launched again after a later stage found a problem in its output.
 
 The foreman may accept a stage over a failing gate by recording an override; the runner keeps every override in `run.json`, prints it in `factory show`, adds an `## Overrides` section to the pull request body, and counts it in `factory report`.

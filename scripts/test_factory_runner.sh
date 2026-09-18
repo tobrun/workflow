@@ -182,4 +182,58 @@ head -1 "$TEMP_DIR/ls.out" | grep -q "^1 need you, 0 in flight.$" || fail "ls he
 grep -q "factory retry $(basename "$BLOCKED_DIR") --reset-budget" "$TEMP_DIR/ls.out" \
   || fail "ls does not name the next command"
 
+# --- Scenario 3: the foreman decides, history is built and labelled, and a dream stays under the floor ---
+# A second pass under `foreman: codex` with a scripted stub foreman; the stub labeller and dream agent play the
+# paid sessions, and the one finished run is far below the deploy floor, so the dream reports and deploys nothing.
+printf '{"notify": false, "stage_poll_seconds": 0.05, "heartbeat_seconds": 0.2, "browser": "off", "foreman": "codex"}\n' \
+  > "$FACTORY_HOME/config.json"
+printf '{"auth": true, "prs": [], "checks": {}, "default_checks": [{"name": "ci", "state": "SUCCESS", "bucket": "pass"}]}\n' \
+  > "$FACTORY_GH_STATE"
+export FACTORY_STUB_FOREMAN="$TEMP_DIR/foreman.json"
+printf '[{"action": "advance", "stage": "scope-review"}, {"action": "advance", "stage": "build"}, {"action": "advance", "stage": "ship"}]\n' \
+  > "$FACTORY_STUB_FOREMAN"
+export FACTORY_STUB_HINDSIGHT="$TEMP_DIR/hindsight.json"
+printf '"auto"\n' > "$FACTORY_STUB_HINDSIGHT"
+export FACTORY_STUB_REPLAY="$TEMP_DIR/replay.json" FACTORY_STUB_REPLAY_CANDIDATE="$TEMP_DIR/replay-candidate.json"
+printf '{"*": {"action": "advance", "stage": "build"}}\n' > "$FACTORY_STUB_REPLAY"
+printf '{"*": {"action": "advance", "stage": "build"}}\n' > "$FACTORY_STUB_REPLAY_CANDIDATE"
+# A dream deploys into this checkout's copy, never the real one, even if a gate were ever to clear.
+REPO_COPY="$TEMP_DIR/workflow"
+python3 -c 'import sys; from pathlib import Path; from runner.tests.helpers import make_factory_repo; make_factory_repo(Path(sys.argv[1]))' \
+  "$REPO_COPY"
+export FACTORY_REPO_ROOT="$REPO_COPY"
+make_repo foreman
+cp "$TEMP_DIR/scenario-happy.json" "$FACTORY_STUB_SCENARIO"
+"$FACTORY" new "$TEMP_DIR/foreman" "Add idempotency protection to webhook processing" --plan foreman-webhook --yes \
+  > "$TEMP_DIR/new-foreman.out" || fail "foreman run did not exit 0: $(cat "$TEMP_DIR/new-foreman.out")"
+FOREMAN_DIR=$(ls -d "$FACTORY_HOME"/runs/*-foreman-webhook)
+wait_terminal "$FOREMAN_DIR"
+"$FACTORY" history build --all > "$TEMP_DIR/history-build.out" || fail "history build: $(cat "$TEMP_DIR/history-build.out")"
+"$FACTORY" history label --all > "$TEMP_DIR/history-label.out" || fail "history label: $(cat "$TEMP_DIR/history-label.out")"
+DEPLOYED_BEFORE=$(git -C "$REPO_COPY" rev-parse HEAD)
+"$FACTORY" dream --rounds 1 > "$TEMP_DIR/dream.out" || fail "dream: $(cat "$TEMP_DIR/dream.out")"
+grep -q "^decision floor" "$TEMP_DIR/dream.out" || fail "the dream did not stop at the floor: $(cat "$TEMP_DIR/dream.out")"
+[ "$(git -C "$REPO_COPY" rev-parse HEAD)" = "$DEPLOYED_BEFORE" ] || fail "a dream below the floor committed"
+
+python3 - "$FACTORY_HOME" "$(basename "$FOREMAN_DIR")" <<'PY'
+import json, sys
+from pathlib import Path
+home, run_id = Path(sys.argv[1]), sys.argv[2]
+
+def check(condition, message):
+    if not condition:
+        sys.exit(f"scenario 3: {message}")
+
+world = json.loads((home / "history" / run_id / "world.json").read_text())
+check([p["id"] for p in world["points"]] == ["scope-review-1", "build-1", "ship-1"], f"points {world['points']}")
+check(any(p["snapshot"] == "recorded" for p in world["points"]), "a recorded point")
+labels = json.loads((home / "history" / run_id / "labels.json").read_text())
+check(sorted(labels["labels"]) == ["build-1", "scope-review-1", "ship-1"], f"labels {labels}")
+dreams = sorted(p for p in (home / "dreams").iterdir() if p.name != "cache")
+check(len(dreams) == 1, f"dreams {dreams}")
+decision = json.loads((dreams[0] / "decision.json").read_text())
+check(decision["reason"] == "floor" and decision["deployed"] is False, f"decision {decision}")
+check((dreams[0] / "report.md").is_file(), "the dream wrote its report")
+PY
+
 echo "Factory runner e2e passed."

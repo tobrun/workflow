@@ -14,7 +14,7 @@ DELIVERIES: list[dict] = []
 
 
 class WebhookHandler(BaseHTTPRequestHandler):
-    def do_POST(self) -> None:  # noqa: N802 (BaseHTTPRequestHandler's own naming)
+    def do_POST(self) -> None:
         if self.path != "/webhook":
             self.send_response(404)
             self.end_headers()
@@ -33,7 +33,7 @@ class WebhookHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(b'{"stored": true}')
 
-    def log_message(self, format: str, *args: object) -> None:  # noqa: A002
+    def log_message(self, _format: str, *_args: object) -> None:
         pass  # keep the fixture's stdout quiet during a factory run
 
 

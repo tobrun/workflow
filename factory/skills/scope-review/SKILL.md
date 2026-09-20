@@ -1,6 +1,6 @@
 ---
 name: scope-review
-description: Review and auto-refine a settled spec before build starts - a fresh-context agent panel checks the plan against the actual repo for infeasible change sets, missing failure paths, semantic contradictions, and untestable scenarios, then verified findings are applied to spec.md (and, where they touch settled decisions or cross-boundary invariants, to docs/decisions.md and docs/contracts.md) by refine agents and the panel re-runs; findings only the user can decide are asked as questions at the end and their answers applied and promoted the same way, so a finished run hands build a spec - and ledger - ready to implement, with no separate scope pass needed to promote the changes. Use after scope settles a spec and before build implements it.
+description: Review and auto-refine a settled spec before build starts - a fresh-context agent panel checks the plan against the actual repo for infeasible change sets, missing failure paths, semantic contradictions, and untestable scenarios, then verified findings are applied to spec.md (and, where they touch settled decisions or cross-boundary invariants, to docs/decisions.md and docs/contracts.md) by refine agents and the panel re-runs; findings that exceed refine authority are decided at the end of the run under factory policy and their answers applied and promoted the same way, so a finished run hands build a spec - and ledger - ready to implement, with no separate scope pass needed to promote the changes. Use after scope settles a spec and before build implements it.
 disable-model-invocation: true
 ---
 
@@ -8,7 +8,7 @@ disable-model-invocation: true
 
 Review the spec with agents that did not write it, then refine it in place - before any implementation exists, and without a human in the loop.
 A defect caught here costs a spec edit; the same defect after build costs a re-implementation, so this loop runs to completion on its own and ends with a spec build can start on - not a findings list to triage, and not a handoff back to `scope`.
-The few findings only the user can decide are asked as questions at the end of the run, and the answers are applied before it finishes.
+The few findings that exceed refine authority are answered in section 4 under factory policy, and those answers are applied before the run finishes.
 The panel judges the plan against the actual repo, not against the conversation that produced it.
 You are the orchestrator: run tools, dispatch agents, apply the loop, report - your own reading of the spec is not a lens, and findings reach the spec only through verification.
 This skill edits `spec.md`, and promotes settled changes to `docs/decisions.md` and `docs/contracts.md` per step 5 below - never code, and never any other file.
@@ -39,7 +39,7 @@ A third panel means the refinements are churning, not converging - stop and esca
 5. **Re-gate.** Loop `lint-spec.py` until clean, fixing mechanical fallout with the same refine agents; then start the next round so fresh eyes judge the refined spec.
 
 Exit the loop when a panel raises nothing refinable; two rounds of the same finding surviving refinement is itself an escalation.
-Escalations collected across the rounds go to the interview below, not to a handoff.
+Escalations collected across the rounds go to section 4 below, not to a handoff.
 
 ## 3. Authority and refinement rules
 
@@ -51,10 +51,10 @@ Refine agents resolve conflicts by this order - each level beats everything belo
 4. The spec's prose.
 
 Refinable: false premises about the repo (rewrite the entry against the real code, including the extra work that reveals), change sets contradicting their linked decisions, missing test scenarios for stated invariants and failure paths, untestable scenarios (replace with one provable at that layer), and gaps whose resolution is forced once the repo is consulted.
-Escalations - never auto-applied, queued for the interview instead: anything that would flip a `✓` decision to a rejected alternative, change the user-visible scope or behavior, add or drop a dependency, or contradict the user's recorded intent.
+Escalations - never auto-applied by a refine agent, queued for section 4 instead: anything that would flip a `✓` decision to a rejected alternative, change the user-visible scope or behavior, add or drop a dependency, or contradict the user's recorded intent.
 A refine agent that cannot fix its finding without crossing that line marks it escalated and leaves the spec alone.
 Refinements follow `scope`'s notation: decision entries keep their slugs and marks, change sets keep their numbering, new scenarios carry layer tags.
-A refinement that adds or rewrites a decision entry, or a cross-boundary invariant, is promoted to the ledger immediately per step 5 - it does not wait for the interview.
+A refinement that adds or rewrites a decision entry, or a cross-boundary invariant, is promoted to the ledger immediately per step 5 - it does not wait for section 4.
 
 ## 4. Resolve escalations under factory policy
 
@@ -100,7 +100,7 @@ Write `.dev/{plan-name}/spec-review_N.md` at the next free index, one per run, c
 ```markdown
 # Spec review N - {plan-name} - {date}
 
-Verdict: APPROVED | APPROVED WITH DEFERRALS
+Verdict: APPROVED
 Rounds: {R} - {finding counts per round}
 
 ## Refinements applied
@@ -109,18 +109,21 @@ Rounds: {R} - {finding counts per round}
 
 ## Escalations resolved
 ### E1 - {lens} - {one-line title}
-Asked: {the question} - Answered: {the user's decision} -> {what the spec says now}
+Asked: {the question} - Decided under policy: {the option chosen} -> {what the spec says now}
 
 ## Promoted to the ledger
 {decision slug or contract entry} -> `docs/decisions.md` | `docs/contracts.md`
 
-## Deferred
-### D1 - {lens} - {one-line title}
-{the question still open, and why it exceeded this run: premise invalidated, new effort, or unanswered}
+## Rescope
+### R1 - {lens} - {one-line title}
+{what a future `scope` run must revisit, and why policy could not decide it: premise invalidated or a new effort}
 
 ## Strengths
 {the good notes worth keeping, deduplicated}
 ```
+
+`APPROVED` is the only verdict this copy writes, and the verdict line carries nothing after it.
+The `## Rescope` section appears only on a `failed` run with reason `rescope`, and that report omits the verdict line entirely because nothing was approved.
 
 ## Wrap up
 

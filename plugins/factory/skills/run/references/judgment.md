@@ -8,7 +8,7 @@ Per phase, the evidence commands the orchestrator re-runs as proof and what a `d
 
 ## scope-review
 
-`done`: `lint-spec.py` clean, and `spec-review_N.md` contains a `Verdict: APPROVED` line with a `Rounds:` line. A `failed` result with reason `rescope` is not repaired: it ends the run naming what a future `scope` run must revisit.
+`done`: `lint-spec.py` clean, and `spec-review_N.md` contains a line whose whole text is exactly `Verdict: APPROVED` - nothing after it - with a `Rounds:` line. Check it as a whole line, `grep -cx 'Verdict: APPROVED'`, never as a substring: a longer verdict such as `Verdict: APPROVED WITH DEFERRALS` is not a `done`. A `failed` result with reason `rescope` is not repaired: it ends the run naming what a future `scope` run must revisit.
 
 ## build
 

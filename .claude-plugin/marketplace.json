@@ -11,6 +11,11 @@
       "name": "dev",
       "source": "./dev",
       "description": "Development workflow skills: scope changes with argued decisions, build across unit/integration/e2e with every scenario proven by tests, ship with a deterministic quality gauntlet and an adversarially verified review, create structured commits that feed a decision ledger, and render pitches or comprehension quizzes."
+    },
+    {
+      "name": "factory",
+      "source": "./factory",
+      "description": "An orchestrator skill that takes a request through an interactive scope, then runs scope-review, build, and ship as unattended phases, judging each phase's completion itself, ending in a pull request or a report."
     }
   ]
 }

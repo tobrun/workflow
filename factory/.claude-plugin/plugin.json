@@ -1,0 +1,8 @@
+{
+  "name": "factory",
+  "version": "0.1.0",
+  "description": "An orchestrator skill that takes a request through an interactive scope, then runs scope-review, build, and ship as unattended phases, judging each phase's completion itself and repairing or relaunching it on failure, ending in a pull request or a report. Use on Claude Code or Codex when you want a request carried through to a shipped change without a human at each phase.",
+  "author": {
+    "name": "Tobrun"
+  }
+}

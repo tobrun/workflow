@@ -83,6 +83,42 @@ PLUGINS = {
             ),
         },
     ),
+    "factory": PluginConfig(
+        name="factory",
+        display_name="Factory",
+        short_description="Run scope, scope-review, build, and ship unattended.",
+        capabilities=("Interactive", "Write"),
+        default_prompts=(
+            "Take this request through scope, then run it unattended to a pull request.",
+        ),
+        skill_ui={
+            "run": (
+                "Run",
+                "Take a request from scope to a shipped change unattended",
+                "Use $factory:run to take a request through scope, then run scope-review, build, and ship unattended.",
+            ),
+            "scope": (
+                "Scope",
+                "Spec a change by arguing its decisions",
+                "Use $factory:scope to spec this change with argued decisions and a change plan.",
+            ),
+            "scope-review": (
+                "Scope Review",
+                "Review and auto-refine a settled spec",
+                "Use $factory:scope-review to review the settled spec with a verified agent panel and refine it in place before building.",
+            ),
+            "build": (
+                "Build",
+                "Execute a spec test-first through e2e",
+                "Use $factory:build to execute the current spec test-first and verify it end to end.",
+            ),
+            "ship": (
+                "Ship",
+                "Harden, review, then open a PR with proof",
+                "Use $factory:ship to run the quality gauntlet, the verified review, and open the pull request with evidence for this change.",
+            ),
+        },
+    ),
 }
 
 

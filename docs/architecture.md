@@ -1,11 +1,11 @@
 # Architecture
 
 Purpose: this repository is a monorepo of agent skills and the tooling that ships them.
-One plugin lives here: `dev`, the hand-invoked development workflow (scope, scope-review, build, ship, commit, and two presentation skills).
-A person invokes each skill by hand; skills never invoke each other, and each one recommends the next step instead.
-The generated Codex distribution under `plugins/` is built from the source plugin and never edited by hand.
+Two plugins live here: `dev`, the hand-invoked development workflow (scope, scope-review, build, ship, commit, and two presentation skills), and `factory`, whose `run` skill orchestrates copies of the same four phases unattended.
+A person invokes each `dev` skill by hand; skills never invoke each other, and each one recommends the next step instead - except the factory `run` skill, the one sanctioned invoker, which launches its copied phase skills by path and judges their completion itself.
+The generated Codex distributions under `plugins/` are built from their source plugin and never edited by hand.
 
-Captured: 2026-09-17 (full, scope) - Updated: 2026-09-20 (the factory plugin and its runner were removed)
+Captured: 2026-09-17 (full, scope) - Updated: 2026-09-20 (the factory plugin returns as an orchestrator skill; its removed runner stays gone)
 
 ## Components
 
@@ -17,6 +17,7 @@ Captured: 2026-09-17 (full, scope) - Updated: 2026-09-20 (the factory plugin and
 | repo scripts | validation of the whole repository, the plugin generator, and the Pi transport self-test | `scripts/` | every other component |
 | harden tools | optional local analyses a ship gauntlet can draw on: added lines, coverage-weighted complexity, flaky reruns, mutation | `tools/harden/` | nothing; run by hand against a target repository |
 | research and todo | plans, findings, and reading notes | `research/`, `todo/` | nothing |
+| factory plugin | the `run` orchestrator skill, the four phase copies, their references and scripts | `factory/skills/`, `factory/references/`, `factory/scripts/`, `factory/evals/` | the host's subagent tool, the consuming repository's `.dev/` |
 
 ## Flows
 
@@ -27,7 +28,12 @@ Captured: 2026-09-17 (full, scope) - Updated: 2026-09-20 (the factory plugin and
 
 ### Building the Codex distribution
 1. `scripts/build_codex_plugin.py` copies skills/, references/, and `scripts/` of the source plugin into plugins/{name}/, strips Claude-only frontmatter, and writes agents/openai.yaml.
-2. `scripts/validate.sh` checks structure, links, skill length, the Codex distribution (C01), and the Pi package and transport (P01); `--check` mode of the generator fails when `plugins/` is stale.
+2. `scripts/validate.sh` checks structure, links, skill length, the Codex distribution (C01), the Pi package and transport (P01), and the factory plugin's unattended wording and result protocol; `--check` mode of the generator fails when `plugins/` is stale.
+
+### A factory run
+1. A person invokes `/factory:run "a request"` (or a path to one); `run` scopes the change inline with them and ends with one go question.
+2. From the go, `run` launches `scope-review`, `build`, and `ship` in turn as fresh-context subagents, judges each result's file against the phase's own deterministic checks, repairs or relaunches on failure, and never lets a phase invoke another.
+3. The run ends in an open pull request, or a report naming the exact action a person could take - the pushed branch and the run's state file are what survives a closed session.
 
 ## Boundaries
 

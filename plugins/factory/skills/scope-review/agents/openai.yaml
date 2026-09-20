@@ -1,0 +1,6 @@
+interface:
+  display_name: "Scope Review"
+  short_description: "Review and auto-refine a settled spec"
+  default_prompt: "Use $factory:scope-review to review the settled spec with a verified agent panel and refine it in place before building."
+policy:
+  allow_implicit_invocation: false

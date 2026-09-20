@@ -1,0 +1,6 @@
+interface:
+  display_name: "Scope"
+  short_description: "Spec a change by arguing its decisions"
+  default_prompt: "Use $factory:scope to spec this change with argued decisions and a change plan."
+policy:
+  allow_implicit_invocation: false

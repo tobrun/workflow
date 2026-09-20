@@ -3,6 +3,7 @@
 | Plugin | Use When | Tools |
 | ------ | -------- | ----- |
 | [dev](dev/) | A test-focused development workflow for Claude Code, Codex, opencode, and Pi. | `scope`, `commit`, `build`, `ship`, `to-pitch`, `to-quiz` |
+| [factory](factory/) | Take a request from scope to a shipped pull request unattended, on Claude Code or Codex. | `run`, `scope`, `scope-review`, `build`, `ship` |
 
 ## Claude Code
 

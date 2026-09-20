@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Review</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7; --surface: #fcfcfb; --surface-2: #ffffff;
+    --text: #0b0b0b; --text-2: #52514e; --muted: #898781;
+    --grid: #e1e0d9; --border: rgba(11,11,11,0.10); --accent: #2a78d6;
+    --good: #0ca30c; --warning: #fab219; --critical: #d03b3b;
+    --shadow: 0 1px 2px rgba(11,11,11,0.06), 0 4px 16px rgba(11,11,11,0.06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark; --page: #0d0d0d; --surface: #1a1a19; --surface-2: #202020;
+      --text: #ffffff; --text-2: #c3c2b7; --muted: #898781; --grid: #2c2c2a;
+      --border: rgba(255,255,255,0.10); --accent: #3987e5;
+      --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 4px 20px rgba(0,0,0,0.4);
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark; --page: #0d0d0d; --surface: #1a1a19; --surface-2: #202020;
+    --text: #ffffff; --text-2: #c3c2b7; --muted: #898781; --grid: #2c2c2a;
+    --border: rgba(255,255,255,0.10); --accent: #3987e5;
+    --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 4px 20px rgba(0,0,0,0.4);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body { background: var(--page); color: var(--text); font: 15px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 28px 20px 100px; }
+  .topbar { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; justify-content: space-between; padding: 10px 20px; background: color-mix(in srgb, var(--page) 88%, transparent); backdrop-filter: blur(8px); border-bottom: 1px solid var(--border); }
+  .topbar .brand { font-weight: 600; font-size: 13px; color: var(--text-2); letter-spacing: 0.02em; }
+  .icon-btn { border: 1px solid var(--border); background: var(--surface-2); color: var(--text-2); border-radius: 8px; padding: 6px 10px; font-size: 13px; cursor: pointer; }
+  .icon-btn:hover { color: var(--text); border-color: var(--muted); }
+  header.hero { padding: 36px 0 10px; }
+  header.hero h1 { font-size: 26px; margin: 0 0 12px; letter-spacing: -0.01em; }
+  .verdict { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 800; letter-spacing: 0.03em; padding: 6px 14px; border-radius: 100px; text-transform: uppercase; }
+  .verdict.pass { background: color-mix(in srgb, var(--good) 16%, var(--surface)); color: var(--good); }
+  .verdict.concerns { background: color-mix(in srgb, var(--warning) 20%, var(--surface)); color: color-mix(in srgb, var(--warning) 70%, #3a2a00); }
+  .verdict.block { background: color-mix(in srgb, var(--critical) 16%, var(--surface)); color: var(--critical); }
+  .meta { font-size: 12.5px; color: var(--muted); margin-top: 10px; }
+  .summary { font-size: 15px; color: var(--text-2); margin-top: 12px; max-width: 68ch; }
+  section { margin: 30px 0; }
+  h2.section-title { font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 0 0 12px; font-weight: 700; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 18px 20px; box-shadow: var(--shadow); }
+  .finding { border-bottom: 1px dashed var(--border); padding: 12px 0; }
+  .finding:last-child { border-bottom: none; }
+  .finding .head { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+  .finding .loc { font-size: 12px; color: var(--muted); font-family: ui-monospace, monospace; }
+  .finding .title { font-weight: 600; }
+  .finding .lenses { font-size: 11px; color: var(--accent); }
+  .finding .detail { margin-top: 6px; font-size: 13.5px; color: var(--text-2); }
+  table.nits { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  table.nits th, table.nits td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--grid); }
+  .good-row { display: flex; gap: 8px; padding: 6px 0; font-size: 13.5px; }
+  .good-row .lens { color: var(--muted); min-width: 110px; }
+  .prev-item { display: flex; justify-content: space-between; gap: 10px; padding: 6px 0; border-bottom: 1px dashed var(--border); font-size: 13.5px; }
+  .prev-item:last-child { border-bottom: none; }
+  .status-fixed { color: var(--good); font-weight: 600; }
+  .status-open { color: var(--critical); font-weight: 600; }
+  .empty { color: var(--muted); font-size: 13.5px; }
+</style>
+</head>
+<body>
+  <div class="topbar">
+    <span class="brand">REVIEW</span>
+    <button class="icon-btn" id="theme-toggle" type="button">Theme</button>
+  </div>
+
+  <div class="wrap">
+    <header class="hero">
+      <h1 id="r-title"></h1>
+      <span class="verdict" id="r-verdict"></span>
+      <div class="meta" id="r-meta"></div>
+      <div class="summary" id="r-summary"></div>
+    </header>
+
+    <section id="sec-conformance">
+      <h2 class="section-title">Spec conformance</h2>
+      <div class="card" id="conformance-text"></div>
+    </section>
+
+    <section id="sec-previous">
+      <h2 class="section-title">Previous findings</h2>
+      <div class="card" id="previous-list"></div>
+    </section>
+
+    <section>
+      <h2 class="section-title">Blockers</h2>
+      <div class="card" id="blockers-list"></div>
+    </section>
+
+    <section>
+      <h2 class="section-title">Concerns</h2>
+      <div class="card" id="concerns-list"></div>
+    </section>
+
+    <section id="sec-nits">
+      <h2 class="section-title">Nits</h2>
+      <div class="card"><table class="nits"><thead><tr><th>File</th><th>Lens</th><th>Issue</th></tr></thead><tbody id="nits-body"></tbody></table></div>
+    </section>
+
+    <section>
+      <h2 class="section-title">What's good</h2>
+      <div class="card" id="good-list"></div>
+    </section>
+
+    <section>
+      <h2 class="section-title">Next step</h2>
+      <div class="card" id="next-step"></div>
+    </section>
+  </div>
+
+<script>
+/* REVIEW_DATA_START - replace everything between these two markers with the real review data */
+const REVIEW_DATA = {
+  title: "Review 1: Example change",
+  planName: "example-plan",
+  reviewIndex: 1,
+  verdict: "PASS",
+  panel: ["correctness", "tests"],
+  failedLenses: [],
+  base: "main",
+  date: "2026-01-01",
+  summary: "Placeholder - replace REVIEW_DATA before sharing this file.",
+  specConformance: "",
+  previousFindings: [],
+  blockers: [],
+  concerns: [],
+  nits: [],
+  whatsGood: [],
+  nextStep: "Placeholder."
+};
+/* REVIEW_DATA_END */
+
+function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c])); }
+function mdLite(s) {
+  if (!s) return "";
+  let h = escapeHtml(s);
+  h = h.replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/`([^`]+)`/g, "<code>$1</code>");
+  return h.split(/\n\n+/).map(p => "<p style='margin:0 0 8px'>" + p.replace(/\n/g, "<br>") + "</p>").join("");
+}
+
+(function themeInit() {
+  const key = "ship-theme";
+  let saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) {}
+  if (saved === "light" || saved === "dark") document.documentElement.setAttribute("data-theme", saved);
+  document.getElementById("theme-toggle").addEventListener("click", () => {
+    const cur = document.documentElement.getAttribute("data-theme");
+    const next = cur === "dark" ? "light" : cur === "light" ? null : "dark";
+    if (next) document.documentElement.setAttribute("data-theme", next);
+    else document.documentElement.removeAttribute("data-theme");
+    try { next ? localStorage.setItem(key, next) : localStorage.removeItem(key); } catch (e) {}
+  });
+})();
+
+document.getElementById("r-title").textContent = REVIEW_DATA.title || "Review";
+document.title = REVIEW_DATA.title || "Review";
+const verdictEl = document.getElementById("r-verdict");
+verdictEl.textContent = REVIEW_DATA.verdict || "";
+verdictEl.className = "verdict " + (REVIEW_DATA.verdict || "").toLowerCase();
+const failed = REVIEW_DATA.failedLenses || [];
+document.getElementById("r-meta").textContent =
+  "Panel: " + (REVIEW_DATA.panel || []).join(", ") +
+  (failed.length ? " (failed: " + failed.join(", ") + ")" : "") +
+  " - Base: " + (REVIEW_DATA.base || "") + ", " + (REVIEW_DATA.date || "");
+document.getElementById("r-summary").innerHTML = mdLite(REVIEW_DATA.summary || "");
+
+function toggleSection(id, show) { document.getElementById(id).style.display = show ? "" : "none"; }
+
+toggleSection("sec-conformance", !!REVIEW_DATA.specConformance);
+document.getElementById("conformance-text").innerHTML = mdLite(REVIEW_DATA.specConformance || "");
+
+const prev = REVIEW_DATA.previousFindings || [];
+toggleSection("sec-previous", prev.length > 0);
+document.getElementById("previous-list").innerHTML = prev.map(p =>
+  `<div class="prev-item"><span>${escapeHtml(p.finding || "")}</span><span class="${p.status === "fixed" ? "status-fixed" : "status-open"}">${escapeHtml(p.status || "")}</span></div>`
+).join("");
+
+function renderFindings(containerId, findings) {
+  const el = document.getElementById(containerId);
+  if (!findings || !findings.length) { el.innerHTML = "<div class='empty'>None.</div>"; return; }
+  el.innerHTML = findings.map(f => `
+    <div class="finding">
+      <div class="head">
+        <span class="loc">${escapeHtml(f.file || "")}${f.line ? ":" + f.line : ""}</span>
+        <span class="title">${escapeHtml(f.title || "")}</span>
+        <span class="lenses">[${(f.lenses || []).join(", ")}]</span>
+      </div>
+      <div class="detail">${mdLite(f.detail || "")}</div>
+    </div>`).join("");
+}
+renderFindings("blockers-list", REVIEW_DATA.blockers);
+renderFindings("concerns-list", REVIEW_DATA.concerns);
+
+const nits = REVIEW_DATA.nits || [];
+toggleSection("sec-nits", nits.length > 0);
+document.getElementById("nits-body").innerHTML = nits.map(n =>
+  `<tr><td>${escapeHtml(n.file || "")}</td><td>${escapeHtml(n.lens || "")}</td><td>${escapeHtml(n.issue || "")}</td></tr>`
+).join("");
+
+const good = REVIEW_DATA.whatsGood || [];
+document.getElementById("good-list").innerHTML = good.length
+  ? good.map(g => `<div class="good-row"><span class="lens">${escapeHtml(g.lens || "")}</span><span>${escapeHtml(g.note || "")}</span></div>`).join("")
+  : "<div class='empty'>None noted.</div>";
+
+document.getElementById("next-step").innerHTML = mdLite(REVIEW_DATA.nextStep || "");
+</script>
+</body>
+</html>

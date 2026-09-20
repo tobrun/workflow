@@ -1,0 +1,6 @@
+interface:
+  display_name: "Build"
+  short_description: "Execute a spec test-first through e2e"
+  default_prompt: "Use $factory:build to execute the current spec test-first and verify it end to end."
+policy:
+  allow_implicit_invocation: false

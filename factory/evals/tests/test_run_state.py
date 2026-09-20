@@ -404,6 +404,59 @@ class RunStateTest(unittest.TestCase):
         self.assertEqual(result.returncode, 3)
         self.assertNotIn("Traceback", result.stderr)
 
+    def test_handoff_with_a_corrupt_state_file_exits_3(self) -> None:
+        self.init_plan()
+        self.write_spec()
+        (self.plan_dir / "factory-run.json").write_text('{"plan": "fix', encoding="utf-8")
+        result = run_state(self.cwd, "handoff", "fixture-plan", "--branch", "factory/fixture-plan")
+        self.assertEqual(result.returncode, 3)
+        self.assertIn("unusable state file", result.stdout)
+        self.assertNotIn("Traceback", result.stderr)
+
+    def test_handoff_with_a_non_object_state_file_exits_3(self) -> None:
+        self.init_plan()
+        self.write_spec()
+        (self.plan_dir / "factory-run.json").write_text("[]", encoding="utf-8")
+        result = run_state(self.cwd, "handoff", "fixture-plan", "--branch", "factory/fixture-plan")
+        self.assertEqual(result.returncode, 3)
+        self.assertIn("not a JSON object", result.stdout)
+
+    def test_record_rejects_stdin_json_that_is_not_an_object(self) -> None:
+        self.init_plan()
+        before = (self.plan_dir / "factory-run.json").read_text()
+        result = run_state(self.cwd, "record", "fixture-plan", stdin=json.dumps([{"action": "advance"}]))
+        self.assertEqual(result.returncode, 3)
+        self.assertIn("not a decision object", result.stdout)
+        self.assertEqual(before, (self.plan_dir / "factory-run.json").read_text())
+
+    def test_check_result_with_a_json_array_exits_3(self) -> None:
+        path = self.cwd / "array.json"
+        path.write_text(json.dumps([{"status": "done"}]), encoding="utf-8")
+        result = run_state(self.cwd, "check-result", str(path))
+        self.assertEqual(result.returncode, 3)
+        self.assertIn("not a JSON object", result.stdout)
+
+    def test_check_result_stopped_without_a_kind_prints_an_empty_kind(self) -> None:
+        path = self.write_result({"status": "stopped", "stop": ["secret.found"]})
+        result = run_state(self.cwd, "check-result", str(path))
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(result.stdout, "stopped: \n")
+
+    def test_attempt_with_a_corrupt_state_file_exits_3(self) -> None:
+        self.init_plan()
+        (self.plan_dir / "factory-run.json").write_text('{"plan": "fix', encoding="utf-8")
+        result = run_state(self.cwd, "attempt", "fixture-plan", "build")
+        self.assertEqual(result.returncode, 3)
+        self.assertIn("unusable state file", result.stdout)
+        self.assertNotIn("Traceback", result.stderr)
+
+    def test_attempt_with_a_non_object_state_file_exits_3(self) -> None:
+        self.init_plan()
+        (self.plan_dir / "factory-run.json").write_text('"not a state"', encoding="utf-8")
+        result = run_state(self.cwd, "attempt", "fixture-plan", "build", "--status", "done")
+        self.assertEqual(result.returncode, 3)
+        self.assertIn("not a JSON object", result.stdout)
+
     def test_show_exits_0(self) -> None:
         self.init_plan()
         result = run_state(self.cwd, "show", "fixture-plan")

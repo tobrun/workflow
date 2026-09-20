@@ -11,11 +11,6 @@
       "name": "dev",
       "source": "./dev",
       "description": "Development workflow skills: scope changes with argued decisions, build across unit/integration/e2e with every scenario proven by tests, ship with a deterministic quality gauntlet and an adversarially verified review, create structured commits that feed a decision ledger, and render pitches or comprehension quizzes."
-    },
-    {
-      "name": "factory",
-      "source": "./factory",
-      "description": "Software factory skills: factory-tuned scope, scope-review, build, and ship that read a per-attempt run file, resolve questions without a human, and write typed stage results, so the local factory runner can turn one interactively scoped change request into a ready pull request unattended."
     }
   ]
 }

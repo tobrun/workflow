@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Function-scoped mutation testing: mutate named functions one change at a time and run their fast tests.
 
-    cd factory && python3 ../tools/harden/mutate.py runner/dream.py score_point split \\
-        --tests runner.tests.test_dream.ScoreTests runner.tests.test_dream.SplitTests
+    cd pkg && python3 ../tools/harden/mutate.py parser.py parse_header split_body \\
+        --tests tests.test_parser.HeaderTests tests.test_parser.BodyTests
 
 The ecosystem frameworks (mutmut, cosmic-ray) mutate whole modules and run one test command per mutant; in this
 repository most modules pair with integration tests that take tens of seconds, so a whole-module run costs hours.

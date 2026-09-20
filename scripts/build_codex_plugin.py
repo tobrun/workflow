@@ -83,54 +83,6 @@ PLUGINS = {
             ),
         },
     ),
-    "factory": PluginConfig(
-        name="factory",
-        display_name="Factory",
-        short_description="Run scope-review, build, and ship unattended for a factory run.",
-        capabilities=("Write",),
-        default_prompts=(
-            "Review and refine the settled spec for this factory run.",
-            "Build the spec for this factory run.",
-            "Ship this factory run to a ready pull request.",
-        ),
-        skill_ui={
-            "scope": (
-                "Scope",
-                "Interactively spec a factory run",
-                "Use $factory:scope to spec this factory run's change with argued decisions.",
-            ),
-            "scope-review": (
-                "Scope Review",
-                "Review and refine a factory run's spec",
-                "Use $factory:scope-review to review and refine the settled spec for this factory run.",
-            ),
-            "build": (
-                "Build",
-                "Build a factory run's spec unattended",
-                "Use $factory:build to implement and verify the spec for this factory run.",
-            ),
-            "ship": (
-                "Ship",
-                "Ship a factory run to a ready PR",
-                "Use $factory:ship to harden, review, and open the pull request for this factory run.",
-            ),
-            "foreman": (
-                "Foreman",
-                "Decide a factory run's next step",
-                "Use $factory:foreman to decide what the factory runner does next for this run.",
-            ),
-            "hindsight": (
-                "Hindsight",
-                "Label a finished factory run's decisions",
-                "Use $factory:hindsight to label the decision points of this finished factory run.",
-            ),
-            "dream": (
-                "Dream",
-                "Revise the foreman skill from replays",
-                "Use $factory:dream to revise the foreman skill from this round's replay traces.",
-            ),
-        },
-    ),
 }
 
 

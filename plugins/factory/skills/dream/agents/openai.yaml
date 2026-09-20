@@ -1,6 +1,0 @@
-interface:
-  display_name: "Dream"
-  short_description: "Revise the foreman skill from replays"
-  default_prompt: "Use $factory:dream to revise the foreman skill from this round's replay traces."
-policy:
-  allow_implicit_invocation: false

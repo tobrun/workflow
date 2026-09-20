@@ -1,8 +1,0 @@
-{
-  "name": "factory",
-  "version": "0.1.3",
-  "description": "Software factory skills: factory-tuned copies of scope, scope-review, build, and ship that read a per-attempt run file, handle questions without a human, and write typed stage results, so a local runner can turn one interactively scoped change request into a ready pull request unattended. Use when running a change through the factory CLI rather than invoking dev skills by hand.",
-  "author": {
-    "name": "Tobrun"
-  }
-}

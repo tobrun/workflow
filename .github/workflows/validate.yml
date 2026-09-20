@@ -17,7 +17,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-        # The declared minimum (factory doctor requires 3.10) and a current release.
+        # The declared minimum supported release and a current one.
         python: ["3.10", "3.13"]
 
     steps:
@@ -42,17 +42,17 @@ jobs:
 
       - name: Configure Git identity for fixture repositories
         run: |
-          git config --global user.name "factory-ci"
-          git config --global user.email "factory-ci@example.invalid"
+          git config --global user.name "workflow-ci"
+          git config --global user.email "workflow-ci@example.invalid"
 
       - name: Run validation script
         env:
-          FACTORY_VALIDATE_LOGS: ${{ runner.temp }}/validate-logs
+          VALIDATE_LOGS: ${{ runner.temp }}/validate-logs
         run: |
           chmod +x scripts/validate.sh
           bash scripts/validate.sh
 
-      - name: Keep test and benchmark logs
+      - name: Keep validation logs
         if: always()
         uses: actions/upload-artifact@v4
         with:

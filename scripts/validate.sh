@@ -8,8 +8,8 @@ cd "$ROOT"
 
 ERROR_FILE=$(mktemp)
 # Test output is kept (not discarded) so a failure can be diagnosed; CI uploads this directory.
-if [ -n "${FACTORY_VALIDATE_LOGS:-}" ]; then
-  LOG_DIR="$FACTORY_VALIDATE_LOGS"
+if [ -n "${VALIDATE_LOGS:-}" ]; then
+  LOG_DIR="$VALIDATE_LOGS"
   mkdir -p "$LOG_DIR"
   trap 'rm -f "$ERROR_FILE"' EXIT
 else
@@ -567,8 +567,8 @@ check_codex() {
 # ===========================================================================
 # P01: Pi package manifest and subprocess review transport are valid
 #
-# Scoped to dev on purpose: Pi uses a flat skill namespace, so factory's
-# scope, build, and ship would collide with dev's. Pi ships dev only.
+# Scoped to dev on purpose: Pi uses a flat skill namespace, and dev is the
+# only plugin this repository ships to Pi.
 # ===========================================================================
 check_pi() {
   local package="package.json"
@@ -615,105 +615,6 @@ check_pi() {
 }
 
 # ===========================================================================
-# F01: factory runner unit, integration, and end-to-end tests pass
-# ===========================================================================
-check_factory_runner() {
-  if [ ! -d factory/runner/tests ]; then
-    fail "F01" "factory/runner/tests" "Factory runner tests not found"
-  elif ! (cd factory && python3 -m unittest discover -s runner/tests -t .) \
-    >"$LOG_DIR/runner-tests.log" 2>&1; then
-    grep -E -A 25 "^(FAIL|ERROR):" "$LOG_DIR/runner-tests.log" | head -120 >&2
-    fail "F01" "factory/runner/tests" \
-      "Runner tests failed (full output: $LOG_DIR/runner-tests.log); run: cd factory && python3 -m unittest discover -s runner/tests -t ."
-  fi
-
-  if [ ! -f scripts/test_factory_runner.sh ]; then
-    fail "F01" "scripts/test_factory_runner.sh" "Factory runner e2e test not found"
-  elif ! bash scripts/test_factory_runner.sh >"$LOG_DIR/runner-e2e.log" 2>&1; then
-    tail -60 "$LOG_DIR/runner-e2e.log" >&2
-    fail "F01" "scripts/test_factory_runner.sh" \
-      "Factory runner e2e test failed (full output: $LOG_DIR/runner-e2e.log); run: bash scripts/test_factory_runner.sh"
-  fi
-}
-
-# ===========================================================================
-# F04: the offline benchmark rejects every negative control and completes every correct task
-# ===========================================================================
-check_factory_bench() {
-  local bench="factory/evals/bench/bench.py" results="$LOG_DIR/bench"
-  [ -f "$bench" ] || { fail "F04" "$bench" "Factory benchmark harness not found"; return; }
-  rm -rf "$results"
-  if ! python3 "$bench" run --mode offline --out "$results" >"$LOG_DIR/bench-run.log" 2>&1; then
-    tail -40 "$LOG_DIR/bench-run.log" >&2
-    fail "F04" "$bench" "Offline benchmark run failed (output: $LOG_DIR/bench-run.log)"
-  elif ! python3 "$bench" report "$results" --require-success --markdown "$LOG_DIR/bench-report.md" \
-    >"$LOG_DIR/bench-report.json" 2>&1; then
-    cat "$LOG_DIR/bench-run.log" "$LOG_DIR/bench-report.md" >&2
-    fail "F04" "$bench" "Offline benchmark found a false green, an accepted negative control, or a failed task"
-  fi
-}
-
-# ===========================================================================
-# F02: every factory stage skill reads the run file and writes its result
-# ===========================================================================
-check_factory_skills() {
-  local stage
-  for stage in scope scope-review build ship; do
-    local sf="factory/skills/$stage/SKILL.md"
-    if [ ! -f "$sf" ]; then
-      fail "F02" "$sf" "Factory stage skill not found"
-      continue
-    fi
-    grep -Fq 'factory-run.json' "$sf" || \
-      fail "F02" "$sf" "Must mention factory-run.json"
-    grep -Fq "$stage-result.json" "$sf" || \
-      fail "F02" "$sf" "Must mention $stage-result.json"
-  done
-}
-
-# ===========================================================================
-# F03: unattended factory material never routes a decision to a person
-# ===========================================================================
-check_factory_unattended() {
-  local found
-  found=$(python3 - <<'PYEOF'
-import pathlib, re, sys
-
-# Phrases that hand a choice to a person. Factory policy decides instead; see
-# factory/references/factory-run.md "Decisions without a human".
-PATTERN = re.compile(
-    r"\b(ask(s|ed|ing)?|confirm(s|ed|ing)?\s+with|wait(s|ing)?\s+for|check(s|ing)?\s+with)\s+(the\s+)?(user|operator|human)s?\b"
-    r"|\b(user|operator|human)\s+(decides|approves|authorizes|chooses|confirms|answers)\b"
-    r"|structured user-input tool|\bhuman call\b|\bconfirm (with|before)\b",
-    re.I,
-)
-for sample in ("ask the user which one", "a human call", "the user decides", "confirm with the operator"):
-    if not PATTERN.search(sample):
-        print(f"scripts/validate.sh: F03 pattern no longer matches {sample!r}")
-        sys.exit(0)
-
-roots = ["factory/skills/scope-review", "factory/skills/build", "factory/skills/ship", "factory/skills/foreman",
-         "factory/skills/hindsight", "factory/skills/dream", "factory/references"]
-for root in roots:
-    for path in sorted(pathlib.Path(root).rglob("*.md")):
-        inside = False
-        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
-            if "<!-- interactive-only -->" in line:
-                inside = True
-            elif "<!-- /interactive-only -->" in line:
-                inside = False
-            elif not inside and PATTERN.search(line):
-                print(f"{path}:{number}: routes a decision to a person; decide under factory policy or mark the block <!-- interactive-only -->")
-PYEOF
-)
-  if [ -n "$found" ]; then
-    while IFS= read -r line; do
-      fail "F03" "${line%%: *}" "${line#*: }"
-    done <<< "$found"
-  fi
-}
-
-# ===========================================================================
 # Main
 # ===========================================================================
 check_01
@@ -734,10 +635,6 @@ check_skill_length
 check_links
 check_codex
 check_pi
-check_factory_runner
-check_factory_skills
-check_factory_unattended
-check_factory_bench
 
 if [ -s "$ERROR_FILE" ]; then
   echo ""

@@ -41,7 +41,7 @@ def main() -> int:
     parser.add_argument("--touched", action="store_true", help="also judge pre-existing functions the branch edited")
     parser.add_argument("--all", action="store_true", help="print every touched function, not only offenders")
     parser.add_argument("--prefix", default="", help="repository-relative prefix for paths both reports carry, "
-                        "such as factory/ when radon and coverage ran inside factory/")
+                        "such as pkg/ when radon and coverage ran inside pkg/")
     args = parser.parse_args()
     with open(args.radon, encoding="utf-8") as handle:
         radon = {args.prefix + path: blocks for path, blocks in json.load(handle).items()}

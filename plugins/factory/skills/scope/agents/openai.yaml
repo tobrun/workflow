@@ -1,6 +1,0 @@
-interface:
-  display_name: "Scope"
-  short_description: "Interactively spec a factory run"
-  default_prompt: "Use $factory:scope to spec this factory run's change with argued decisions."
-policy:
-  allow_implicit_invocation: false

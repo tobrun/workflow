@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Run unittest tests repeatedly in shuffled order and report any test whose outcome disagrees between runs.
 
-    cd factory && python3 ../tools/harden/flaky.py --runs 5 runner.tests.test_dream runner.tests.test_history
+    cd pkg && python3 ../tools/harden/flaky.py --runs 5 tests.test_parser tests.test_cache
 
 Each run shuffles the test order with its own seed (printed, so a disagreement can be replayed). Exit 1 when any
 test is flaky or fails every time.
@@ -13,7 +13,7 @@ import random
 import sys
 import unittest
 
-# Run from the directory the test modules import from (factory/ here), like `python3 -m unittest`.
+# Run from the directory the test modules import from, like `python3 -m unittest`.
 sys.path.insert(0, os.getcwd())
 
 

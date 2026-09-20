@@ -1,6 +1,0 @@
-interface:
-  display_name: "Build"
-  short_description: "Build a factory run's spec unattended"
-  default_prompt: "Use $factory:build to implement and verify the spec for this factory run."
-policy:
-  allow_implicit_invocation: false

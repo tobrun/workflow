@@ -1,5 +1,0 @@
-{
-  "remote_url": "git@github.com:YOUR-ACCOUNT/factory-bench-sandbox.git",
-  "max_tokens_per_run": 40000000,
-  "max_runs": 12
-}

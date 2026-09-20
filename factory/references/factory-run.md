@@ -8,8 +8,8 @@ Owned by the `run` skill. Every phase copy (`scope`, `scope-review`, `build`, `s
 
 - `plan`, `request`, `base` (the default branch at `init`).
 - `branch`, `spec_sha256`, `scenario_texts` (per change set), `not_doing_lines` (the `⊘` lines), `dirty_files` - all written at `handoff`.
-- `phases`: `{scope, scope-review, build, ship}`, each an ordered list of attempts. Each attempt: `{status: launched | done | failed | stopped, result: <the parsed result file, once read>}`.
-- `decisions`: an ordered list of `{phase, attempt, action, rationale, evidence: []}` with `action` in `advance`, `repair`, `relaunch`, `end`.
+- `phases`: `{scope, scope-review, build, ship}`, each an ordered list of attempts. Each attempt: `{status: launched | done | failed | stopped, result: <the parsed result file, once read>}`. The list is the attempt numbering: an attempt's number is its 1-based position, it is appended as `launched` before the phase is launched, and its result file is `results/{phase}-{that number}.json`. A trailing `launched` entry on resume therefore means a session died mid-phase, which is what tells that case apart from a phase never started (an empty list).
+- `decisions`: an ordered list of `{phase, attempt, action, rationale, evidence: []}` with `action` in `advance`, `repair`, `relaunch`, `end`. The list's end is also the run's terminal marker: a run is finished when its last entry is an `end`, or an `advance` on `ship`. There is no separate done field.
 - `repairs`: an ordered list of `{phase, attempt, description, files: [], evidence: []}`.
 
 ## Result envelope: `factory.result/1`
@@ -42,9 +42,9 @@ Every phase skill writes `.dev/{plan}/results/{phase}-{attempt}.json` as its las
 
 ## The unattended policy
 
-After the go, no phase skill asks a person anything. An escalation that dev's version would route to a person is instead: decided under the recommended option and recorded in `auto_decided`, or reported as `failed`/`stopped` with the reason a person would need. The two hard stops (`secret.found`, `action.destructive`) always report `stopped`; the orchestrator never overrides them.
+After the go, no phase skill asks a person anything. An escalation that dev's version would put outside the run is instead: decided under the recommended option and recorded in `auto_decided`, or reported as `failed`/`stopped` with the reason a person would need. The two hard stops (`secret.found`, `action.destructive`) always report `stopped`; the orchestrator never overrides them.
 
-`scope` is the one exception: it runs inline in the orchestrator's own session, keeps its interview, and is outside `check_factory_unattended`'s scan root. Every other phase copy, and `run/SKILL.md`'s own person-routing lines, live inside `<!-- interactive-only -->` / `<!-- /interactive-only -->` blocks or outside the scan root entirely.
+`scope` is the one exception: it runs inline in the orchestrator's own session, keeps its interview, and is outside `check_factory_unattended`'s scan root. `run/SKILL.md` is the only file in the scan root that may use `<!-- interactive-only -->` / `<!-- /interactive-only -->`, for its pre-go lines; the markers must balance and each must stand alone on its line. No phase copy may use them, because no phase copy has anything to route.
 
 ## Launch prompt shape
 
@@ -52,7 +52,7 @@ Each phase subagent's prompt carries, in order:
 
 1. The phase's skill path: the absolute path to `factory/skills/{phase}/SKILL.md`, with the instruction to read `{phase}-skill-root` as that path's parent directory (a subagent reading a file cannot resolve `{phase}-skill-root}`-style placeholders on its own).
 2. The plan name and the plan directory's absolute path.
-3. The attempt number.
+3. The attempt number, which is the one `run-state.py attempt` printed when it recorded this launch, never a number counted by hand or read off a file in `results/`.
 4. On a relaunch: the previous attempt's reason and explicit guidance naming what it did and what is required instead - never "try again".
 5. The scratch root for this attempt: `/tmp/{project-slug}/factory/{plan}/{phase}-{attempt}/`.
 6. The result path this attempt must write: `.dev/{plan}/results/{phase}-{attempt}.json`.

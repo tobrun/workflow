@@ -625,6 +625,11 @@ check_pi() {
 #
 # Each file's YAML frontmatter is skipped: a description states when a person
 # invokes the skill, which is before the go, not a decision routed after it.
+#
+# The pattern fires on a routing construction (ask/route/decide/gate), never
+# on a bare mention of a person, and a construction inside a negated clause
+# ("never ask the user", "no phase skill asks a person anything") is the
+# policy being stated rather than a decision being routed.
 # ===========================================================================
 check_factory_unattended() {
   local found
@@ -633,23 +638,75 @@ import pathlib, re, sys
 
 # A person noun, never the possessive ("the user's repo") or a compound
 # ("a user-facing change"): those are prose about people, not routing to one.
-PERSON = r"(?:user|operator|human|maintainer)s?\b(?![-'\u2019])"
-ASK = r"ask(?:s|ed|ing)?|prompt(?:s|ed|ing)?|poll(?:s|ed|ing)?|quer(?:y|ies|ied|ying)|consult(?:s|ed|ing)?"
-ROUTE = (r"confirm(?:s|ed|ing)?|check(?:s|ed|ing)?|wait(?:s|ed|ing)?\s+for|escalat(?:e|es|ed|ing)\s+to"
-         r"|surfac(?:e|es|ed|ing)\s+to|defer(?:s|red|ring)?\s+to|hand(?:s|ed|ing)?(?:\s+off)?\s+to"
-         r"|rout(?:e|es|ed|ing)\s+to")
-DECIDES = (r"decides?|approves?|authorizes?|chooses?|confirms?|answers?|asks?|says?|accepts?|picks?"
-           r"|selects?|responds?|has\s+(?:explicitly\s+)?asked|must\s+(?:decide|choose|answer|confirm)")
-ARTICLE = r"(?:the\s+|a\s+|an\s+|each\s+|every\s+)?"
+# "reviewer" and "author" are deliberately absent: in a code-review skill they
+# name the downstream reader of a PR the run opens, not a gate inside the run.
+PERSON = (r"(?:user|operator|human|maintainer|person|people|requester|requestor"
+          r"|owner|stakeholder|someone|somebody|anyone|anybody|whoever|team"
+          r"|them|they)s?\b(?![-'’])")
+ARTICLE = r"(?:the\s+|a\s+|an\s+|each\s+|every\s+|any\s+|some\s+|another\s+|your\s+|their\s+)?"
+ASK = (r"ask|prompt|poll|quer(?:y|ie)|consult|interview|question|survey|solicit"
+       r"|check\s+with|check\s+in\s+with")
+ROUTE = (r"confirm|check|verify|escalat\w*|surfac\w*|defer|hand(?:\s+off)?|rout\w*"
+         r"|rais\w*|agree\w*|align|discuss|negotiat\w*|coordinat\w*|sync|refer"
+         r"|bring|take|leave|let|flag|wait|paus\w*|loop\s+in|circle\s+back"
+         r"|follow\s+up|report\s+back|put|send|forward|delegat\w*|punt|kick\s+up")
+DECIDES = (r"decides?|decided|approves?|approved|authoriz\w+|chooses?|chose|confirms?"
+           r"|answers?|asks?|says?|accepts?|accepted|picks?|selects?|responds?|replies"
+           r"|weighs?\s+in|signs?\s+off|has\s+(?:explicitly\s+)?asked"
+           r"|must\s+(?:decide|choose|answer|confirm|approve|accept|sign|say|pick|select)"
+           r"|to\s+(?:decide|choose|confirm|approve|accept)")
+GATE = (r"call|decision|choice|question|judgm?ent|approval|sign-?off|input|answer"
+        r"|consent|permission|go-?ahead|say-?so|blessing|verdict|guidance|steer|gate")
 PATTERN = re.compile(
-    rf"\b(?:{ASK})\s+{ARTICLE}{PERSON}"
-    rf"|\b(?:{ROUTE})\s+{ARTICLE}{PERSON}"
-    rf"|\b{ARTICLE}{PERSON}\s+(?:{DECIDES})\b"
-    rf"|\b(?:question|decision|choice|call)s?\b[^.]{{0,40}}?\b(?:for|to|from)\s+{ARTICLE}{PERSON}"
-    r"|\bhuman\s+calls?\b|\bstructured user-input tool\b|\bAskUserQuestion\b"
-    r"|\bconfirm (?:with|before)\b",
+    # 1. ask / prompt / consult a person
+    rf"\b(?:{ASK})(?:s|es|ed|ing)?\s+{ARTICLE}{PERSON}"
+    # 2. ask first, ask before doing it
+    rf"|\bask(?:s|ed|ing)?\s+(?:first|before|again)\b"
+    # 3. route it to / with / for a person, over a little filler
+    rf"|\b(?:{ROUTE})(?:s|es|ed|ing)?\b(?:\s+\w+){{0,3}}?\s+(?:to|with|for|from|by|on)\s+{ARTICLE}{PERSON}"
+    # 4. a person decides
+    rf"|\b{ARTICLE}{PERSON}(?:\s+\w+){{0,4}}?\s+(?:{DECIDES})\b"
+    # 5. a decision for / to / from a person
+    rf"|\b(?:{GATE})s?\b(?![-'’])[^.]{{0,40}}?\b(?:for|to|from|by)\s+{ARTICLE}{PERSON}"
+    # 6. a human call, manual approval, a user sign-off
+    rf"|\b(?:human|manual|person|people|user|operator)[-\s](?:{GATE})s?\b(?![-'’])"
+    # 7. their call, the user's say-so
+    r"|\btheir\s+(?:call|say-?so|blessing|approval|sign-?off|consent|permission|go-?ahead)s?\b"
+    rf"|\bthe\s+(?:user|human|person|operator|maintainer|owner|requester)'s\s+(?:{GATE})s?\b"
+    # 8. get approval, await sign-off, seek permission
+    r"|\b(?:get|obtain|seek|secure|request|await|need|require|ask\s+for)(?:s|ed|ing)?"
+    r"\s+(?:\w+\s+){0,2}?(?:approval|sign-?off|confirmation|permission|consent"
+    r"|the\s+go-?ahead|a\s+decision|an\s+answer)\b"
+    # 9. wait for an answer
+    r"|\bwait(?:s|ed|ing)?\s+(?:around\s+)?for\s+(?:\w+\s+){0,2}?"
+    r"(?:answer|reply|response|approval|decision|confirmation|go-?ahead|sign-?off|input)s?\b"
+    # 10. the structured user-input tools themselves
+    r"|\bstructured user-input tool\b|\bAskUserQuestion\b",
     re.I,
 )
+# A negated clause states the policy ("never ask the user"); it routes nothing.
+NEGATOR = re.compile(
+    r"\b(?:never|not|no|none|nothing|neither|nor|without|instead\s+of|rather\s+than"
+    r"|avoid(?:s|ed|ing)?|n't|cannot|can't)\b",
+    re.I,
+)
+CLAUSE = re.compile(r"[.;:!?]|\s-\s")
+OPEN, CLOSE = "<!-- interactive-only -->", "<!-- /interactive-only -->"
+# Only the orchestrator has pre-go lines that legitimately reach a person.
+MARKER_ALLOWED = ("factory/skills/run/SKILL.md",)
+
+
+def routes(line):
+    """The first person-routing match on the line, ignoring negated clauses."""
+    for match in PATTERN.finditer(line):
+        prefix = line[: match.start()]
+        bounds = [m.end() for m in CLAUSE.finditer(prefix)]
+        clause = (prefix[bounds[-1]:] if bounds else prefix) + match.group(0)
+        if not NEGATOR.search(clause):
+            return match
+    return None
+
+
 SAMPLES = (
     "ask the user which one",
     "a human call",
@@ -664,6 +721,49 @@ SAMPLES = (
     "wait for the human to answer",
     "escalate to a human",
     "the user accepts a different threshold",
+    "surface it to the person and wait for the answer",
+    "escalate to the requester",
+    "hand it to the owner for a decision",
+    "ask someone on the team",
+    "check with them before proceeding",
+    "this is a human decision",
+    "get approval before merging",
+    "seek sign-off from the maintainer",
+    "the collaborator itself is a seam worth agreeing on with the user",
+    "raise it with whoever owns the module",
+    "in the end it is their call",
+    "wait for their answer",
+    "the requester decides",
+    "a question for the owner",
+    "ask first, then proceed",
+    "pause for human input",
+    "leave the call to the person running the factory",
+    "defer to the stakeholder",
+    "the owner must approve",
+    "needs manual approval",
+    "route the choice to a person",
+    "the person running the run picks",
+    "await confirmation",
+    "the user's say-so",
+    "let the maintainer choose",
+    "put the question to the operator",
+    "poll the team",
+    "request permission first",
+    "this is a judgment call for the user",
+    "consult whoever owns it",
+    "send it to the owner for sign-off",
+    "ask them what they want",
+    "take it up with the requester",
+    "a decision that belongs to a person",
+    "coordinate with the maintainer on the threshold",
+    "delegate the call to a human",
+    "the user says no PR",
+    "interview the user",
+    "the operator answers",
+    "sync with the owner",
+    "requires sign-off from a human",
+    "a manual gate",
+    "get the go-ahead from the owner",
 )
 NON_SAMPLES = (
     "the user's repository stays untouched",
@@ -671,13 +771,30 @@ NON_SAMPLES = (
     "a whole user journey actually works",
     "no phase skill asks a person anything",
     "report failed naming what a person must supply",
+    "never ask the user; decide under factory policy",
+    "instead of asking the user, record it in auto_decided",
+    "rather than escalating to a person, report failed with the reason",
+    "the run never waits for an answer",
+    "decide it without asking the user",
+    "diffs whose owner did not ask for mutations",
+    "the merge happens after their verdicts",
+    "does it need a call-out to the reviewer",
+    "name it so the reviewer can decide",
+    "bring it to the author of the diff",
+    "record the reason a person would need",
+    "the exact step a person must take",
+    "a user story per scenario",
+    "the fix agent decides how",
+    "user-visible behavior changes",
+    "cannot ask the user, so it records auto_decided",
+    "the owner of the module is the module itself",
 )
 for sample in SAMPLES:
-    if not PATTERN.search(sample):
+    if not routes(sample):
         print(f"scripts/validate.sh: F03 pattern no longer matches {sample!r}")
         sys.exit(0)
 for sample in NON_SAMPLES:
-    if PATTERN.search(sample):
+    if routes(sample):
         print(f"scripts/validate.sh: F03 pattern now falsely matches {sample!r}")
         sys.exit(0)
 
@@ -703,14 +820,31 @@ def body_lines(path):
 
 
 for path in paths:
-    inside = False
+    opened_at = None
     for number, line in body_lines(path):
-        if "<!-- interactive-only -->" in line:
-            inside = True
-        elif "<!-- /interactive-only -->" in line:
-            inside = False
-        elif not inside and PATTERN.search(line):
-            print(f"{path}:{number}: routes a decision to a person; decide under factory policy or mark the block <!-- interactive-only -->")
+        stripped = line.strip()
+        # A marker only silences what follows when it stands alone on its line:
+        # anything else on the line is prose, and prose is always scanned.
+        if stripped not in (OPEN, CLOSE):
+            if opened_at is None and routes(line):
+                print(f"{path}:{number}: routes a decision to a person; decide under factory policy")
+            continue
+        if path.as_posix() not in MARKER_ALLOWED:
+            print(f"{path}:{number}: interactive-only markers are allowed only in "
+                  f"{', '.join(MARKER_ALLOWED)}; this file decides under factory policy instead")
+            continue
+        if stripped == OPEN:
+            if opened_at is not None:
+                print(f"{path}:{number}: interactive-only block opened again while the one "
+                      f"opened at line {opened_at} is still open")
+            opened_at = number
+        else:
+            if opened_at is None:
+                print(f"{path}:{number}: interactive-only block closed but none was open")
+            opened_at = None
+    if opened_at is not None:
+        print(f"{path}:{opened_at}: interactive-only block is never closed; every line "
+              f"after it escapes the check")
 PYEOF
 )
   if [ -n "$found" ]; then

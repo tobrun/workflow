@@ -17,7 +17,7 @@ If the internal wiring is wrong, a test full of internal mocks will still pass, 
 ## Never mock internal collaborators
 
 If you feel the need to mock a class your own codebase owns, that is a design signal, not a testing problem.
-Either test at a higher seam where the collaborator can just run, or the collaborator itself is a seam worth agreeing on with the user.
+Either test at a higher seam where the collaborator can just run, or the collaborator itself is a seam this run settles under factory policy and records in `auto_decided`.
 
 The tell that a mock is wrong: the test asserts *that* a method was called (`toHaveBeenCalledWith`) instead of *what the outcome was*.
 Interaction assertions couple the test to the implementation; state and output assertions couple it to behavior.

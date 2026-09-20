@@ -121,21 +121,94 @@ class FactoryChecksTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_same_line_inside_interactive_only_passes(self) -> None:
+        """run/SKILL.md is the one file whose pre-go lines may reach a person."""
         self.append_to(
-            "factory/skills/build/SKILL.md",
+            "factory/skills/run/SKILL.md",
             "\n\n<!-- interactive-only -->\nAsk the user which one to pick.\n<!-- /interactive-only -->\n",
         )
         rebuild(self.copy_root)
         result = run_validate(self.copy_root)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def test_interactive_only_marker_in_a_phase_copy_fails_f03(self) -> None:
+        """A phase copy has nothing to route, so it may not use the escape hatch."""
+        target = self.append_to(
+            "factory/skills/build/SKILL.md",
+            "\n\n<!-- interactive-only -->\nAsk the user which one to pick.\n<!-- /interactive-only -->\n",
+        )
+        self.assert_rebuilt_copy_fails("[F03]", target)
+
+    def test_unclosed_interactive_only_block_fails_f03(self) -> None:
+        """An unclosed marker used to silence every line after it, to end of file."""
+        target = self.append_to(
+            "factory/skills/run/SKILL.md",
+            "\n\n<!-- interactive-only -->\nAsk the user which one to pick.\n",
+        )
+        self.assert_rebuilt_copy_fails("[F03]", target)
+        result = run_validate(self.copy_root)
+        self.assertIn("never closed", result.stdout)
+
+    def test_deleting_a_close_marker_fails_f03(self) -> None:
+        """Dropping one close marker leaves the rest of run/SKILL.md unscanned."""
+        target = self.copy_root / "factory" / "skills" / "run" / "SKILL.md"
+        text = target.read_text(encoding="utf-8")
+        self.assertIn("<!-- /interactive-only -->", text)
+        target.write_text(
+            text.replace("<!-- /interactive-only -->", "", 1) + "\n\nAsk the user which one to pick.\n",
+            encoding="utf-8",
+        )
+        self.assert_rebuilt_copy_fails("[F03]", target)
+
+    def test_stray_close_marker_fails_f03(self) -> None:
+        target = self.append_to(
+            "factory/skills/run/SKILL.md", "\n\n<!-- /interactive-only -->\n"
+        )
+        self.assert_rebuilt_copy_fails("[F03]", target)
+
+    def test_marker_sharing_its_line_does_not_silence_the_line(self) -> None:
+        """Only a marker alone on its line opens a block; anything else is prose."""
+        target = self.append_to(
+            "factory/skills/build/SKILL.md",
+            "\n\n<!-- interactive-only --> Ask the user which one to pick.\n",
+        )
+        self.assert_rebuilt_copy_fails("[F03]", target)
+
+    def test_newly_covered_person_routing_shapes_fail_f03(self) -> None:
+        """Shapes the round-1 pattern missed: person, requester, owner, someone."""
+        shapes = (
+            "Surface it to the person and wait for the answer.",
+            "Escalate the threshold to the requester.",
+            "Hand it to the owner for a decision.",
+            "Ask someone on the team which one to pick.",
+            "Raising the gate is a human decision.",
+            "Get approval before opening the PR.",
+            "Check with them before proceeding.",
+            "In the end it is their call.",
+            "Seek sign-off from the maintainer.",
+            "This seam is worth agreeing on with the user.",
+        )
+        for shape in shapes:
+            with self.subTest(shape=shape):
+                copy_root = copy_repo()
+                try:
+                    target = copy_root / "factory" / "skills" / "build" / "SKILL.md"
+                    with target.open("a", encoding="utf-8") as handle:
+                        handle.write(f"\n\n{shape}\n")
+                    rebuild(copy_root)
+                    result = run_validate(copy_root)
+                    self.assertEqual(result.returncode, 1, result.stdout)
+                    self.assertIn("[F03]", result.stdout)
+                    self.assertIn("factory/skills/build/SKILL.md", result.stdout)
+                finally:
+                    shutil.rmtree(copy_root.parent, ignore_errors=True)
+
     def test_broken_self_test_regex_fails_f03(self) -> None:
         validate_sh = self.copy_root / "scripts" / "validate.sh"
         text = validate_sh.read_text(encoding="utf-8")
         # Break the F03 pattern so it no longer matches its own self-test samples.
         broken = text.replace(
-            r'ASK = r"ask(?:s|ed|ing)?|prompt(?:s|ed|ing)?',
-            r'ASK = r"askXXX(?:s|ed|ing)?|promptXXX(?:s|ed|ing)?',
+            r'ASK = (r"ask|prompt|poll',
+            r'ASK = (r"askXXX|promptXXX|pollXXX',
         )
         self.assertNotEqual(text, broken, "expected the F03 pattern text to be present")
         validate_sh.write_text(broken, encoding="utf-8")

@@ -17,7 +17,7 @@ the absolute path {skill_path}; treat {skill_path}'s parent directory as
 {phase}-skill-root when the file uses that placeholder. Follow it exactly.
 
 Plan: {plan}, at .dev/{plan}/ (absolute: {plan_dir}).
-Attempt: {attempt}.
+Attempt: {attempt}, the number run-state.py just printed for this launch.
 {On a relaunch only: The previous attempt failed with reason "{reason}".
 Guidance: {what to do differently, never "try again"}.}
 

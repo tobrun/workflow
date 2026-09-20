@@ -8,6 +8,7 @@ so it proves the real CLI contract the run skill depends on.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -44,13 +45,56 @@ D-example: An example decision?
 """
 
 
-def run_state(cwd: Path, *args: str, stdin: str | None = None) -> subprocess.CompletedProcess:
+SPEC_NUMBERED_PREAMBLE = """# Fixture plan
+
+7. A numbered line before any section
+   tests: [unit] preamble -> ignored
+
+## Change plan
+
+1. Change set one
+   a. `a.py` - does a thing
+   tests: [unit] a -> b; [unit] c -> d
+
+2. Change set two
+   a. `b.py` - does another thing
+   tests: [unit] e -> f
+"""
+
+
+SPEC_CITING_THE_CHARACTER = """# Fixture plan
+
+## Research
+
+D-example: An example decision?
+  ✓ do it - the state records every `⊘` line at handoff
+  ⊘ not doing - reason one
+
+## Scope
+
+### Non-goals
+
+- ⊘ something else - reason two
+
+## Change plan
+
+1. Change set one
+   a. `a.py` - does a thing
+   tests: [unit] a -> b
+"""
+
+
+def run_state(
+    cwd: Path, *args: str, stdin: str | None = None, env: dict[str, str] | None = None
+) -> subprocess.CompletedProcess:
     return subprocess.run(
         [sys.executable, str(SCRIPT), *args],
         cwd=cwd,
+        check=False,
         input=stdin,
         capture_output=True,
         text=True,
+        env=env,
     )
 
 
@@ -71,6 +115,12 @@ class RunStateTest(unittest.TestCase):
         result = run_state(self.cwd, "init", "fixture-plan", "--request", "do it", "--base", "main")
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def handoff_state(self) -> dict:
+        """Run a successful handoff on the fixture plan and return the state it wrote."""
+        result = run_state(self.cwd, "handoff", "fixture-plan", "--branch", "factory/fixture-plan")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return json.loads((self.plan_dir / "factory-run.json").read_text())
+
     def test_init_twice_exits_1_naming_existing_state(self) -> None:
         self.init_plan()
         result = run_state(self.cwd, "init", "fixture-plan", "--request", "do it", "--base", "main")
@@ -80,9 +130,7 @@ class RunStateTest(unittest.TestCase):
     def test_handoff_records_scenarios_and_not_doing_lines(self) -> None:
         self.init_plan()
         self.write_spec()
-        result = run_state(self.cwd, "handoff", "fixture-plan", "--branch", "factory/fixture-plan")
-        self.assertEqual(result.returncode, 0, result.stderr)
-        state = json.loads((self.plan_dir / "factory-run.json").read_text())
+        state = self.handoff_state()
         self.assertIsNotNone(state["spec_sha256"])
         scenario_texts = state["scenario_texts"]
         self.assertEqual(sorted(scenario_texts), ["1", "2"])
@@ -205,6 +253,162 @@ class RunStateTest(unittest.TestCase):
         path = self.write_result({"status": "done", "totally_unknown_field": 42})
         result = run_state(self.cwd, "check-result", str(path))
         self.assertEqual(result.returncode, 0)
+
+    def test_check_result_unrecognized_status_exits_1(self) -> None:
+        path = self.write_result({"status": "in-progress"})
+        result = run_state(self.cwd, "check-result", str(path))
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("unrecognized status", result.stdout)
+
+    def test_init_creates_the_whole_dev_tree(self) -> None:
+        with tempfile.TemporaryDirectory() as bare:
+            cwd = Path(bare)
+            result = run_state(cwd, "init", "fresh-plan", "--request", "do it", "--base", "main")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertTrue((cwd / ".dev" / "fresh-plan" / "factory-run.json").is_file())
+
+    def test_state_file_is_written_as_indented_json(self) -> None:
+        self.init_plan()
+        text = (self.plan_dir / "factory-run.json").read_text(encoding="utf-8")
+        self.assertIn('\n  "plan": "fixture-plan"', text)
+        self.assertIn('\n    "scope": []', text)
+        self.assertTrue(text.endswith("}\n"))
+
+    def test_handoff_ignores_numbered_lines_outside_the_change_plan(self) -> None:
+        self.init_plan()
+        self.write_spec(SPEC_NUMBERED_PREAMBLE)
+        state = self.handoff_state()
+        self.assertEqual(sorted(state["scenario_texts"]), ["1", "2"])
+        self.assertEqual(sum(len(v) for v in state["scenario_texts"].values()), 3)
+
+    def test_handoff_without_a_spec_exits_1(self) -> None:
+        self.init_plan()
+        result = run_state(self.cwd, "handoff", "fixture-plan", "--branch", "factory/fixture-plan")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("no spec.md", result.stdout)
+
+    def test_handoff_without_dirty_flag_records_git_status_paths(self) -> None:
+        subprocess.run(["git", "init", "-q"], cwd=self.cwd, check=True, capture_output=True)
+        (self.cwd / "foo.py").write_text("x = 1\n", encoding="utf-8")
+        self.init_plan()
+        self.write_spec()
+        state = self.handoff_state()
+        self.assertEqual(sorted(state["dirty_files"]), [".dev/", "foo.py"])
+
+    def test_handoff_records_no_dirty_files_when_git_fails(self) -> None:
+        bin_dir = self.cwd / "fakebin"
+        bin_dir.mkdir()
+        fake_git = bin_dir / "git"
+        fake_git.write_text('#!/bin/sh\necho " M fake.py"\nexit 128\n', encoding="utf-8")
+        fake_git.chmod(0o755)
+        env = {**os.environ, "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"}
+        self.init_plan()
+        self.write_spec()
+        result = run_state(
+            self.cwd, "handoff", "fixture-plan", "--branch", "factory/fixture-plan", env=env
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        state = json.loads((self.plan_dir / "factory-run.json").read_text())
+        self.assertEqual(state["dirty_files"], [])
+
+    def test_record_rejects_malformed_stdin_json(self) -> None:
+        self.init_plan()
+        before = (self.plan_dir / "factory-run.json").read_text()
+        result = run_state(self.cwd, "record", "fixture-plan", stdin="{not json")
+        self.assertEqual(result.returncode, 3)
+        self.assertIn("invalid JSON", result.stdout)
+        self.assertEqual(before, (self.plan_dir / "factory-run.json").read_text())
+
+    def test_check_result_stopped_with_a_string_stop_still_exits_2(self) -> None:
+        path = self.write_result({"status": "stopped", "stop": "secret.found"})
+        result = run_state(self.cwd, "check-result", str(path))
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("secret.found", result.stdout)
+        self.assertNotIn("Traceback", result.stderr)
+
+    def test_check_result_stopped_without_a_stop_object_still_exits_2(self) -> None:
+        path = self.write_result({"status": "stopped", "stop": None, "reason": "destructive"})
+        result = run_state(self.cwd, "check-result", str(path))
+        self.assertEqual(result.returncode, 2)
+        self.assertNotIn("Traceback", result.stderr)
+
+    def test_attempt_records_a_launch_then_its_result(self) -> None:
+        self.init_plan()
+        launched = run_state(self.cwd, "attempt", "fixture-plan", "build")
+        self.assertEqual(launched.returncode, 0, launched.stderr)
+        state = json.loads((self.plan_dir / "factory-run.json").read_text())
+        self.assertEqual(state["phases"]["build"], [{"status": "launched", "result": None}])
+        path = self.write_result({"schema": "factory.result/1", "status": "done"})
+        closed = run_state(
+            self.cwd, "attempt", "fixture-plan", "build", "--status", "done", "--result", str(path)
+        )
+        self.assertEqual(closed.returncode, 0, closed.stderr)
+        state = json.loads((self.plan_dir / "factory-run.json").read_text())
+        self.assertEqual(state["phases"]["build"][0]["status"], "done")
+        self.assertEqual(state["phases"]["build"][0]["result"]["status"], "done")
+        shown = run_state(self.cwd, "show", "fixture-plan")
+        self.assertIn("build attempt 1: done", shown.stdout)
+
+    def test_attempt_without_a_launch_to_close_exits_3(self) -> None:
+        self.init_plan()
+        result = run_state(self.cwd, "attempt", "fixture-plan", "build", "--status", "failed")
+        self.assertEqual(result.returncode, 3)
+        self.assertNotIn("Traceback", result.stderr)
+
+    def test_a_line_citing_the_not_doing_character_is_not_an_entry(self) -> None:
+        self.init_plan()
+        self.write_spec(SPEC_CITING_THE_CHARACTER)
+        state = self.handoff_state()
+        self.assertEqual(len(state["not_doing_lines"]), 2)
+        reworded = SPEC_CITING_THE_CHARACTER.replace(
+            "the state records every `⊘` line at handoff", "the state records the `⊘` lines"
+        )
+        self.write_spec(reworded)
+        result = run_state(self.cwd, "diff-spec", "fixture-plan")
+        self.assertEqual(result.returncode, 0, result.stdout)
+
+    def test_diff_spec_without_a_state_file_exits_3(self) -> None:
+        self.write_spec()
+        result = run_state(self.cwd, "diff-spec", "fixture-plan")
+        self.assertEqual(result.returncode, 3)
+        self.assertNotIn("Traceback", result.stderr)
+
+    def test_diff_spec_with_a_truncated_state_file_exits_3(self) -> None:
+        self.init_plan()
+        self.write_spec()
+        (self.plan_dir / "factory-run.json").write_text('{"plan": "fix', encoding="utf-8")
+        result = run_state(self.cwd, "diff-spec", "fixture-plan")
+        self.assertEqual(result.returncode, 3)
+        self.assertNotIn("Traceback", result.stderr)
+
+    def test_diff_spec_without_a_spec_exits_3(self) -> None:
+        self.init_plan()
+        result = run_state(self.cwd, "diff-spec", "fixture-plan")
+        self.assertEqual(result.returncode, 3)
+        self.assertNotIn("Traceback", result.stderr)
+
+    def test_record_with_a_corrupt_state_file_exits_3(self) -> None:
+        self.init_plan()
+        (self.plan_dir / "factory-run.json").write_text("{", encoding="utf-8")
+        result = run_state(
+            self.cwd,
+            "record",
+            "fixture-plan",
+            stdin=json.dumps({"phase": "build", "attempt": 1, "action": "advance"}),
+        )
+        self.assertEqual(result.returncode, 3)
+        self.assertNotIn("Traceback", result.stderr)
+
+    def test_show_with_a_missing_state_file_exits_3(self) -> None:
+        result = run_state(self.cwd, "show", "fixture-plan")
+        self.assertEqual(result.returncode, 3)
+        self.assertNotIn("Traceback", result.stderr)
+
+    def test_show_exits_0(self) -> None:
+        self.init_plan()
+        result = run_state(self.cwd, "show", "fixture-plan")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("scope: no attempts", result.stdout)
 
 
 if __name__ == "__main__":

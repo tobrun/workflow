@@ -38,9 +38,9 @@ At the go: create branch `factory/{plan}` from the base branch. Run `run-state.p
 
 For each phase in order (`scope-review`, `build`, `ship`):
 
-1. Launch one fresh-context subagent per [references/launch.md](references/launch.md)'s prompt template, naming the phase's skill path, the plan, the attempt number, and (on a relaunch) the previous reason with explicit guidance.
+1. Launch one fresh-context subagent per [references/launch.md](references/launch.md)'s prompt template, naming the phase's skill path, the plan, the attempt number, and (on a relaunch) the previous reason with explicit guidance. Record the launch with `run-state.py attempt {plan} {phase}` so a crashed attempt is distinguishable from an unstarted one on resume.
 2. Wait for the host's completion signal - a batch in flight is not over.
-3. Run `run-state.py check-result .dev/{plan}/results/{phase}-{attempt}.json`; a missing or unparseable file is a failed attempt with that reason (its own exit code, never a crash).
+3. Run `run-state.py check-result .dev/{plan}/results/{phase}-{attempt}.json`; a missing or unparseable file is a failed attempt with that reason (its own exit code, never a crash). Close the attempt with `run-state.py attempt {plan} {phase} --status {done|failed|stopped} --result .dev/{plan}/results/{phase}-{attempt}.json`.
 4. Run the phase's evidence checks from [references/judgment.md](references/judgment.md).
 5. A `stopped` result with kind `secret.found` or `action.destructive` ends the run immediately; no decision overrides it. The same two rules bind your own repairs: never rewrite history, force-push, or delete outside the run branch.
 6. Record the decision with `run-state.py record {plan}` before acting on it, then act per the failure ladder in [references/judgment.md](references/judgment.md): advance, repair it yourself and re-check, relaunch with guidance, or end the run after the third accepted failure.

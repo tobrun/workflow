@@ -52,5 +52,5 @@ Fix agents never edit thresholds, rules files, or the tools themselves, and neve
 
 Defaults: zero static analysis findings in scope; zero security findings; zero dead symbols in scope; no new clones over the 50-token threshold; zero dependency violations; complexity-coverage score at most 6 per function; zero flaky tests among those the diff touched; zero surviving mutants in scope.
 Agent-written code tolerates a higher complexity threshold than the human default of 4 - agents hold more paths in working memory - but where the line sits is a decision, not a config value.
-When the user accepts a different threshold, record it in `docs/decisions.md` as a `D-` entry (notation in [../../../references/decision-ledger.md](../../../references/decision-ledger.md)), dated and sourced to this run; the next run reads it from there instead of re-arguing.
+When a run settles on a different threshold under factory policy, record it in `auto_decided` and in `docs/decisions.md` as a `D-` entry (notation in [../../../references/decision-ledger.md](../../../references/decision-ledger.md)), dated and sourced to this run; the next run reads it from there instead of re-arguing.
 Never adjust a threshold silently to make a run pass.

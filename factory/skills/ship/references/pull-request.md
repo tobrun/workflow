@@ -6,7 +6,7 @@ A PR without evidence asks the reviewer to trust the description; this phase mak
 ## When it runs
 
 Phase 3 runs in the default flow, after the review report is written and the remediation loop in [remediation.md](remediation.md) has run its course: PASS and CONCERNS open a PR ready for review, a real blocker - one that survived both remediation rounds - opens a draft PR with the blockers listed first, so the work is preserved and CI runs while the recorded decision stands.
-It is skipped in "gauntlet only" and "review only" runs and when the user says "no PR" or "local only"; a review-only run on someone else's PR never pushes anything.
+It is skipped in "gauntlet only" and "review only" runs and when the launch prompt says "no PR" or "local only"; a review-only run on someone else's PR never pushes anything.
 Never force-push, never rebase, and never touch a branch other than the work branch and the evidence branch.
 
 ## Commit and push

@@ -23,7 +23,7 @@ If the repo configures nothing, wire up the ecosystem's standard linter and type
 
 Three sub-scans, each zero-threshold:
 
-- **Secrets**: gitleaks or the ecosystem equivalent over the in-scope files. A found secret is never fix-agent work - stop the gauntlet and escalate immediately, because it needs rotation and possibly history rewriting, both human calls.
+- **Secrets**: gitleaks or the ecosystem equivalent over the in-scope files. A found secret is never fix-agent work - stop the gauntlet and report `stopped` with kind `secret.found`, because it needs rotation and possibly history rewriting, and the run performs neither itself.
 - **Dependency vulnerabilities**: the ecosystem's audit tool (osv-scanner, npm audit, pip-audit, cargo audit) over every manifest the diff touched.
 - **Static security rules**: the repo's own SAST config if one exists, else semgrep with the ecosystem's default ruleset, scoped to in-scope files.
 

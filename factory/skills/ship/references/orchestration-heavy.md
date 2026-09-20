@@ -1,6 +1,6 @@
 # Heavy Mode: Workflow Tool (explicit opt-in only)
 
-Use this only when the user has explicitly asked for a workflow or an exhaustive run; it triggers the dynamic-workflow confirmation dialog.
+This variant belongs to the interactive dev flow only: it triggers the dynamic-workflow confirmation dialog, which routes a decision outside the run, so an unattended phase never uses it.
 It buys schema-validated outputs, pipelining (findings verify while other lenses still review), and `/workflows` progress.
 Pass `diffFile`, `brief`, `planContext`, `lenses` (as `{key, prompt}` with the full assembled lens prompt), and `priorFindings` via `args`.
 

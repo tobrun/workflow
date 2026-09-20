@@ -42,7 +42,7 @@ Every phase skill writes `.dev/{plan}/results/{phase}-{attempt}.json` as its las
 
 ## The unattended policy
 
-After the go, no phase skill asks a person anything. An escalation that dev's version would ask a human about is instead: decided under the recommended option and recorded in `auto_decided`, or reported as `failed`/`stopped` with the reason a person would need. The two hard stops (`secret.found`, `action.destructive`) always report `stopped`; the orchestrator never overrides them.
+After the go, no phase skill asks a person anything. An escalation that dev's version would route to a person is instead: decided under the recommended option and recorded in `auto_decided`, or reported as `failed`/`stopped` with the reason a person would need. The two hard stops (`secret.found`, `action.destructive`) always report `stopped`; the orchestrator never overrides them.
 
 `scope` is the one exception: it runs inline in the orchestrator's own session, keeps its interview, and is outside `check_factory_unattended`'s scan root. Every other phase copy, and `run/SKILL.md`'s own person-routing lines, live inside `<!-- interactive-only -->` / `<!-- /interactive-only -->` blocks or outside the scan root entirely.
 

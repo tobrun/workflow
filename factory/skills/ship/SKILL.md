@@ -27,7 +27,7 @@ Both phases share one scope.
 - PR number given -> target that PR; else the host's PR tooling, when it has any, for an open PR; else the local branch against the default branch.
 - Gather the diff per the diff-scope rules in [../../references/plan-layout.md](../../references/plan-layout.md): local git only, standard exclusions.
 - Locate the plan directory by the same reference's convention and read its `spec.md`; degrade gracefully without one.
-- Full-repo runs only when the user asks - they are expensive, and the loops are the same.
+- Full-repo runs only when the launch prompt names one - they are expensive, and the loops are the same.
 - No reviewable files: report `failed` with that reason and stop. Diff is tiny (1-2 files) or huge (>25k lines): proceed and note it in `auto_decided` rather than spending extra agents confirming.
 
 ## Phase 1: the gauntlet

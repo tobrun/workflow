@@ -46,5 +46,5 @@ One line per lens; omit empty ones.
 What to fix first and why.
 ```
 
-`scope` reads this file when the user accepts findings that need real work: its Blockers and Concerns open that run's interview, and its Decision reconciliation section is what gets applied to `docs/decisions.md`.
+`scope` reads this file when a later run takes up findings that need real work: its Blockers and Concerns open that run's interview, and its Decision reconciliation section is what gets applied to `docs/decisions.md`.
 Write it for that reader - a finding with no triggering scenario cannot become a decision.

@@ -47,7 +47,7 @@ python3 {build-skill-root}/../../scripts/skill-metrics.py end build --count chan
 Then it ends with the same two lines, in this order - a green run, a blocked gate, and a run with open deviations all get both:
 
 1. `Next step: run ship over this work, pointed at .dev/{plan-name}/implementation-notes.md and the {plan-name}-e2e-report.html.` Recommend it; never launch it yourself.
-2. Then any question left for the user - a blocked gate, an unresolved deviation.
+2. Then every escalation this run settled itself - a blocked gate, an unresolved deviation - decided under factory policy and recorded in `auto_decided`.
 
 A blocked gate never replaces line 1.
 Neither does a failed e2e loop: say what is blocked, then still point at `ship`.

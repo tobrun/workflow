@@ -620,22 +620,65 @@ check_pi() {
 # Scoped to factory/skills/{scope-review,build,ship,run} (SKILL.md and their
 # references) plus factory/references/factory-run.md only - scope keeps its
 # interview, and ci-parity.md, contracts.md, and jira.md keep their dev
-# wording because the phases read them for notation, not for who decides.
+# wording because they are dev-shared references whose human-call branches are
+# overridden for a factory run by factory-run.md's unattended policy.
+#
+# Each file's YAML frontmatter is skipped: a description states when a person
+# invokes the skill, which is before the go, not a decision routed after it.
 # ===========================================================================
 check_factory_unattended() {
   local found
   found=$(python3 - <<'PYEOF'
 import pathlib, re, sys
 
+# A person noun, never the possessive ("the user's repo") or a compound
+# ("a user-facing change"): those are prose about people, not routing to one.
+PERSON = r"(?:user|operator|human|maintainer)s?\b(?![-'\u2019])"
+ASK = r"ask(?:s|ed|ing)?|prompt(?:s|ed|ing)?|poll(?:s|ed|ing)?|quer(?:y|ies|ied|ying)|consult(?:s|ed|ing)?"
+ROUTE = (r"confirm(?:s|ed|ing)?|check(?:s|ed|ing)?|wait(?:s|ed|ing)?\s+for|escalat(?:e|es|ed|ing)\s+to"
+         r"|surfac(?:e|es|ed|ing)\s+to|defer(?:s|red|ring)?\s+to|hand(?:s|ed|ing)?(?:\s+off)?\s+to"
+         r"|rout(?:e|es|ed|ing)\s+to")
+DECIDES = (r"decides?|approves?|authorizes?|chooses?|confirms?|answers?|asks?|says?|accepts?|picks?"
+           r"|selects?|responds?|has\s+(?:explicitly\s+)?asked|must\s+(?:decide|choose|answer|confirm)")
+ARTICLE = r"(?:the\s+|a\s+|an\s+|each\s+|every\s+)?"
 PATTERN = re.compile(
-    r"\b(ask(s|ed|ing)?|confirm(s|ed|ing)?\s+with|wait(s|ing)?\s+for|check(s|ing)?\s+with)\s+(the\s+)?(user|operator|human)s?\b"
-    r"|\b(user|operator|human)\s+(decides|approves|authorizes|chooses|confirms|answers)\b"
-    r"|structured user-input tool|\bhuman call\b|\bconfirm (with|before)\b",
+    rf"\b(?:{ASK})\s+{ARTICLE}{PERSON}"
+    rf"|\b(?:{ROUTE})\s+{ARTICLE}{PERSON}"
+    rf"|\b{ARTICLE}{PERSON}\s+(?:{DECIDES})\b"
+    rf"|\b(?:question|decision|choice|call)s?\b[^.]{{0,40}}?\b(?:for|to|from)\s+{ARTICLE}{PERSON}"
+    r"|\bhuman\s+calls?\b|\bstructured user-input tool\b|\bAskUserQuestion\b"
+    r"|\bconfirm (?:with|before)\b",
     re.I,
 )
-for sample in ("ask the user which one", "a human call", "the user decides", "confirm with the operator"):
+SAMPLES = (
+    "ask the user which one",
+    "a human call",
+    "both human calls",
+    "the user decides",
+    "confirm with the operator",
+    "then any question left for the user",
+    "full-repo runs only when the user asks",
+    "prompt the user for a threshold",
+    "surface to the maintainer",
+    "offer the choice with AskUserQuestion",
+    "wait for the human to answer",
+    "escalate to a human",
+    "the user accepts a different threshold",
+)
+NON_SAMPLES = (
+    "the user's repository stays untouched",
+    "a user-facing change needs an e2e scenario",
+    "a whole user journey actually works",
+    "no phase skill asks a person anything",
+    "report failed naming what a person must supply",
+)
+for sample in SAMPLES:
     if not PATTERN.search(sample):
         print(f"scripts/validate.sh: F03 pattern no longer matches {sample!r}")
+        sys.exit(0)
+for sample in NON_SAMPLES:
+    if PATTERN.search(sample):
+        print(f"scripts/validate.sh: F03 pattern now falsely matches {sample!r}")
         sys.exit(0)
 
 paths = []
@@ -647,9 +690,21 @@ run_md = pathlib.Path("factory/references/factory-run.md")
 if run_md.is_file():
     paths.append(run_md)
 
+def body_lines(path):
+    """Every line after the YAML frontmatter, numbered from 1 in the file."""
+    lines = path.read_text(encoding="utf-8").splitlines()
+    start = 0
+    if lines and lines[0].strip() == "---":
+        for index in range(1, len(lines)):
+            if lines[index].strip() == "---":
+                start = index + 1
+                break
+    return enumerate(lines[start:], start=start + 1)
+
+
 for path in paths:
     inside = False
-    for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+    for number, line in body_lines(path):
         if "<!-- interactive-only -->" in line:
             inside = True
         elif "<!-- /interactive-only -->" in line:

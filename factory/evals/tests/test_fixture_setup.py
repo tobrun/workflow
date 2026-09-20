@@ -33,7 +33,7 @@ class FixtureSetupTest(unittest.TestCase):
 
     def git(self, *args: str) -> subprocess.CompletedProcess:
         return subprocess.run(
-            ["git", *args], cwd=self.dest, capture_output=True, text=True
+            ["git", *args], cwd=self.dest, check=False, capture_output=True, text=True
         )
 
     def test_setup_produces_a_main_repo_with_one_commit_and_a_bare_origin(self) -> None:

@@ -18,7 +18,7 @@ import re
 import sys
 from pathlib import Path
 
-FENCE = re.compile(r"```(?:json)?\s*(.*?)```", re.S)
+FENCE = re.compile(r"```(?:json)?\s*(.*?)```", re.DOTALL)
 RESULT_SUFFIXES = (".json", ".out")
 
 

@@ -21,7 +21,7 @@ TESTS = re.compile(r"^\s*tests:\s*(.*)$", re.IGNORECASE)
 LAYER = re.compile(r"^\[(unit|integration|e2e)\]\s+\S")
 HEADING = re.compile(r"^##\s+(.*?)\s*$")
 
-CHOSEN, REJECTED, OPEN, NOT_DOING = "✓", "✗", "?", "⊘"
+CHOSEN, OPEN, NOT_DOING = "✓", "?", "⊘"
 
 
 def sections(lines: list[str]) -> dict[str, list[tuple[int, str]]]:

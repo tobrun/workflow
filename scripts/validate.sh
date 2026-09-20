@@ -615,6 +615,141 @@ check_pi() {
 }
 
 # ===========================================================================
+# F03: unattended factory material never routes a decision to a person
+#
+# Scoped to factory/skills/{scope-review,build,ship,run} (SKILL.md and their
+# references) plus factory/references/factory-run.md only - scope keeps its
+# interview, and ci-parity.md, contracts.md, and jira.md keep their dev
+# wording because the phases read them for notation, not for who decides.
+# ===========================================================================
+check_factory_unattended() {
+  local found
+  found=$(python3 - <<'PYEOF'
+import pathlib, re, sys
+
+PATTERN = re.compile(
+    r"\b(ask(s|ed|ing)?|confirm(s|ed|ing)?\s+with|wait(s|ing)?\s+for|check(s|ing)?\s+with)\s+(the\s+)?(user|operator|human)s?\b"
+    r"|\b(user|operator|human)\s+(decides|approves|authorizes|chooses|confirms|answers)\b"
+    r"|structured user-input tool|\bhuman call\b|\bconfirm (with|before)\b",
+    re.I,
+)
+for sample in ("ask the user which one", "a human call", "the user decides", "confirm with the operator"):
+    if not PATTERN.search(sample):
+        print(f"scripts/validate.sh: F03 pattern no longer matches {sample!r}")
+        sys.exit(0)
+
+paths = []
+for phase in ("scope-review", "build", "ship", "run"):
+    root = pathlib.Path("factory/skills") / phase
+    if root.is_dir():
+        paths.extend(sorted(root.rglob("*.md")))
+run_md = pathlib.Path("factory/references/factory-run.md")
+if run_md.is_file():
+    paths.append(run_md)
+
+for path in paths:
+    inside = False
+    for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        if "<!-- interactive-only -->" in line:
+            inside = True
+        elif "<!-- /interactive-only -->" in line:
+            inside = False
+        elif not inside and PATTERN.search(line):
+            print(f"{path}:{number}: routes a decision to a person; decide under factory policy or mark the block <!-- interactive-only -->")
+PYEOF
+)
+  if [ -n "$found" ]; then
+    while IFS= read -r line; do
+      fail "F03" "${line%%: *}" "${line#*: }"
+    done <<< "$found"
+  fi
+}
+
+# ===========================================================================
+# F02: every factory phase writes the result protocol and never invokes
+# another phase
+# ===========================================================================
+check_factory_protocol() {
+  local found
+  found=$(python3 - <<'PYEOF'
+import pathlib, re, sys
+
+PHASES = ("scope", "scope-review", "build", "ship")
+INVOKE = re.compile(r"\$factory:([a-z-]+)|/SKILL\.md\b")
+
+for phase in PHASES:
+    sf = pathlib.Path("factory/skills") / phase / "SKILL.md"
+    if not sf.is_file():
+        print(f"{sf}: Factory phase skill not found")
+        continue
+    text = sf.read_text(encoding="utf-8")
+    if "factory-run.json" not in text:
+        print(f"{sf}: Must mention factory-run.json")
+    if "results/{phase}-{attempt}.json" not in text:
+        print(f"{sf}: Must mention the literal results/{{phase}}-{{attempt}}.json")
+    for match in INVOKE.finditer(text):
+        skill = match.group(1)
+        if skill is None or skill != phase:
+            print(f"{sf}: invokes another phase ({match.group(0)}); a phase skill never launches another")
+
+run_md = pathlib.Path("factory/skills/run/SKILL.md")
+if not run_md.is_file():
+    print(f"{run_md}: run orchestrator skill not found")
+    sys.exit(0)
+run_text = run_md.read_text(encoding="utf-8")
+for phase in PHASES:
+    if phase not in run_text:
+        print(f"{run_md}: must name phase '{phase}'")
+if "run-state.py" not in run_text:
+    print(f"{run_md}: must name run-state.py")
+PYEOF
+)
+  if [ -n "$found" ]; then
+    while IFS= read -r line; do
+      fail "F02" "${line%%: *}" "${line#*: }"
+    done <<< "$found"
+  fi
+}
+
+# ===========================================================================
+# F01: run-state.py's unit tests pass, excluding the harness that would
+# otherwise recurse into this very check (D-nested-validate)
+# ===========================================================================
+check_factory_script() {
+  local dir="factory/evals/tests"
+  [ -d "$dir" ] || return
+  if ! python3 - "$dir" >"$LOG_DIR/factory-script-tests.log" 2>&1 <<'PYEOF'
+import sys, unittest
+
+EXCLUDE = {"test_factory_checks"}
+
+
+def leaves(suite):
+    for item in suite:
+        if isinstance(item, unittest.TestSuite):
+            yield from leaves(item)
+        else:
+            yield item
+
+
+directory = sys.argv[1]
+loader = unittest.TestLoader()
+discovered = loader.discover(start_dir=directory, top_level_dir=".")
+cases = [t for t in leaves(discovered) if t.__class__.__module__.rsplit(".", 1)[-1] not in EXCLUDE]
+modules = sorted({t.__class__.__module__.rsplit(".", 1)[-1] for t in cases})
+print(f"discovered modules: {modules}")
+suite = unittest.TestSuite(cases)
+result = unittest.TextTestRunner(verbosity=2).run(suite)
+sys.exit(0 if result.wasSuccessful() and result.testsRun > 0 else 1)
+PYEOF
+  then
+    tail -60 "$LOG_DIR/factory-script-tests.log" >&2
+    fail "F01" "$dir" \
+      "Factory script tests failed (full output: $LOG_DIR/factory-script-tests.log); run: python3 -m unittest discover -s factory/evals/tests -t ."
+  fi
+}
+
+# ===========================================================================
 # Main
 # ===========================================================================
 check_01
@@ -635,6 +770,9 @@ check_skill_length
 check_links
 check_codex
 check_pi
+check_factory_unattended
+check_factory_protocol
+check_factory_script
 
 if [ -s "$ERROR_FILE" ]; then
   echo ""

@@ -14,15 +14,21 @@ Exit codes, which the orchestrator branches on:
   init          0 written; 1 a state file already exists
   handoff       0 recorded; 1 no spec.md at the path; 3 unusable state file
   diff-spec     0 no drift; 1 drift found; 3 unusable state file or no spec.md
-  attempt       0 recorded; 3 unusable state file, or no launched attempt to close
+  attempt       0 recorded; 3 unusable state file, no launched attempt to close,
+                or an attempt already closed
   record        0 recorded; 1 action outside the four; 3 unreadable stdin JSON
                 or unusable state file
-  check-result  0 done; 1 failed; 2 stopped; 3 missing or unparseable result file
+  check-result  0 done; 1 failed, a missing or unparseable result file included;
+                2 stopped
   show          0 printed; 3 unusable state file
 
-3 always means the call itself could not be carried out, never a phase outcome,
-so a malformed state file or a bad call never reaches a judgment. Every function
-here stays at or under cyclomatic complexity 10 (D-complexity-threshold).
+3 always means the call itself could not be carried out - an unusable state
+file, a usage error, or an attempt that cannot be closed - never a phase
+outcome, so a bad call never reaches a judgment. A missing or unparseable
+*result* file is a phase outcome, not a bad call: a subagent that dies before
+writing its result is the likeliest real failure, so it is a failed attempt the
+orchestrator can relaunch. Every function here stays at or under cyclomatic
+complexity 10 (D-complexity-threshold).
 """
 
 from __future__ import annotations
@@ -34,6 +40,7 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+from typing import NoReturn
 
 HEADING = re.compile(r"^##\s+(.*?)\s*$")
 CHANGE_SET = re.compile(r"^\s*(\d+)\.\s+\S")
@@ -45,6 +52,13 @@ PHASES = ("scope", "scope-review", "build", "ship")
 ATTEMPT_STATUSES = ("launched", "done", "failed", "stopped")
 STATE_NAME = "factory-run.json"
 BAD_CALL = 3
+STATE_SHAPE = {
+    "phases": dict,
+    "scenario_texts": dict,
+    "not_doing_lines": list,
+    "decisions": list,
+    "repairs": list,
+}
 
 
 def state_path(plan: str) -> Path:
@@ -53,6 +67,25 @@ def state_path(plan: str) -> Path:
 
 def spec_path(plan: str, override: str | None) -> Path:
     return Path(override) if override else Path(".dev") / plan / "spec.md"
+
+
+def shape_problem(state: dict) -> str:
+    """The first field whose shape the commands rely on is wrong, or an empty string.
+
+    Only the fields this script reads back are checked, and only when present:
+    a state file written by `init` carries them all, and a null or wrongly typed
+    one would otherwise crash a command rather than report a bad call.
+    """
+    for field, kind in STATE_SHAPE.items():
+        if field in state and not isinstance(state[field], kind):
+            found = type(state[field]).__name__
+            return f"{field} is {found}, expected {kind.__name__}"
+    for phase, attempts in state.get("phases", {}).items():
+        if not isinstance(attempts, list):
+            return f"phases.{phase} is not a list of attempts"
+        if any(not isinstance(attempt, dict) for attempt in attempts):
+            return f"phases.{phase} holds an attempt that is not an object"
+    return ""
 
 
 def load_state(plan: str) -> dict | None:
@@ -65,6 +98,10 @@ def load_state(plan: str) -> dict | None:
         return None
     if not isinstance(state, dict):
         print(f"unusable state file {path}: not a JSON object")
+        return None
+    problem = shape_problem(state)
+    if problem:
+        print(f"unusable state file {path}: {problem}")
         return None
     return state
 
@@ -252,13 +289,21 @@ def cmd_record(args: argparse.Namespace) -> int:
     return 0
 
 
-def read_result(path: Path) -> dict | None:
-    """The parsed result file, or None when it is missing, unreadable, or not an object."""
+def read_result(path: Path) -> tuple[dict | None, str]:
+    """The parsed result object, or None and why the attempt counts as failed.
+
+    A result file that is missing, unreadable, or not a JSON object is a phase
+    outcome, not a bad call: the phase died before writing a usable result.
+    """
+    if not path.is_file():
+        return None, f"no result file: {path}"
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return None
-    return data if isinstance(data, dict) else None
+    except (OSError, json.JSONDecodeError) as exc:
+        return None, f"unparseable result file {path}: {exc}"
+    if not isinstance(data, dict):
+        return None, f"unparseable result file {path}: not a JSON object"
+    return data, ""
 
 
 def stop_kind(data: dict) -> str:
@@ -275,31 +320,48 @@ def stop_kind(data: dict) -> str:
     return ""
 
 
-def cmd_check_result(args: argparse.Namespace) -> int:
-    path = Path(args.path)
-    if not path.is_file():
-        print(f"missing result file: {path}")
-        return BAD_CALL
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        print(f"unparseable result file {path}: {exc}")
-        return BAD_CALL
-    if not isinstance(data, dict):
-        print(f"unparseable result file {path}: not a JSON object")
-        return BAD_CALL
+def report_result(data: dict) -> int:
+    """Print the result's one-line verdict and return its exit code.
+
+    A present stop kind wins over `status`: a stop is unappealable and ending a
+    run a phase did not mean to stop is recoverable, while continuing past a
+    found secret is not.
+    """
+    kind = stop_kind(data)
     status = data.get("status")
+    if kind or status == "stopped":
+        print(f"stopped: {kind}")
+        return 2
     if status == "done":
         print("done")
         return 0
     if status == "failed":
         print(f"failed: {data.get('reason', '')}")
         return 1
-    if status == "stopped":
-        print(f"stopped: {stop_kind(data)}")
-        return 2
     print(f"failed: unrecognized status {status!r}")
     return 1
+
+
+def cmd_check_result(args: argparse.Namespace) -> int:
+    data, reason = read_result(Path(args.path))
+    if data is None:
+        print(f"failed: {reason}")
+        return 1
+    return report_result(data)
+
+
+def close_attempt(attempt: dict, status: str, result: str | None) -> None:
+    """Close a launched attempt, recording an unusable result file as a failure."""
+    attempt["status"] = status
+    if not result:
+        return
+    data, reason = read_result(Path(result))
+    if data is None:
+        attempt["status"] = "failed"
+        attempt["result"] = {"status": "failed", "reason": reason}
+        print(f"recorded as a failed attempt: {reason}")
+        return
+    attempt["result"] = data
 
 
 def cmd_attempt(args: argparse.Namespace) -> int:
@@ -312,12 +374,17 @@ def cmd_attempt(args: argparse.Namespace) -> int:
     elif not attempts:
         print(f"no launched attempt of {args.phase} to close")
         return BAD_CALL
+    elif attempts[-1].get("status") != "launched":
+        closed = attempts[-1].get("status")
+        print(
+            f"{args.phase} attempt {len(attempts)} is already closed as {closed!r}; "
+            f"record a new launch instead of reclosing it"
+        )
+        return BAD_CALL
     else:
-        attempts[-1]["status"] = args.status
-        if args.result:
-            attempts[-1]["result"] = read_result(Path(args.result))
+        close_attempt(attempts[-1], args.status, args.result)
     save_state(args.plan, state)
-    print(f"{args.phase} attempt {len(attempts)}: {args.status}")
+    print(f"{args.phase} attempt {len(attempts)}: {attempts[-1]['status']}")
     return 0
 
 
@@ -336,8 +403,21 @@ def cmd_show(args: argparse.Namespace) -> int:
     return 0
 
 
+class Parser(argparse.ArgumentParser):
+    """An ArgumentParser whose usage errors report BAD_CALL, not argparse's 2.
+
+    2 is the orchestrator's unappealable hard stop, so a mistyped phase or
+    status must not end an unattended run as if a secret had been found.
+    """
+
+    def error(self, message: str) -> NoReturn:
+        self.print_usage(sys.stderr)
+        print(f"{self.prog}: bad call: {message}", file=sys.stderr)
+        raise SystemExit(BAD_CALL)
+
+
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = Parser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
 
     init_p = sub.add_parser("init")

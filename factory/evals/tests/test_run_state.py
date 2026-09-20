@@ -232,12 +232,13 @@ class RunStateTest(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("no result file", result.stdout)
 
-    def test_check_result_invalid_json_exits_3(self) -> None:
+    def test_check_result_invalid_json_is_a_failed_attempt(self) -> None:
         path = self.cwd / "bad.json"
         path.write_text("{not json", encoding="utf-8")
         result = run_state(self.cwd, "check-result", str(path))
-        self.assertEqual(result.returncode, 3)
+        self.assertEqual(result.returncode, 1)
         self.assertIn("unparseable", result.stdout)
+        self.assertTrue(result.stdout.startswith("failed:"), result.stdout)
 
     def test_check_result_stopped_exits_2_with_kind(self) -> None:
         path = self.write_result({"status": "stopped", "stop": {"kind": "secret.found", "action": "purge it"}})
@@ -245,9 +246,10 @@ class RunStateTest(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
         self.assertIn("secret.found", result.stdout)
 
-    def test_check_result_missing_file_exits_3(self) -> None:
+    def test_check_result_missing_file_is_a_failed_attempt(self) -> None:
         result = run_state(self.cwd, "check-result", str(self.cwd / "nope.json"))
-        self.assertEqual(result.returncode, 3)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("no result file", result.stdout)
 
     def test_check_result_unknown_extra_key_exits_0(self) -> None:
         path = self.write_result({"status": "done", "totally_unknown_field": 42})
@@ -429,11 +431,11 @@ class RunStateTest(unittest.TestCase):
         self.assertIn("not a decision object", result.stdout)
         self.assertEqual(before, (self.plan_dir / "factory-run.json").read_text())
 
-    def test_check_result_with_a_json_array_exits_3(self) -> None:
+    def test_check_result_with_a_json_array_is_a_failed_attempt(self) -> None:
         path = self.cwd / "array.json"
         path.write_text(json.dumps([{"status": "done"}]), encoding="utf-8")
         result = run_state(self.cwd, "check-result", str(path))
-        self.assertEqual(result.returncode, 3)
+        self.assertEqual(result.returncode, 1)
         self.assertIn("not a JSON object", result.stdout)
 
     def test_check_result_stopped_without_a_kind_prints_an_empty_kind(self) -> None:
@@ -456,6 +458,169 @@ class RunStateTest(unittest.TestCase):
         result = run_state(self.cwd, "attempt", "fixture-plan", "build", "--status", "done")
         self.assertEqual(result.returncode, 3)
         self.assertIn("not a JSON object", result.stdout)
+
+    def test_check_result_on_a_directory_is_a_failed_attempt(self) -> None:
+        target = self.cwd / "results"
+        target.mkdir()
+        result = run_state(self.cwd, "check-result", str(target))
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("no result file", result.stdout)
+        self.assertNotIn("Traceback", result.stderr)
+
+    def test_attempt_with_an_unknown_phase_exits_3(self) -> None:
+        self.init_plan()
+        result = run_state(self.cwd, "attempt", "fixture-plan", "deploy")
+        self.assertEqual(result.returncode, 3)
+        self.assertNotIn("Traceback", result.stderr)
+
+    def test_attempt_with_an_unknown_status_exits_3(self) -> None:
+        self.init_plan()
+        result = run_state(self.cwd, "attempt", "fixture-plan", "build", "--status", "weird")
+        self.assertEqual(result.returncode, 3)
+        self.assertNotIn("Traceback", result.stderr)
+
+    def test_an_unknown_subcommand_exits_3(self) -> None:
+        result = run_state(self.cwd, "frobnicate", "fixture-plan")
+        self.assertEqual(result.returncode, 3)
+        self.assertNotIn("Traceback", result.stderr)
+
+    def write_state(self, state: dict) -> None:
+        (self.plan_dir / "factory-run.json").write_text(json.dumps(state), encoding="utf-8")
+
+    def test_show_with_a_list_phases_state_exits_3(self) -> None:
+        self.init_plan()
+        state = json.loads((self.plan_dir / "factory-run.json").read_text())
+        state["phases"] = []
+        self.write_state(state)
+        result = run_state(self.cwd, "show", "fixture-plan")
+        self.assertEqual(result.returncode, 3)
+        self.assertIn("unusable state file", result.stdout)
+        self.assertNotIn("Traceback", result.stderr)
+
+    def test_attempt_with_a_null_phases_state_exits_3(self) -> None:
+        self.init_plan()
+        state = json.loads((self.plan_dir / "factory-run.json").read_text())
+        state["phases"] = None
+        self.write_state(state)
+        result = run_state(self.cwd, "attempt", "fixture-plan", "build")
+        self.assertEqual(result.returncode, 3)
+        self.assertIn("unusable state file", result.stdout)
+        self.assertNotIn("Traceback", result.stderr)
+
+    def test_diff_spec_with_a_null_scenario_texts_state_exits_3_not_1(self) -> None:
+        self.init_plan()
+        self.write_spec()
+        state = json.loads((self.plan_dir / "factory-run.json").read_text())
+        state["scenario_texts"] = None
+        self.write_state(state)
+        result = run_state(self.cwd, "diff-spec", "fixture-plan")
+        self.assertEqual(result.returncode, 3)
+        self.assertIn("unusable state file", result.stdout)
+        self.assertNotIn("Traceback", result.stderr)
+
+    def test_attempt_with_a_phase_that_is_not_a_list_exits_3(self) -> None:
+        self.init_plan()
+        state = json.loads((self.plan_dir / "factory-run.json").read_text())
+        state["phases"]["build"] = {}
+        self.write_state(state)
+        result = run_state(self.cwd, "attempt", "fixture-plan", "build")
+        self.assertEqual(result.returncode, 3)
+        self.assertIn("not a list of attempts", result.stdout)
+        self.assertNotIn("Traceback", result.stderr)
+
+    def test_show_with_a_non_object_attempt_entry_exits_3(self) -> None:
+        self.init_plan()
+        state = json.loads((self.plan_dir / "factory-run.json").read_text())
+        state["phases"]["build"] = ["done"]
+        self.write_state(state)
+        result = run_state(self.cwd, "show", "fixture-plan")
+        self.assertEqual(result.returncode, 3)
+        self.assertNotIn("Traceback", result.stderr)
+
+    def test_check_result_failed_status_with_a_stop_kind_still_exits_2(self) -> None:
+        path = self.write_result({"status": "failed", "stop": {"kind": "secret.found"}})
+        result = run_state(self.cwd, "check-result", str(path))
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("secret.found", result.stdout)
+
+    def test_check_result_done_status_with_a_stop_kind_still_exits_2(self) -> None:
+        path = self.write_result({"status": "done", "stop": {"kind": "action.destructive"}})
+        result = run_state(self.cwd, "check-result", str(path))
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("action.destructive", result.stdout)
+
+    def test_check_result_done_with_an_empty_stop_object_exits_0(self) -> None:
+        path = self.write_result({"status": "done", "stop": {}})
+        result = run_state(self.cwd, "check-result", str(path))
+        self.assertEqual(result.returncode, 0)
+
+    def test_attempt_records_a_second_attempt_on_the_same_phase(self) -> None:
+        self.init_plan()
+        run_state(self.cwd, "attempt", "fixture-plan", "build")
+        first = self.write_result({"status": "failed", "reason": "flaky"})
+        run_state(
+            self.cwd, "attempt", "fixture-plan", "build", "--status", "failed", "--result", str(first)
+        )
+        relaunched = run_state(self.cwd, "attempt", "fixture-plan", "build")
+        self.assertEqual(relaunched.returncode, 0, relaunched.stderr)
+        self.assertIn("build attempt 2: launched", relaunched.stdout)
+        second = self.cwd / "result-2.json"
+        second.write_text(json.dumps({"status": "done"}), encoding="utf-8")
+        closed = run_state(
+            self.cwd, "attempt", "fixture-plan", "build", "--status", "done", "--result", str(second)
+        )
+        self.assertEqual(closed.returncode, 0, closed.stderr)
+        self.assertIn("build attempt 2: done", closed.stdout)
+        attempts = json.loads((self.plan_dir / "factory-run.json").read_text())["phases"]["build"]
+        self.assertEqual([a["status"] for a in attempts], ["failed", "done"])
+        self.assertEqual(attempts[0]["result"]["reason"], "flaky")
+        self.assertEqual(attempts[1]["result"]["status"], "done")
+
+    def test_attempt_refuses_to_reclose_a_closed_attempt(self) -> None:
+        self.init_plan()
+        run_state(self.cwd, "attempt", "fixture-plan", "build")
+        path = self.write_result({"status": "failed", "reason": "flaky"})
+        run_state(
+            self.cwd, "attempt", "fixture-plan", "build", "--status", "failed", "--result", str(path)
+        )
+        before = (self.plan_dir / "factory-run.json").read_text()
+        again = run_state(self.cwd, "attempt", "fixture-plan", "build", "--status", "done")
+        self.assertEqual(again.returncode, 3)
+        self.assertIn("already closed", again.stdout)
+        self.assertEqual(before, (self.plan_dir / "factory-run.json").read_text())
+
+    def test_attempt_with_a_missing_result_file_records_a_failed_attempt(self) -> None:
+        self.init_plan()
+        run_state(self.cwd, "attempt", "fixture-plan", "build")
+        closed = run_state(
+            self.cwd,
+            "attempt",
+            "fixture-plan",
+            "build",
+            "--status",
+            "done",
+            "--result",
+            str(self.cwd / "nope.json"),
+        )
+        self.assertEqual(closed.returncode, 0, closed.stderr)
+        self.assertIn("no result file", closed.stdout)
+        attempt = json.loads((self.plan_dir / "factory-run.json").read_text())["phases"]["build"][0]
+        self.assertEqual(attempt["status"], "failed")
+        self.assertEqual(attempt["result"]["status"], "failed")
+        self.assertIn("no result file", attempt["result"]["reason"])
+
+    def test_attempt_with_a_json_array_result_file_records_a_failed_attempt(self) -> None:
+        self.init_plan()
+        run_state(self.cwd, "attempt", "fixture-plan", "build")
+        path = self.cwd / "array.json"
+        path.write_text(json.dumps([{"status": "done"}]), encoding="utf-8")
+        closed = run_state(
+            self.cwd, "attempt", "fixture-plan", "build", "--status", "done", "--result", str(path)
+        )
+        self.assertEqual(closed.returncode, 0, closed.stderr)
+        attempt = json.loads((self.plan_dir / "factory-run.json").read_text())["phases"]["build"][0]
+        self.assertEqual(attempt["status"], "failed")
+        self.assertIn("not a JSON object", attempt["result"]["reason"])
 
     def test_show_exits_0(self) -> None:
         self.init_plan()

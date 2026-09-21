@@ -45,16 +45,16 @@ Every phase skill writes `.dev/{plan}/results/{phase}-{attempt}.json` as its las
 
 After the go, no phase skill asks a person anything. An escalation that dev's version would put outside the run is instead: decided under the recommended option and recorded in `auto_decided`, or reported as `failed`/`stopped` with the reason a person would need. The two hard stops (`secret.found`, `action.destructive`) always report `stopped`; the orchestrator never overrides them.
 
-`scope` is the one exception: it runs inline in the orchestrator's own session, keeps its interview, and is outside `check_factory_unattended`'s scan root. `run/SKILL.md` is the only file in the scan root that may use `<!-- interactive-only -->` / `<!-- /interactive-only -->`, for its pre-go lines; the markers must balance and each must stand alone on its line. No phase copy may use them, because no phase copy has anything to route.
+The interactive phases - `scope` in the built-in pipeline - are the one exception: they run inline in the orchestrator's own session, keep their interview, and are outside `check_factory_unattended`'s scan root. A phase body the factory did not write is covered by no check: its author declares it `unattended_safe` in the config, and a phase that blocks on a person is neither prevented nor detected. `run/SKILL.md` is the only file in the scan root that may use `<!-- interactive-only -->` / `<!-- /interactive-only -->`, for its pre-go lines; the markers must balance and each must stand alone on its line. No phase copy may use them, because no phase copy has anything to route.
 
 ## Launch prompt shape
 
 Each phase subagent's prompt carries, in order:
 
-1. The phase's skill path: the absolute path to `factory/skills/{phase}/SKILL.md`, with the instruction to read `{phase}-skill-root` as that path's parent directory (a subagent reading a file cannot resolve `{phase}-skill-root}`-style placeholders on its own).
+1. The phase's skill path: the absolute resolved `skill` path from `factory-config.py show --resolved`, with the instruction to read that path's parent directory wherever the file uses a skill-root placeholder (a subagent reading a file cannot resolve `{phase}-skill-root`-style placeholders on its own). Any skill can be wrapped this way, ours or a team's own.
 2. The plan name and the plan directory's absolute path.
 3. The attempt number, which is the one `run-state.py attempt` printed when it recorded this launch, never a number counted by hand or read off a file in `results/`.
 4. On a relaunch: the previous attempt's reason and explicit guidance naming what it did and what is required instead - never "try again".
 5. The scratch root for this attempt: `/tmp/{project-slug}/factory/{plan}/{phase}-{attempt}/`.
 6. The result path this attempt must write: `.dev/{plan}/results/{phase}-{attempt}.json`.
-7. The instruction that this phase never launches another phase and, after the go, never asks a person anything - decide under the unattended policy above and record it.
+7. The instruction that this phase never names or launches the next phase and, after the go, never asks a person anything - decide under the unattended policy above and record it. `launch.md` carries the exact wording. The wrapper imposes the result shape on a phase; it does not guarantee it, and a phase that writes no result is read as a failed attempt.

@@ -56,21 +56,22 @@ BUILTIN_TYPES = {
         "interactive": True,
         "requires": "the go was recorded (the interview happened inline in this session, "
         "so the orchestrator already knows)",
-        "checks": [["lint-spec.py", "${plan_dir}/spec.md"]],
+        "checks": [["${plugin_root}/skills/scope/scripts/lint-spec.py", "${plan_dir}/spec.md"]],
         "seals": ["${plan_dir}/spec.md"],
         "attempts": 3,
     },
     "review": {
         "interactive": False,
         "requires": 'spec-review_N.md contains a line whose whole text is exactly '
-        '"Verdict: APPROVED" - nothing after it - with a "Rounds:" line',
+        '"Verdict: APPROVED" - nothing after it - with a "Rounds:" line, and the spec '
+        'still lints clean with lint-spec.py',
         "attempts": 3,
     },
     "implement": {
         "interactive": False,
         "requires": "the spec's Validation block is green, and commits since handoff "
         "match the change plan's numbering",
-        "checks": [["check-tests.py", "${plan_dir}"]],
+        "checks": [["${plugin_root}/skills/build/scripts/check-tests.py", "${plan_dir}"]],
         "attempts": 3,
     },
     "ship": {
@@ -78,7 +79,7 @@ BUILTIN_TYPES = {
         "requires": "review_N.md carries a verdict for HEAD and gh pr view shows the PR "
         "open with head equal to HEAD, or (without a GitHub remote) git ls-remote origin "
         "shows the branch at HEAD and pr.md is written",
-        "checks": [["pr-evidence.py", "check"]],
+        "checks": [["${plugin_root}/skills/ship/scripts/pr-evidence.py", "check", "${plan_dir}/pr.md"]],
         "attempts": 3,
     },
 }
@@ -455,20 +456,38 @@ def _normalize_under_root(raw: str, roots: dict) -> str:
     return text
 
 
-def _resolves_under_allowlist(path_text: str, roots: dict) -> bool:
+def _resolved_path(path_text: str, roots: dict):
+    """The absolute path a skill or check executable names, or None when unresolvable."""
     resolved = Path(_normalize_under_root(path_text, roots))
     try:
-        resolved = resolved.resolve() if resolved.is_absolute() else (roots["repo_root"] / resolved).resolve()
+        if not resolved.is_absolute():
+            resolved = Path(roots["repo_root"]) / resolved
+        return resolved.resolve()
     except (OSError, RuntimeError):
+        return None
+
+
+def _resolves_under_allowlist(path_text: str, roots: dict) -> bool:
+    resolved = _resolved_path(path_text, roots)
+    if resolved is None:
         return False
     for root_key in ("plugin_root", "repo_root"):
-        root = Path(roots[root_key]).resolve()
         try:
-            resolved.relative_to(root)
+            resolved.relative_to(Path(roots[root_key]).resolve())
             return True
         except ValueError:
             continue
     return False
+
+
+def _path_findings(pid: str, what: str, path_text: str, roots: dict) -> list:
+    """Findings for a skill path or check executable outside the roots or not a file."""
+    if not _resolves_under_allowlist(path_text, roots):
+        return [f"phase {pid!r}: {what} {path_text!r} is outside the plugin and repo roots"]
+    resolved = _resolved_path(path_text, roots)
+    if resolved is None or not resolved.is_file():
+        return [f"phase {pid!r}: {what} {path_text!r} does not resolve to a file"]
+    return []
 
 
 def sha256_of(path: Path) -> str:
@@ -589,8 +608,7 @@ def resolve(repo_root: Path, plugin_root_path: Path = None):
         type_def = types.get(ptype, BUILTIN_TYPES.get(ptype, {}))
 
         skill_raw = phase.get("skill", "")
-        if not _resolves_under_allowlist(skill_raw, roots):
-            findings.append(f"phase {pid!r}: skill path {skill_raw!r} does not resolve under the plugin or repo root")
+        findings.extend(_path_findings(pid, "skill path", skill_raw, roots))
         skill_resolved = substitute(skill_raw, {"plugin_root": roots["plugin_root"], "repo_root": roots["repo_root"]})
 
         checks_raw = phase["checks"] if "checks" in phase else type_def.get("checks", [])
@@ -613,8 +631,7 @@ def resolve(repo_root: Path, plugin_root_path: Path = None):
                 for ph in placeholders_in(element):
                     if ph not in CHECK_PLACEHOLDERS:
                         findings.append(f"phase {pid!r}: check {entry!r} uses unsupported placeholder {ph}")
-            if not _resolves_under_allowlist(executable, roots):
-                findings.append(f"phase {pid!r}: check executable {executable!r} does not resolve under the plugin or repo root")
+            findings.extend(_path_findings(pid, "check executable", executable, roots))
             resolved_entry = [substitute(e, {"plugin_root": roots["plugin_root"], "repo_root": roots["repo_root"]}) for e in entry]
             resolved_checks.append(resolved_entry)
 

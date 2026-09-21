@@ -186,6 +186,29 @@ class CheckValidationTest(TempRepoTestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("${plan_dir}", result.stdout)
 
+    def test_missing_skill_file_and_missing_executable_do_not_resolve(self) -> None:
+        write_json_doc(
+            self.repo,
+            {
+                "version": 1,
+                "types": {"t": {}},
+                "phases": [
+                    {
+                        "id": "a",
+                        "type": "t",
+                        "skill": "${repo_root}/nope/SKILL.md",
+                        "checks": [["${repo_root}/nope.py"]],
+                        "unattended_safe": True,
+                    }
+                ],
+            },
+        )
+        result = run(self.repo, "check")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("nope/SKILL.md", result.stdout)
+        self.assertIn("nope.py", result.stdout)
+        self.assertIn("does not resolve", result.stdout)
+
     def test_reserved_phase_id(self) -> None:
         make_skill(self.repo, "x/SKILL.md")
         write_json_doc(
@@ -229,6 +252,8 @@ class CheckValidationTest(TempRepoTestCase):
 
     def test_nested_checks_both_lists_shown(self) -> None:
         make_skill(self.repo, "x/SKILL.md")
+        make_skill(self.repo, "lint-spec.py")
+        make_skill(self.repo, "check-tests.py")
         write_json_doc(
             self.repo,
             {
@@ -395,6 +420,8 @@ class SetUnsetTest(TempRepoTestCase):
 
     def test_set_types_checks_with_items(self) -> None:
         make_skill(self.repo, "x/SKILL.md")
+        make_skill(self.repo, "lint-spec.py")
+        make_skill(self.repo, "check-tests.py")
         write_json_doc(
             self.repo,
             {
@@ -524,6 +551,8 @@ class ResolutionTest(TempRepoTestCase):
 
     def test_phase_omitting_checks_inherits_type_checks(self) -> None:
         make_skill(self.repo, "x/SKILL.md")
+        make_skill(self.repo, "lint-spec.py")
+        make_skill(self.repo, "check-tests.py")
         write_json_doc(
             self.repo,
             {
@@ -537,6 +566,8 @@ class ResolutionTest(TempRepoTestCase):
 
     def test_phase_checks_replace_type_checks(self) -> None:
         make_skill(self.repo, "x/SKILL.md")
+        make_skill(self.repo, "lint-spec.py")
+        make_skill(self.repo, "check-tests.py")
         write_json_doc(
             self.repo,
             {
@@ -561,6 +592,12 @@ class ResolutionTest(TempRepoTestCase):
         result = run(self.repo, "show", "--resolved", plugin_root=REPO_ROOT / "factory")
         self.assertEqual(result.returncode, 0, result.stdout)
         self.assertEqual(result.stdout.count("check:"), 3)
+        plugin = str(REPO_ROOT / "factory")
+        for line in result.stdout.splitlines():
+            if line.strip().startswith("check:"):
+                executable = eval(line.split("check:", 1)[1])[0]  # noqa: S307 - our own printed list
+                self.assertTrue(executable.startswith(plugin + "/"), executable)
+                self.assertTrue(Path(executable).is_file(), executable)
         self.assertIn("gh pr view", result.stdout)
         self.assertIn("git ls-remote", result.stdout)
         self.assertIn("Verdict: APPROVED", result.stdout)

@@ -43,7 +43,9 @@ class ProtocolAndCopiesTest(unittest.TestCase):
         self.assertIn("factory-run.md", factory_reference_names)
 
         factory_script_names = {p.name for p in (FACTORY / "scripts").glob("*.py")}
-        self.assertEqual(factory_script_names, {"skill-metrics.py", "architecture-check.py"})
+        self.assertEqual(
+            factory_script_names, {"skill-metrics.py", "architecture-check.py", "factory-config.py"}
+        )
 
     def test_backticked_reference_and_script_paths_resolve_under_factory(self) -> None:
         problems = []

@@ -3,7 +3,7 @@
 Three levels of verification (D-verification):
 
 1. **Structural, free**: `scripts/validate.sh`'s `check_factory_unattended`, `check_factory_protocol`, and `check_factory_script` - run on every `scripts/validate.sh` invocation.
-2. **Unit tests, free**: `python3 -m unittest discover -s factory/evals/tests -t .` - `test_run_state.py`, `test_factory_checks.py`, `test_fixture_setup.py`.
+2. **Unit tests, free**: `python3 -m unittest discover -s factory/evals/tests -t .` - `test_run_state.py`, `test_factory_config.py`, `test_stub_pipeline.py`, `test_factory_checks.py`, `test_fixture_setup.py`. The stub pipeline in `factory/evals/stubs/` proves the bookkeeping (attempts, timestamps, terminality, budgets, drift) and nothing about the orchestrator's prose loop.
 3. **One real end-to-end run per host, paid and manual**: this file's procedure, recorded in `results.md`.
 
 ## The end-to-end procedure
@@ -27,6 +27,16 @@ Per host (Claude Code, Codex), because these are paid host sessions build's mock
 - `git log --name-only` on the run branch names no `.dev/` path.
 
 Ship reaching `gh pr create` and failing there is part of the pass, not an exception to it: with `gh` installed and authenticated the command still refuses with "none of the git remotes configured for this repository point to a known GitHub host" before any network call, the orchestrator judges that under the third `gh` fault category in [`judgment.md`](../skills/run/references/judgment.md), and the run ends with a report naming the origin and the pull request as the one unfinished step. There is no run in which all four phases are `done` on this fixture; that ending leaves the pull-request step and the Codex GitHub prerequisites unproven.
+
+### Custom-pipeline variant
+
+The stub fixture cannot prove the prose loop in `run/SKILL.md`, so a real run on a pipeline that is not ours is its own paid, manual check, one per host. In the fixture's destination, write a two-phase `.factory/config.yaml` with `factory-config.py init` and `set`: a first `interview` phase and a second unattended phase, both pointing at skills that are not ours (a minimal skill that writes one file is enough), then run `python3 factory/scripts/factory-config.py check` and expect exit 0. Invoke `/factory:run "a request"`.
+
+The variant passes when the run ends with `finished: yes` in `run-state.py show`, the closing report names each phase's type, skill path and timings from the attempt records, the interactive phase ran inline and the go followed it, and no phase was launched before the go. Record any of these that did not hold in `results.md`.
+
+### Foreign-phase variant
+
+One per host, on the same custom pipeline: make the unattended phase's skill deliberately fail its first attempt (write no result file, or a result whose `status` is `failed`). The variant passes when the attempt is closed failed with reason "no result file" or the phase's own reason, the orchestrator relaunches it or ends the run and never hand-repairs it (`show --resolved` classes it foreign), and the phase carried `unattended_safe: true`. Also run the pipeline once with that declaration removed and expect `check` to exit 1 naming the phase before any interview.
 
 ### Planted-secret variant
 

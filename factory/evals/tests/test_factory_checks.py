@@ -278,6 +278,8 @@ class FactoryChecksTest(unittest.TestCase):
         self.assertEqual(outcome.returncode, 0, outcome.output)
         if outcome.script_log is not None:
             self.assertIn("test_run_state", outcome.script_log)
+            self.assertIn("test_stub_pipeline", outcome.script_log)
+            self.assertIn("test_factory_config", outcome.script_log)
             self.assertNotIn("test_factory_checks", outcome.script_log)
 
     def test_decision_routed_to_a_person_fails_f03(self) -> None:

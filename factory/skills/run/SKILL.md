@@ -40,7 +40,7 @@ Launch the copied `scope` skill inline, in this session: read its `SKILL.md` at 
 
 ## 4. Handoff
 
-At the go: create branch `factory/{plan}` from the base branch. Run `run-state.py handoff {plan} --branch factory/{plan}` to record the spec's sha256, its scenario texts per change set, its `⊘` lines, and the checkout's dirty files (D-checkout, D-handoff-seal).
+At the go: create branch `factory/{plan}` from the base branch. Run `run-state.py handoff {plan} --branch factory/{plan} --seal .dev/{plan}/spec.md` to record the spec's sha256, its scenario texts per change set, its `⊘` lines, and the checkout's dirty files (D-checkout, D-handoff-seal).
 
 ## 5. Per phase: launch, judge, act
 

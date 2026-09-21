@@ -7,6 +7,7 @@ Usage:
   factory-config.py check
   factory-config.py set <path> <value> [--item <value> ...]
   factory-config.py unset <path>
+  factory-config.py inject [phase ...] [--force]
 
 Exit codes:
   init    0 written; 1 the file already exists
@@ -16,6 +17,9 @@ Exit codes:
           3 a malformed path or an unsupported document construct
   unset   0 recorded (a no-op if the key was already absent);
           3 a malformed path
+  inject  0 copied, or nothing to do; 1 a target was edited since it was
+          injected or has no manifest entry (use --force); 3 an unknown phase
+          or an unusable config
 
 3 always means the call itself could not be carried out - a malformed key
 path, an unparseable document, or a usage error - never a finding about the
@@ -27,8 +31,11 @@ relays `check`'s output rather than judging the file itself.
 from __future__ import annotations
 
 import argparse
+import copy
 import hashlib
 import json
+import re
+import shutil
 import sys
 from pathlib import Path
 from typing import NoReturn
@@ -280,7 +287,7 @@ def _needs_quotes(text: str) -> bool:
         return True
     if text != text.strip():
         return True
-    if ": " in text or text.endswith(":"):
+    if ": " in text or text.endswith(":") or " #" in text:
         return True
     if text[0] in "\"'[]{}&*|>#-?:@`":
         return True
@@ -751,6 +758,222 @@ def render_json(resolved: dict) -> str:
 
 
 # ---------------------------------------------------------------------------
+# inject: copy phase bodies and what they reference into .factory/
+# ---------------------------------------------------------------------------
+
+# A plugin directory and where its copy lands under .factory/. The plugin's
+# relative depth is preserved, so no link in a copied file needs rewriting.
+INJECT_MAP = {"phases": "skills", "references": "references", "scripts": "scripts"}
+LINK_RE = re.compile(r"\]\(([^)#\s]+)(?:#[^)]*)?\)")
+SKILL_ROOT_RE = re.compile(r"\{([a-z][a-z-]*)-skill-root\}((?:/[\w.-]+)*)")
+TEMPLATE_RE = re.compile(r"`(templates/[\w./-]+\.html)`")
+PROVENANCE_KEY = "injected-from"
+
+
+def _owning_phase(plugin: Path, source: Path):
+    try:
+        parts = source.relative_to(plugin / "phases").parts
+    except ValueError:
+        return None
+    return parts[0] if len(parts) > 1 else None
+
+
+def _referenced_paths(plugin: Path, source: Path) -> list:
+    """Files a Markdown file names by a relative link, a skill-root path or a template."""
+    text = source.read_text(encoding="utf-8")
+    found = []
+    for target in LINK_RE.findall(text):
+        if not target.startswith(("http://", "https://", "mailto:", "/")):
+            found.append(source.parent / target)
+    for phase, suffix in SKILL_ROOT_RE.findall(text):
+        found.append(plugin / "phases" / phase / suffix.rstrip(".,").lstrip("/"))
+    owner = _owning_phase(plugin, source)
+    if owner is not None:
+        found.extend(plugin / "phases" / owner / tpl for tpl in TEMPLATE_RE.findall(text))
+    return found
+
+
+def _injectable(plugin: Path, path: Path) -> bool:
+    try:
+        top = path.relative_to(plugin).parts[0]
+    except (ValueError, IndexError):
+        return False
+    return top in INJECT_MAP and path.is_file()
+
+
+def inject_closure(plugin: Path, phases: list) -> list:
+    """Every file the named phase bodies reach, transitively, in a stable order."""
+    seen: dict = {}
+    queue = [(plugin / "phases" / phase / "SKILL.md").resolve() for phase in phases]
+    while queue:
+        source = queue.pop(0)
+        if source in seen or not _injectable(plugin, source):
+            continue
+        seen[source] = None
+        if source.suffix == ".md":
+            queue.extend(p.resolve() for p in _referenced_paths(plugin, source))
+    return sorted(seen)
+
+
+def inject_destination(plugin: Path, source: Path) -> str:
+    """The path under .factory/ a plugin file lands at."""
+    top, *rest = source.relative_to(plugin).parts
+    return "/".join([INJECT_MAP[top], *rest])
+
+
+def plugin_identity(plugin: Path) -> tuple:
+    try:
+        meta = json.loads((plugin / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
+        return str(meta.get("name", plugin.name)), str(meta.get("version", "unknown"))
+    except (OSError, json.JSONDecodeError):
+        return plugin.name, "unknown"
+
+
+def add_provenance(text: str, origin: str) -> str:
+    """Add the provenance key to a SKILL.md's frontmatter, before its closing rule."""
+    lines = text.split("\n")
+    if not lines or lines[0].strip() != "---":
+        return text
+    for index in range(1, len(lines)):
+        if lines[index].strip() == "---":
+            lines.insert(index, f"{PROVENANCE_KEY}: {origin}")
+            break
+    return "\n".join(lines)
+
+
+def inject_content(plugin: Path, source: Path, phases: set, origin: str) -> bytes:
+    """A file's bytes as injected: skill-root placeholders resolved, provenance added."""
+    if source.suffix != ".md":
+        return source.read_bytes()
+    text = source.read_text(encoding="utf-8")
+    text = SKILL_ROOT_RE.sub(
+        lambda m: f".factory/skills/{m.group(1)}{m.group(2)}" if m.group(1) in phases else m.group(0),
+        text,
+    )
+    if source.name == "SKILL.md" and _owning_phase(plugin, source) is not None:
+        text = add_provenance(text, origin)
+    return text.encode("utf-8")
+
+
+def load_manifest(repo_root: Path):
+    """Return (manifest dict, reason) - the dict is None with a reason it is unusable."""
+    path = manifest_path(repo_root)
+    if not path.exists():
+        return None, "is missing"
+    try:
+        manifest = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None, "is unparseable"
+    if not isinstance(manifest, dict) or not isinstance(manifest.get("files"), dict):
+        return None, "is unparseable"
+    return manifest, ""
+
+
+def classify_target(target: Path, rel: str, content: bytes, manifest, reason: str):
+    """One of 'new', 'unchanged', 'upgrade' or a refusal message for a file to inject."""
+    if not target.exists():
+        return "new"
+    current = hashlib.sha256(target.read_bytes()).hexdigest()
+    entry = manifest["files"].get(rel) if manifest is not None else None
+    if manifest is None:
+        return f"{rel} exists and .factory/.inject.json {reason}"
+    if entry is None:
+        return f"{rel} exists and has no entry in .factory/.inject.json"
+    if current != entry:
+        return f"{rel} was edited since it was injected"
+    return "unchanged" if current == hashlib.sha256(content).hexdigest() else "upgrade"
+
+
+def plan_inject(repo_root: Path, plugin: Path, phases: list, force: bool):
+    """Return (writes, unchanged, refusals): file plans keyed by destination path."""
+    manifest, reason = load_manifest(repo_root)
+    origin = "%s@%s" % plugin_identity(plugin)
+    phase_names = {p.name for p in (plugin / "phases").iterdir() if p.is_dir()}
+    writes, unchanged, refusals = {}, {}, []
+    for source in inject_closure(plugin, phases):
+        rel = inject_destination(plugin, source)
+        content = inject_content(plugin, source, phase_names, origin)
+        state = classify_target(repo_root / CONFIG_DIR / rel, rel, content, manifest, reason)
+        if state == "unchanged":
+            unchanged[rel] = (content, source)
+        elif state in ("new", "upgrade"):
+            writes[rel] = (content, source)
+        elif force:
+            if hashlib.sha256((repo_root / CONFIG_DIR / rel).read_bytes()).hexdigest() == hashlib.sha256(content).hexdigest():
+                unchanged[rel] = (content, source)
+            else:
+                writes[rel] = (content, source)
+        else:
+            refusals.append(state)
+    return writes, unchanged, refusals
+
+
+def injected_skill_path(phase: str) -> str:
+    return f"${{repo_root}}/{CONFIG_DIR}/skills/{phase}/SKILL.md"
+
+
+def point_config_at_copies(repo_root: Path, phases: list) -> bool:
+    """Repoint (or add) each injected phase in the config; True when the file changed."""
+    path = config_path(repo_root)
+    before = path.read_text(encoding="utf-8") if path.exists() else None
+    doc = read_doc_for_write(repo_root) if path.exists() else builtin_doc()
+    builtin_types = {p["id"]: p["type"] for p in BUILTIN_PHASES}
+    for phase in phases:
+        entry = next((p for p in doc["phases"] if p.get("id") == phase), None)
+        if entry is not None:
+            entry["skill"] = injected_skill_path(phase)
+        elif phase in builtin_types:
+            ptype = builtin_types[phase]
+            doc["types"].setdefault(ptype, copy.deepcopy(BUILTIN_TYPES[ptype]))
+            doc["phases"].append({"id": phase, "type": ptype, "skill": injected_skill_path(phase)})
+    write_doc(repo_root, doc)
+    return path.read_text(encoding="utf-8") != before
+
+
+def write_injected(repo_root: Path, plugin: Path, planned: dict, unchanged: dict, force: bool) -> None:
+    manifest, _ = load_manifest(repo_root)
+    files = dict(manifest["files"]) if manifest is not None else {}
+    for rel, (content, source) in {**unchanged, **planned}.items():
+        if rel in planned:
+            target = repo_root / CONFIG_DIR / rel
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(content)
+            shutil.copymode(source, target)
+        files[rel] = hashlib.sha256(content).hexdigest()
+    name, version = plugin_identity(plugin)
+    text = json.dumps({"plugin": name, "version": version, "files": files}, indent=2, sort_keys=True)
+    manifest_path(repo_root).parent.mkdir(parents=True, exist_ok=True)
+    manifest_path(repo_root).write_text(text + "\n", encoding="utf-8")
+
+
+def cmd_inject(args) -> int:
+    plugin = Path(args.plugin_root).resolve()
+    available = sorted(p.name for p in (plugin / "phases").iterdir() if (p / "SKILL.md").is_file())
+    phases = list(args.phases) or available
+    unknown = [p for p in phases if p not in available]
+    if unknown:
+        print(f"unknown phase(s) {unknown}; available: {available}", file=sys.stderr)
+        return BAD_CALL
+    try:
+        writes, unchanged, refusals = plan_inject(args.repo_root, plugin, phases, args.force)
+        if refusals:
+            for message in refusals:
+                print(f"refusing: {message}; pass --force to overwrite", file=sys.stderr)
+            return 1
+        before_manifest = manifest_path(args.repo_root).read_text() if manifest_path(args.repo_root).exists() else None
+        config_changed = point_config_at_copies(args.repo_root, phases)
+    except ConfigError as exc:
+        print(f"malformed document: {exc}", file=sys.stderr)
+        return BAD_CALL
+    if not writes and not config_changed and before_manifest is not None:
+        print("nothing to do: every copy is current and the config already names them")
+        return 0
+    write_injected(args.repo_root, plugin, writes, unchanged, args.force)
+    print(f"injected {len(writes)} file(s), {len(unchanged)} already current; config names {phases}")
+    return 0
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -927,6 +1150,7 @@ def main(argv=None) -> int:
         "check": cmd_check,
         "set": cmd_set,
         "unset": cmd_unset,
+        "inject": cmd_inject,
     }
     handler = handlers.get(args.command)
     if handler is None:

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -618,6 +619,169 @@ class ResolutionTest(TempRepoTestCase):
         for phase in data["phases"]:
             self.assertEqual(set(phase.keys()), {"id", "type", "skill", "interactive"})
         self.assertEqual([p["id"] for p in data["phases"]], ["scope", "scope-review", "build", "ship"])
+
+
+LINK_RE = re.compile(r"\]\(([^)#\s]+)(?:#[^)]*)?\)")
+BACKTICKED = re.compile(r"`([^`\n]+)`")
+
+
+class InjectTest(TempRepoTestCase):
+    def inject(self, *args: str) -> subprocess.CompletedProcess:
+        return run(self.repo, "inject", *args)
+
+    def manifest(self) -> dict:
+        return json.loads((self.repo / ".factory" / ".inject.json").read_text())
+
+    def copy_of(self, rel: str) -> Path:
+        return self.repo / ".factory" / rel
+
+    def test_inject_scope_into_a_repo_with_no_config(self) -> None:
+        result = self.inject("scope")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        body = self.copy_of("skills/scope/SKILL.md")
+        self.assertTrue(body.is_file())
+        self.assertIn("injected-from: factory@", body.read_text())
+        self.assertTrue(self.copy_of("references/plan-layout.md").is_file())
+        self.assertTrue(self.copy_of("scripts/skill-metrics.py").is_file())
+        manifest = self.manifest()
+        self.assertEqual(manifest["plugin"], "factory")
+        copied = {
+            p.relative_to(self.repo / ".factory").as_posix()
+            for p in (self.repo / ".factory").rglob("*")
+            if p.is_file() and p.name not in (".inject.json", "config.yaml")
+        }
+        self.assertEqual(set(manifest["files"]), copied)
+        for rel, digest in manifest["files"].items():
+            self.assertEqual(hashlib.sha256(self.copy_of(rel).read_bytes()).hexdigest(), digest, rel)
+        config = (self.repo / ".factory" / "config.yaml").read_text()
+        self.assertIn("${repo_root}/.factory/skills/scope/SKILL.md", config)
+        self.assertEqual(run(self.repo, "check").returncode, 0)
+
+    def test_only_the_skill_root_placeholders_are_rewritten(self) -> None:
+        self.inject("scope")
+        text = self.copy_of("skills/scope/SKILL.md").read_text()
+        self.assertNotIn("{scope-skill-root}", text)
+        self.assertIn(".factory/skills/scope/scripts/lint-spec.py", text)
+        self.assertIn(".factory/skills/scope/../../scripts/skill-metrics.py", text)
+
+    def test_cross_phase_references_pull_the_referenced_files(self) -> None:
+        self.inject("scope-review")
+        self.assertTrue(self.copy_of("skills/ship/scripts/aggregate-findings.py").is_file())
+        self.assertTrue(self.copy_of("skills/scope/scripts/lint-spec.py").is_file())
+
+    def test_a_template_comes_along_without_a_header(self) -> None:
+        self.inject("build")
+        template = self.copy_of("skills/build/templates/e2e-report.html")
+        self.assertTrue(template.is_file())
+        self.assertNotIn("injected-from", template.read_text())
+
+    def test_inject_into_an_existing_config_repoints_only_that_phase(self) -> None:
+        self.inject("build")
+        before = json.loads(run(self.repo, "show", "--resolved", "--json").stdout)["phases"]
+        self.assertEqual(self.inject("scope").returncode, 0)
+        after = json.loads(run(self.repo, "show", "--resolved", "--json").stdout)["phases"]
+        changed = [(a["id"], a["skill"]) for a, b in zip(after, before) if a != b]
+        self.assertEqual([phase for phase, _ in changed], ["scope"])
+        self.assertTrue(changed[0][1].endswith(".factory/skills/scope/SKILL.md"))
+
+    def test_check_after_inject_needs_no_unattended_safe(self) -> None:
+        self.inject("build")
+        self.assertEqual(run(self.repo, "check").returncode, 0)
+        self.assertNotIn("unattended_safe", (self.repo / ".factory" / "config.yaml").read_text())
+
+    def test_inject_twice_is_a_no_op(self) -> None:
+        self.inject("scope")
+        before = {p: p.read_bytes() for p in (self.repo / ".factory").rglob("*") if p.is_file()}
+        second = self.inject("scope")
+        self.assertEqual(second.returncode, 0)
+        self.assertIn("nothing to do", second.stdout)
+        after = {p: p.read_bytes() for p in (self.repo / ".factory").rglob("*") if p.is_file()}
+        self.assertEqual(before, after)
+
+    def test_an_edited_copy_is_refused_naming_the_file(self) -> None:
+        self.inject("scope")
+        body = self.copy_of("skills/scope/SKILL.md")
+        body.write_text(body.read_text() + "\nlocal edit\n")
+        result = self.inject("scope")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("skills/scope/SKILL.md", result.stderr)
+        self.assertIn("local edit", body.read_text())
+
+    def test_force_overwrites_an_edited_copy_and_updates_the_manifest(self) -> None:
+        self.inject("scope")
+        body = self.copy_of("skills/scope/SKILL.md")
+        body.write_text(body.read_text() + "\nlocal edit\n")
+        result = self.inject("scope", "--force")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("local edit", body.read_text())
+        self.assertEqual(
+            self.manifest()["files"]["skills/scope/SKILL.md"],
+            hashlib.sha256(body.read_bytes()).hexdigest(),
+        )
+
+    def test_check_after_editing_an_injected_copy_names_the_file_and_phase(self) -> None:
+        self.inject("build")
+        body = self.copy_of("skills/build/SKILL.md")
+        body.write_text(body.read_text() + "\nlocal edit\n")
+        result = run(self.repo, "check")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("skills/build/SKILL.md", result.stdout)
+        self.assertIn("'build'", result.stdout)
+
+    def test_an_existing_copy_with_no_manifest_is_refused(self) -> None:
+        make_skill(self.repo, ".factory/skills/scope/SKILL.md", "mine\n")
+        result = self.inject("scope")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("skills/scope/SKILL.md", result.stderr)
+        self.assertIn(".inject.json", result.stderr)
+        self.assertEqual(self.copy_of("skills/scope/SKILL.md").read_text(), "mine\n")
+        self.assertFalse((self.repo / ".factory" / ".inject.json").exists())
+
+    def test_force_over_a_copy_with_no_manifest_writes_the_manifest(self) -> None:
+        make_skill(self.repo, ".factory/skills/scope/SKILL.md", "mine\n")
+        self.assertEqual(self.inject("scope", "--force").returncode, 0)
+        self.assertIn("injected-from", self.copy_of("skills/scope/SKILL.md").read_text())
+        self.assertIn("skills/scope/SKILL.md", self.manifest()["files"])
+
+    def test_an_unknown_phase_is_a_bad_call(self) -> None:
+        result = self.inject("deploy")
+        self.assertEqual(result.returncode, 3)
+        self.assertIn("deploy", result.stderr)
+
+    def test_inject_with_no_phase_installs_the_defaults(self) -> None:
+        self.assertEqual(self.inject().returncode, 0)
+        for phase in ("scope", "scope-review", "build", "ship"):
+            self.assertTrue(self.copy_of(f"skills/{phase}/SKILL.md").is_file(), phase)
+        self.assertEqual(run(self.repo, "check").returncode, 0)
+
+    def test_every_relative_link_under_factory_resolves_to_a_listed_file(self) -> None:
+        self.inject()
+        listed = set(self.manifest()["files"])
+        root = self.repo / ".factory"
+        problems = []
+        for path in sorted(root.rglob("*.md")):
+            for target in LINK_RE.findall(path.read_text()):
+                if target.startswith(("http://", "https://", "mailto:", "/")):
+                    continue
+                resolved = (path.parent / target).resolve()
+                rel = resolved.relative_to(root.resolve()).as_posix() if root.resolve() in resolved.parents else None
+                if rel not in listed:
+                    problems.append(f"{path.relative_to(root)} -> {target}")
+        self.assertEqual(problems, [])
+
+    def test_every_factory_skills_path_in_a_backticked_span_resolves_from_the_repo_root(self) -> None:
+        self.inject()
+        problems, checked = [], 0
+        for path in sorted((self.repo / ".factory").rglob("*.md")):
+            for span in BACKTICKED.findall(path.read_text()):
+                for token in span.split():
+                    if not token.startswith(".factory/skills/"):
+                        continue
+                    checked += 1
+                    if not (self.repo / token).resolve().is_file():
+                        problems.append(f"{path.relative_to(self.repo)}: {token}")
+        self.assertGreater(checked, 0)
+        self.assertEqual(problems, [])
 
 
 if __name__ == "__main__":

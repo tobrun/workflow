@@ -24,6 +24,8 @@ Run from the repo root: python3 -m unittest discover -s factory/evals/tests -t .
 
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import shutil
 import subprocess
@@ -441,6 +443,32 @@ class RepoToolsTest(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("up to date", result.stdout)
+
+    def test_inject_upgrades_an_unedited_copy_without_force(self) -> None:
+        """A plugin upgrade (a mutated body under the copy's plugin root) reaches an unedited copy."""
+        script = self.copy_root / "factory" / "scripts" / "factory-config.py"
+        consumer = self.copy_root.parent / "consumer"
+        consumer.mkdir()
+
+        def inject(*args: str) -> subprocess.CompletedProcess:
+            return subprocess.run(
+                [sys.executable, str(script), "--repo-root", str(consumer), "inject", *args],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+        self.assertEqual(inject("scope").returncode, 0)
+        body = self.copy_root / "factory" / "phases" / "scope" / "SKILL.md"
+        body.write_text(body.read_text(encoding="utf-8") + "\nAn upgraded line.\n", encoding="utf-8")
+        result = inject("scope")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        copy = consumer / ".factory" / "skills" / "scope" / "SKILL.md"
+        self.assertIn("An upgraded line.", copy.read_text(encoding="utf-8"))
+        manifest = json.loads((consumer / ".factory" / ".inject.json").read_text(encoding="utf-8"))
+        self.assertEqual(
+            manifest["files"]["skills/scope/SKILL.md"], hashlib.sha256(copy.read_bytes()).hexdigest()
+        )
 
     def test_no_claude_only_frontmatter_is_left_under_generated_phases(self) -> None:
         rebuild(self.copy_root)

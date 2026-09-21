@@ -29,3 +29,11 @@ The run lives as long as the session; `.dev/{plan}/factory-run.json` is what sur
 `python3 factory/scripts/factory-config.py init` writes a starter `.factory/config.yaml`; `show --resolved`, `check`, `set` and `unset` read and edit it, and you normally never edit the file by hand. Each phase names a `type` declared under `types`, and a type declares exactly five things: `interactive`, `requires` (the outcome, in prose), `checks` (argv commands that verify it), `seals` (artifacts watched for drift) and `attempts`. The full schema is in [references/pipeline-config.md](references/pipeline-config.md).
 
 A phase is one of three classes. A built-in phase runs from the installed plugin. An injected phase is a copy under `.factory/skills/` whose hash still matches `.factory/.inject.json`. Anything else is foreign, and a foreign phase must declare `unattended_safe: true`: nothing can detect a phase that blocks on a person, so that declaration is the word of whoever read the skill.
+
+## Injecting our phases into your repository
+
+By default nothing of ours is copied into your repository: the default pipeline runs from the installed plugin, so a team with its own spec-driven method is never asked to carry ours. Run `python3 factory/scripts/factory-config.py inject [phase ...]` when you want editable copies of `scope`, `scope-review`, `build` or `ship` (all four when none is named). It copies each named phase plus the references, scripts and templates it links into `.factory/skills/`, `.factory/references/` and `.factory/scripts/`, records a sha256 per file in `.factory/.inject.json`, and writes or updates `.factory/config.yaml` so the phase points at its copy.
+
+The copies are ordinary files in your repository, so they enter the run branch's diff: `ship`'s gauntlet and review panel review them as part of the change, and `build`'s commit check sees an inject commit the change plan does not list. Commit them on their own first.
+
+An unedited copy takes a plugin upgrade the next time you run `inject`. An edited copy is refused, naming the file, until you pass `--force`, and a copy you edited counts as foreign in `check`: it then needs `unattended_safe: true` and is never hand-repaired by the orchestrator.

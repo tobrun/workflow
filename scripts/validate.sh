@@ -617,9 +617,9 @@ check_pi() {
 # ===========================================================================
 # F03: unattended factory material never routes a decision to a person
 #
-# Scoped to factory/skills/{scope-review,build,ship,run} (SKILL.md and their
-# references) plus factory/references/factory-run.md only - scope keeps its
-# interview, and ci-parity.md, contracts.md, and jira.md keep their dev
+# Scoped to factory/phases/* minus the built-in pipeline's interactive phases,
+# plus factory/skills/run (SKILL.md and their references) and
+# factory/references/factory-run.md only - scope keeps its interview, and ci-parity.md, contracts.md, and jira.md keep their dev
 # wording because they are dev-shared references whose human-call branches are
 # overridden for a factory run by factory-run.md's unattended policy.
 #
@@ -694,6 +694,10 @@ CLAUSE = re.compile(r"[.;:!?]|\s-\s")
 OPEN, CLOSE = "<!-- interactive-only -->", "<!-- /interactive-only -->"
 # Only the orchestrator has pre-go lines that legitimately reach a person.
 MARKER_ALLOWED = ("factory/skills/run/SKILL.md",)
+# The built-in pipeline's interactive phases keep their interview and sit outside
+# the scan: D-go-placement puts every interactive phase before the go, so it has
+# no post-go decision to route. Update this tuple with the built-in pipeline.
+INTERACTIVE_PHASES = ("scope",)
 
 
 def routes(line):
@@ -799,8 +803,11 @@ for sample in NON_SAMPLES:
         sys.exit(0)
 
 paths = []
-for phase in ("scope-review", "build", "ship", "run"):
-    root = pathlib.Path("factory/skills") / phase
+phase_roots = [
+    d for d in sorted(pathlib.Path("factory/phases").glob("*"))
+    if d.is_dir() and d.name not in INTERACTIVE_PHASES
+]
+for root in phase_roots + [pathlib.Path("factory/skills/run")]:
     if root.is_dir():
         paths.extend(sorted(root.rglob("*.md")))
 run_md = pathlib.Path("factory/references/factory-run.md")
@@ -863,33 +870,83 @@ check_factory_protocol() {
   found=$(python3 - <<'PYEOF'
 import pathlib, re, sys
 
-PHASES = ("scope", "scope-review", "build", "ship")
+BUILT_IN = ("scope", "scope-review", "build", "ship")
 INVOKE = re.compile(r"\$factory:([a-z-]+)|/SKILL\.md\b")
+RESULTS_PATH = "results/{phase}-{attempt}.json"
+NEVER_LAUNCH = "Never name or launch the next phase."
+MAX_LINES = 200
 
-for phase in PHASES:
-    sf = pathlib.Path("factory/skills") / phase / "SKILL.md"
-    if not sf.is_file():
-        print(f"{sf}: Factory phase skill not found")
-        continue
+
+def frontmatter(text):
+    """The frontmatter's key/value pairs, or None when the file has none."""
+    lines = text.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return None
+    fields = {}
+    for line in lines[1:]:
+        if line.strip() == "---":
+            return fields
+        key, sep, value = line.partition(":")
+        if sep:
+            fields[key.strip()] = value.strip()
+    return None
+
+
+def body_rules(sf, phase):
+    """The generic skill rules that reached these bodies while they lived under skills/."""
     text = sf.read_text(encoding="utf-8")
+    total = len(text.splitlines())
+    if total > MAX_LINES:
+        print(f"{sf}: Body is {total} lines (recommend under 150; move detail to references/)")
+    fields = frontmatter(text)
+    if fields is None:
+        print(f"{sf}: Does not start with a complete --- frontmatter block")
+        return text
+    if not fields.get("name") or not fields.get("description"):
+        print(f"{sf}: Frontmatter 'name' or 'description' is empty or missing")
+    if fields.get("name") and fields["name"] != phase:
+        print(f"{sf}: Frontmatter name '{fields['name']}' != directory name '{phase}'")
+    if fields.get("disable-model-invocation") != "true":
+        print(f"{sf}: Frontmatter must set 'disable-model-invocation: true'")
+    return text
+
+
+phases_dir = pathlib.Path("factory/phases")
+names = sorted(d.name for d in phases_dir.glob("*") if d.is_dir()) if phases_dir.is_dir() else []
+for phase in BUILT_IN:
+    if phase not in names:
+        print(f"factory/phases/{phase}/SKILL.md: Factory phase skill not found")
+for phase in names:
+    sf = phases_dir / phase / "SKILL.md"
+    if not sf.is_file():
+        print(f"{phases_dir / phase}: Missing SKILL.md")
+        continue
+    text = body_rules(sf, phase)
     if "factory-run.json" not in text:
         print(f"{sf}: Must mention factory-run.json")
-    if "results/{phase}-{attempt}.json" not in text:
-        print(f"{sf}: Must mention the literal results/{{phase}}-{{attempt}}.json")
+    if RESULTS_PATH not in text:
+        print(f"{sf}: Must mention the literal {RESULTS_PATH}")
+    if NEVER_LAUNCH not in text:
+        print(f"{sf}: Must carry the sentence \"{NEVER_LAUNCH}\"")
     for match in INVOKE.finditer(text):
         skill = match.group(1)
         if skill is None or skill != phase:
             print(f"{sf}: invokes another phase ({match.group(0)}); a phase skill never launches another")
 
+launch_md = pathlib.Path("factory/skills/run/references/launch.md")
+if not launch_md.is_file():
+    print(f"{launch_md}: launch wrapper not found")
+else:
+    launch_text = launch_md.read_text(encoding="utf-8")
+    for literal in (RESULTS_PATH, "factory.result/1", NEVER_LAUNCH):
+        if literal not in launch_text:
+            print(f"{launch_md}: Must carry the literal {literal}")
+
 run_md = pathlib.Path("factory/skills/run/SKILL.md")
 if not run_md.is_file():
     print(f"{run_md}: run orchestrator skill not found")
     sys.exit(0)
-run_text = run_md.read_text(encoding="utf-8")
-for phase in PHASES:
-    if phase not in run_text:
-        print(f"{run_md}: must name phase '{phase}'")
-if "run-state.py" not in run_text:
+if "run-state.py" not in run_md.read_text(encoding="utf-8"):
     print(f"{run_md}: must name run-state.py")
 PYEOF
 )

@@ -1,6 +1,0 @@
-interface:
-  display_name: "Ship"
-  short_description: "Harden, review, then open a PR with proof"
-  default_prompt: "Use $factory:ship to run the quality gauntlet, the verified review, and open the pull request with evidence for this change."
-policy:
-  allow_implicit_invocation: false

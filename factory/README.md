@@ -1,6 +1,6 @@
 # factory
 
-An orchestrator skill that takes a request through an interactive `scope`, then runs `scope-review`, `build`, and `ship` as unattended phases on the current checkout - judging each phase's completion itself, repairing or relaunching it on failure, and ending in a pull request or a report. No runner process to install: the whole thing is one skill, `run`, that launches subagents through the host's own subagent tool.
+An orchestrator skill that drives a pipeline of typed phases on the current checkout - the interactive ones inline, the rest as unattended subagents - judging each phase's completion itself, repairing or relaunching it on failure, and ending in a pull request or a report. The pipeline is declared in `.factory/config.yaml` in your repository; with no config it runs our default, `scope`, `scope-review`, `build` and `ship`, from the installed plugin. No runner process to install: the whole thing is one skill, `run`, that launches subagents through the host's own subagent tool, so the plugin adds one skill to your namespace and no more.
 
 ## Install
 
@@ -9,7 +9,7 @@ An orchestrator skill that takes a request through an interactive `scope`, then 
 
 ## The run flow
 
-Invoke `/factory:run "a quoted request"` or `/factory:run path/to/request.md`. `run` checks the transport, scopes the change with you inline (the only interactive phase), then ends with one go question. From there it launches `scope-review`, `build`, and `ship` in order, each as a fresh-context subagent, judging every result against the phase's own deterministic checks before advancing. A found secret or a destructive action outside the run branch stops the run immediately; anything else gets repaired, relaunched, or - after three attempts of one phase - ends the run with a report naming what a person could do.
+Invoke `/factory:run "a quoted request"` or `/factory:run path/to/request.md`. `run` checks the transport and validates the pipeline with `factory-config.py check`, runs the interactive phases with you inline (`scope` in the default), then ends with one go question. From there it launches the remaining phases (`scope-review`, `build`, and `ship` in the default) in order, each as a fresh-context subagent, judging every result against its type's declared checks and outcome contract before advancing. A found secret or a destructive action outside the run branch stops the run immediately; anything else gets repaired, relaunched, or - after three attempts of one phase - ends the run with a report naming what a person could do.
 
 Invoke `/factory:run` with no request to resume: the plan on the checked-out branch, or the single unfinished state file under `.dev/`.
 
@@ -23,3 +23,9 @@ Ignoring `.dev/` in the consuming repository is not a prerequisite: the run's ow
 ## Clear and resume
 
 The run lives as long as the session; `.dev/{plan}/factory-run.json` is what survives a closed one. Clear the session and invoke `/factory:run` again with no request to pick up where it left off, with a fresh context.
+
+## The pipeline config
+
+`python3 factory/scripts/factory-config.py init` writes a starter `.factory/config.yaml`; `show --resolved`, `check`, `set` and `unset` read and edit it, and you normally never edit the file by hand. Each phase names a `type` declared under `types`, and a type declares exactly five things: `interactive`, `requires` (the outcome, in prose), `checks` (argv commands that verify it), `seals` (artifacts watched for drift) and `attempts`. The full schema is in [references/pipeline-config.md](references/pipeline-config.md).
+
+A phase is one of three classes. A built-in phase runs from the installed plugin. An injected phase is a copy under `.factory/skills/` whose hash still matches `.factory/.inject.json`. Anything else is foreign, and a foreign phase must declare `unattended_safe: true`: nothing can detect a phase that blocks on a person, so that declaration is the word of whoever read the skill.

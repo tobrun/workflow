@@ -13,10 +13,10 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 FACTORY = REPO_ROOT / "factory"
 
 SKILL_ROOTS = {
-    "{scope-skill-root}": FACTORY / "skills" / "scope",
-    "{scope-review-skill-root}": FACTORY / "skills" / "scope-review",
-    "{build-skill-root}": FACTORY / "skills" / "build",
-    "{ship-skill-root}": FACTORY / "skills" / "ship",
+    "{scope-skill-root}": FACTORY / "phases" / "scope",
+    "{scope-review-skill-root}": FACTORY / "phases" / "scope-review",
+    "{build-skill-root}": FACTORY / "phases" / "build",
+    "{ship-skill-root}": FACTORY / "phases" / "ship",
     "{run-skill-root}": FACTORY / "skills" / "run",
 }
 

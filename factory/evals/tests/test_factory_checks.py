@@ -116,7 +116,7 @@ def drop_one_close_marker(copy_root: Path) -> str:
 
 
 def rename_result_literal(copy_root: Path) -> str:
-    relative = "factory/skills/build/SKILL.md"
+    relative = "factory/phases/build/SKILL.md"
     target = copy_root / relative
     text = target.read_text(encoding="utf-8")
     target.write_text(
@@ -124,6 +124,32 @@ def rename_result_literal(copy_root: Path) -> str:
         encoding="utf-8",
     )
     return relative
+
+
+def remove_text(relative: str, text: str) -> Callable[[Path], str]:
+    """A mutation that deletes every occurrence of `text` from `relative`."""
+
+    def mutate(copy_root: Path) -> str:
+        target = copy_root / relative
+        original = target.read_text(encoding="utf-8")
+        if text not in original:
+            raise AssertionError(f"expected {text!r} in {relative}")
+        target.write_text(original.replace(text, ""), encoding="utf-8")
+        return relative
+
+    return mutate
+
+
+def replace_text(relative: str, old: str, new: str) -> Callable[[Path], str]:
+    def mutate(copy_root: Path) -> str:
+        target = copy_root / relative
+        original = target.read_text(encoding="utf-8")
+        if old not in original:
+            raise AssertionError(f"expected {old!r} in {relative}")
+        target.write_text(original.replace(old, new), encoding="utf-8")
+        return relative
+
+    return mutate
 
 
 def break_f03_self_test(copy_root: Path) -> str:
@@ -153,8 +179,11 @@ PERSON_ROUTING_SHAPES = (
     "This seam is worth agreeing on with the user.",
 )
 
-BUILD_SKILL = "factory/skills/build/SKILL.md"
-SHIP_SKILL = "factory/skills/ship/SKILL.md"
+SCOPE_SKILL = "factory/phases/scope/SKILL.md"
+LAUNCH = "factory/skills/run/references/launch.md"
+NEVER_LAUNCH = "Never name or launch the next phase."
+BUILD_SKILL = "factory/phases/build/SKILL.md"
+SHIP_SKILL = "factory/phases/ship/SKILL.md"
 RUN_SKILL = "factory/skills/run/SKILL.md"
 
 # name -> (mutation or None, rebuild the Codex copies before validating)
@@ -204,6 +233,15 @@ SCENARIOS: dict[str, tuple[Callable[[Path], str] | None, bool]] = {
         True,
     ),
     "broken_self_test": (break_f03_self_test, False),
+    "scope_routed": (append(SCOPE_SKILL, "\n\nAsk the user which one to pick.\n"), True),
+    "sentence_removed": (remove_text(BUILD_SKILL, NEVER_LAUNCH), True),
+    "launch_result_renamed": (replace_text(LAUNCH, "factory.result/1", "factory.result/2"), True),
+    "launch_sentence_removed": (remove_text(LAUNCH, NEVER_LAUNCH), True),
+    "body_too_long": (append(SHIP_SKILL, "\nfiller line\n" * 210), True),
+    "no_invocation_policy": (
+        remove_text(BUILD_SKILL, "disable-model-invocation: true\n"),
+        False,
+    ),
     "result_literal_renamed": (rename_result_literal, True),
     "phase_invocation": (append(BUILD_SKILL, "\n\nOn success, invoke $factory:ship.\n"), True),
     **{
@@ -340,6 +378,35 @@ class FactoryChecksTest(unittest.TestCase):
     def test_missing_result_protocol_literal_fails_f02(self) -> None:
         self.assert_gate_fails("result_literal_renamed", "[F02]")
 
+    def test_person_routing_in_the_interactive_phase_is_outside_f03(self) -> None:
+        outcome = self.outcome("scope_routed")
+        self.assertEqual(outcome.returncode, 0, outcome.output)
+        self.assertNotIn("[F03]", outcome.stdout)
+
+    def test_unmutated_moved_tree_scans_no_interactive_phase(self) -> None:
+        outcome = self.outcome("clean")
+        self.assertNotIn("factory/phases/scope", outcome.stdout)
+
+    def test_phase_body_without_the_never_launch_sentence_fails_f02(self) -> None:
+        self.assert_gate_fails("sentence_removed", "[F02]")
+
+    def test_launch_wrapper_without_the_result_schema_fails_f02(self) -> None:
+        self.assert_gate_fails("launch_result_renamed", "[F02]")
+
+    def test_launch_wrapper_without_the_never_launch_sentence_fails_f02(self) -> None:
+        self.assert_gate_fails("launch_sentence_removed", "[F02]")
+
+    def test_phase_body_over_the_length_limit_fails_naming_it(self) -> None:
+        outcome = self.assert_gate_fails("body_too_long", "[F02]")
+        self.assertIn("Body is", outcome.stdout)
+
+    def test_phase_body_without_the_invocation_policy_fails_naming_it(self) -> None:
+        outcome = self.outcome("no_invocation_policy")
+        self.assertEqual(outcome.returncode, 1, outcome.output)
+        self.assertIn("[F02]", outcome.stdout)
+        self.assertIn(BUILD_SKILL, outcome.stdout)
+        self.assertIn("disable-model-invocation", outcome.stdout)
+
     def test_invoking_another_phase_fails_f02(self) -> None:
         self.assert_gate_fails("phase_invocation", "[F02]")
 
@@ -375,6 +442,15 @@ class RepoToolsTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("up to date", result.stdout)
 
+    def test_no_claude_only_frontmatter_is_left_under_generated_phases(self) -> None:
+        rebuild(self.copy_root)
+        bodies = sorted((self.copy_root / "plugins" / "factory" / "phases").glob("*/SKILL.md"))
+        self.assertEqual(len(bodies), 4)
+        for body in bodies:
+            self.assertNotIn("disable-model-invocation", body.read_text(encoding="utf-8"), body)
+        skills = sorted((self.copy_root / "plugins" / "factory" / "skills").iterdir())
+        self.assertEqual([path.name for path in skills], ["run"])
+
     def test_architecture_check_is_clean_on_the_updated_overview(self) -> None:
         result = subprocess.run(
             [sys.executable, "dev/scripts/architecture-check.py", "docs/architecture.md", "--root", "."],
@@ -397,7 +473,7 @@ class PhaseCopyDriftTest(unittest.TestCase):
                 .splitlines()
             )
             factory_lines = len(
-                (REPO_ROOT / "factory" / "skills" / skill / "SKILL.md")
+                (REPO_ROOT / "factory" / "phases" / skill / "SKILL.md")
                 .read_text(encoding="utf-8")
                 .splitlines()
             )

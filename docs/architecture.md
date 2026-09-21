@@ -17,7 +17,7 @@ Captured: 2026-09-17 (full, scope) - Updated: 2026-09-20 (the factory plugin ret
 | repo scripts | validation of the whole repository, the plugin generator, and the Pi transport self-test | `scripts/` | every other component |
 | harden tools | optional local analyses a ship gauntlet can draw on: added lines, coverage-weighted complexity, flaky reruns, mutation | `tools/harden/` | nothing; run by hand against a target repository |
 | research and todo | plans, findings, and reading notes | `research/`, `todo/` | nothing |
-| factory plugin | the `run` orchestrator skill, the four phase copies, their references and scripts | `factory/skills/`, `factory/references/`, `factory/scripts/`, `factory/evals/` | the host's subagent tool, the consuming repository's `.dev/` |
+| factory plugin | the `run` orchestrator skill (its only invocable skill), the four built-in phase bodies it reads by path, `factory/scripts/factory-config.py` for the pipeline config, their references and scripts | `factory/skills/`, `factory/phases/`, `factory/references/`, `factory/scripts/`, `factory/evals/` | the host's subagent tool, the consuming repository's .dev/ and .factory/ |
 
 ## Flows
 
@@ -27,13 +27,14 @@ Captured: 2026-09-17 (full, scope) - Updated: 2026-09-20 (the factory plugin ret
 3. `dev/scripts/skill-metrics.py` measures each run and appends a row to the consuming repository's .dev/metrics.jsonl.
 
 ### Building the Codex distribution
-1. `scripts/build_codex_plugin.py` copies skills/, references/, and `scripts/` of the source plugin into plugins/{name}/, strips Claude-only frontmatter, and writes agents/openai.yaml.
+1. `scripts/build_codex_plugin.py` copies skills/, references/, and `scripts/` of the source plugin (and factory/phases/ for the factory) into plugins/{name}/, strips Claude-only frontmatter, and writes agents/openai.yaml for invocable skills.
 2. `scripts/validate.sh` checks structure, links, skill length, the Codex distribution (C01), the Pi package and transport (P01), and the factory plugin's unattended wording and result protocol; `--check` mode of the generator fails when `plugins/` is stale.
 
 ### A factory run
-1. A person invokes `/factory:run "a request"` (or a path to one); `run` scopes the change inline with them and ends with one go question.
-2. From the go, `run` launches `scope-review`, `build`, and `ship` in turn as fresh-context subagents, judges each result's file against the phase's own deterministic checks, repairs or relaunches on failure, and never lets a phase invoke another.
-3. The run ends in an open pull request, or a report naming the exact action a person could take - the pushed branch and the run's state file are what survives a closed session.
+1. A person invokes `/factory:run "a request"` (or a path to one); preflight runs factory-config.py check, which classes each phase as built-in, injected or foreign and validates the pipeline from the consuming repository's .factory/config.yaml (the built-in default when there is none), and stops before the interview on any finding.
+2. `run` runs the contiguous interactive prefix inline with them (`scope` in the default) and ends it with one go question.
+3. From the go, `run` launches each remaining phase in turn as a fresh-context subagent, judges each result's file against its type's declared checks and outcome contract, repairs or relaunches on failure, and never lets a phase launch another.
+4. The run ends in an open pull request, or a report naming the exact action a person could take - the pushed branch and the run's state file are what survives a closed session.
 
 ## Boundaries
 
@@ -42,7 +43,7 @@ Captured: 2026-09-17 (full, scope) - Updated: 2026-09-20 (the factory plugin ret
 | Claude Code, Codex, opencode, Pi | host | the skills | each reads the skills in its own format; the generated tree under `plugins/` serves Codex |
 | git and GitHub | external | the ship skill | branch state and `gh pr` calls made during a ship run |
 | Jira | external HTTP | dev skills | through `acli`, only when .dev/config.json enables it |
-| consuming repository | store | the skills | `.dev/` plan files and `docs/` ledgers |
+| consuming repository | store | the skills | `.dev/` plan files, `docs/` ledgers, and the .factory/ config and injected phase copies |
 
 ## Cross-cutting
 

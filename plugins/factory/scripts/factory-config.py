@@ -56,7 +56,7 @@ BUILTIN_TYPES = {
         "interactive": True,
         "requires": "the go was recorded (the interview happened inline in this session, "
         "so the orchestrator already knows)",
-        "checks": [["${plugin_root}/skills/scope/scripts/lint-spec.py", "${plan_dir}/spec.md"]],
+        "checks": [["${plugin_root}/phases/scope/scripts/lint-spec.py", "${plan_dir}/spec.md"]],
         "seals": ["${plan_dir}/spec.md"],
         "attempts": 3,
     },
@@ -71,7 +71,7 @@ BUILTIN_TYPES = {
         "interactive": False,
         "requires": "the spec's Validation block is green, and commits since handoff "
         "match the change plan's numbering",
-        "checks": [["${plugin_root}/skills/build/scripts/check-tests.py", "${plan_dir}"]],
+        "checks": [["${plugin_root}/phases/build/scripts/check-tests.py", "${plan_dir}"]],
         "attempts": 3,
     },
     "ship": {
@@ -79,15 +79,15 @@ BUILTIN_TYPES = {
         "requires": "review_N.md carries a verdict for HEAD and gh pr view shows the PR "
         "open with head equal to HEAD, or (without a GitHub remote) git ls-remote origin "
         "shows the branch at HEAD and pr.md is written",
-        "checks": [["${plugin_root}/skills/ship/scripts/pr-evidence.py", "check", "${plan_dir}/pr.md"]],
+        "checks": [["${plugin_root}/phases/ship/scripts/pr-evidence.py", "check", "${plan_dir}/pr.md"]],
         "attempts": 3,
     },
 }
 BUILTIN_PHASES = [
-    {"id": "scope", "type": "interview", "skill": "${plugin_root}/skills/scope/SKILL.md"},
-    {"id": "scope-review", "type": "review", "skill": "${plugin_root}/skills/scope-review/SKILL.md"},
-    {"id": "build", "type": "implement", "skill": "${plugin_root}/skills/build/SKILL.md"},
-    {"id": "ship", "type": "ship", "skill": "${plugin_root}/skills/ship/SKILL.md"},
+    {"id": "scope", "type": "interview", "skill": "${plugin_root}/phases/scope/SKILL.md"},
+    {"id": "scope-review", "type": "review", "skill": "${plugin_root}/phases/scope-review/SKILL.md"},
+    {"id": "build", "type": "implement", "skill": "${plugin_root}/phases/build/SKILL.md"},
+    {"id": "ship", "type": "ship", "skill": "${plugin_root}/phases/ship/SKILL.md"},
 ]
 BUILTIN_DEFAULTS = {"ceiling": 12}
 DEFAULT_ATTEMPTS = 3

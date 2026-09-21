@@ -10,8 +10,10 @@ This is a monorepo for Tobrun's Claude Code, Codex, and Pi skills. The root
 `plugins/`. The root `package.json` exposes the `dev` source skills as a Pi
 package. There are two plugins: `dev`, the hand-invoked development workflow,
 and `factory`, whose `run` skill is the one sanctioned exception to "skills
-never invoke each other" - it launches the copied `scope`, `scope-review`,
-`build`, and `ship` phase skills by path and judges their completion itself.
+never invoke each other" - it drives the pipeline declared in the consuming
+repository's `.factory/config.yaml`, or the built-in `scope`, `scope-review`,
+`build`, and `ship` phase bodies under `factory/phases/` by path, and judges
+each phase's completion itself. `run` is the plugin's only invocable skill.
 
 ## Repository Structure
 
@@ -48,7 +50,7 @@ never invoke each other" - it launches the copied `scope`, `scope-review`,
 - All changes must pass `scripts/validate.sh` before committing.
 - Every plugin directory name must match its `plugin.json` name and marketplace entry name.
 - Every `SKILL.md` must have YAML frontmatter with `name` and `description`.
-- Every `SKILL.md` must set `disable-model-invocation: true`; all skills in this repo are human-triggered only, and skills recommend the next step instead of invoking each other - except the factory `run` skill, the one sanctioned invoker, which launches its copied phase skills by path.
+- Every `SKILL.md` must set `disable-model-invocation: true`; all skills in this repo are human-triggered only, and skills recommend the next step instead of invoking each other - except the factory `run` skill, the one sanctioned invoker, which launches its phase bodies (`factory/phases/`, not skills) by path.
 - Plan files under `.dev/` are never committed.
 - Do not edit `plugins/` directly. Run `python3 scripts/build_codex_plugin.py`
   after changing `dev/`; the generator builds every configured

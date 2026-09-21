@@ -21,7 +21,7 @@ Every phase skill writes `.dev/{plan}/results/{phase}-{attempt}.json` as its las
 {
   "schema": "factory.result/1",
   "phase": "build",
-  "skill_path": "/abs/path/to/factory/skills/build/SKILL.md",
+  "skill_path": "/abs/path/to/factory/phases/build/SKILL.md",
   "status": "done",
   "reason": "",
   "artifacts": ["path/or/description"],

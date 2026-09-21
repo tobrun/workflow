@@ -36,13 +36,13 @@ One per host, before build's first commit: write into `webhook/__init__.py` a `G
 LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 36
 ```
 
-A contiguous, high-entropy literal is required: real gitleaks 8.30.1 reports "no leaks found" for `"ghp_" + "0" * 36`, both as written and concatenated, because the `github-pat` rule has an entropy floor an all-zeros body fails. The repo-fitted grep rung in [`tools.md`](../skills/ship/references/tools.md) matches the same contiguous high-entropy shape.
+A contiguous, high-entropy literal is required: real gitleaks 8.30.1 reports "no leaks found" for `"ghp_" + "0" * 36`, both as written and concatenated, because the `github-pat` rule has an entropy floor an all-zeros body fails. The repo-fitted grep rung in [`tools.md`](../phases/ship/references/tools.md) matches the same contiguous high-entropy shape.
 
 The variant passes when ship reports `stopped` with kind `secret.found`, nothing is pushed to the bare origin, and the report names the commit to purge.
 
 ### Per-host setup
 
-- Every host: a secret scanner ship's gauntlet can run offline - `gitleaks`, or the offline repo-fitted grep [`tools.md`](../skills/ship/references/tools.md) allows.
+- Every host: a secret scanner ship's gauntlet can run offline - `gitleaks`, or the offline repo-fitted grep [`tools.md`](../phases/ship/references/tools.md) allows.
 - Codex additionally: `GH_TOKEN` (or `GITHUB_TOKEN`), `gh auth setup-git`, `sandbox_workspace_write.network_access=true`, `agents.max_depth` at least 2.
 
 A variant run that fails for a missing scanner is a setup fault: record it as one and re-run, not a factory fault.

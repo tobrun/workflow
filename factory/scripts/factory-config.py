@@ -646,6 +646,14 @@ def resolve(repo_root: Path, plugin_root_path: Path = None):
         resolved_seals = list(seals_raw)
 
         attempts = phase.get("attempts", type_def.get("attempts", defaults.get("attempts", DEFAULT_ATTEMPTS)))
+        interactive = bool(type_def.get("interactive", False))
+        model = phase.get("model", type_def.get("model"))
+        if model is not None and interactive:
+            findings.append(
+                f"phase {pid!r} declares model {model!r} on interactive type {ptype!r}: an interactive phase "
+                "runs inline in the orchestrator's own session and never reaches a subagent call, so a model "
+                "here has no effect - remove it or move it to an unattended phase"
+            )
 
         phase_class, class_findings = classify_phase(phase, roots, repo_root)
         findings.extend(class_findings)
@@ -658,12 +666,13 @@ def resolve(repo_root: Path, plugin_root_path: Path = None):
                 "id": pid,
                 "type": ptype,
                 "class": phase_class,
-                "interactive": bool(type_def.get("interactive", False)),
+                "interactive": interactive,
                 "skill": skill_resolved,
                 "checks": resolved_checks,
                 "requires": type_def.get("requires", ""),
                 "seals": resolved_seals,
                 "attempts": attempts,
+                "model": model,
                 "unattended_safe": unattended_safe,
             }
         )
@@ -738,6 +747,8 @@ def render_human(resolved: dict) -> str:
         lines.append(f"  interactive: {phase['interactive']}")
         lines.append(f"  skill: {phase['skill']}")
         lines.append(f"  attempts: {phase['attempts']}")
+        if phase["model"] is not None:
+            lines.append(f"  model: {phase['model']}")
         if phase["requires"]:
             lines.append(f"  requires: {phase['requires']}")
         for entry in phase["checks"]:

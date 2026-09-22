@@ -382,6 +382,35 @@ class CheckValidationTest(TempRepoTestCase):
         result = run(self.repo, "show", "--resolved", plugin_root=REPO_ROOT / "factory")
         self.assertIn("go: after scope", result.stdout)
 
+    def test_model_on_an_interactive_type_is_a_finding(self) -> None:
+        make_skill(self.repo, "x/SKILL.md")
+        write_json_doc(
+            self.repo,
+            {
+                "version": 1,
+                "types": {"inter": {"interactive": True, "model": "some-model"}},
+                "phases": [{"id": "a", "type": "inter", "skill": "${repo_root}/x/SKILL.md",
+                           "unattended_safe": True}],
+            },
+        )
+        result = run(self.repo, "check")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("'a'", result.stdout)
+        self.assertIn("model", result.stdout)
+        self.assertIn("interactive", result.stdout)
+
+    def test_model_on_an_unattended_phase_is_not_a_finding(self) -> None:
+        make_skill(self.repo, "x/SKILL.md")
+        write_json_doc(
+            self.repo,
+            {
+                "version": 1,
+                "types": {"t": {"interactive": False, "model": "some-model"}},
+                "phases": [{"id": "a", "type": "t", "skill": "${repo_root}/x/SKILL.md", "unattended_safe": True}],
+            },
+        )
+        self.assertEqual(run(self.repo, "check").returncode, 0)
+
 
 class InitTest(TempRepoTestCase):
     def test_init_twice_second_fails(self) -> None:
@@ -418,6 +447,21 @@ class SetUnsetTest(TempRepoTestCase):
         run(self.repo, "set", "defaults.attempts", "5")
         result = run(self.repo, "show", "--resolved")
         self.assertIn("attempts: 5", result.stdout)
+
+    def test_set_and_unset_a_phase_model_roundtrips(self) -> None:
+        self._write_phase()
+        run(self.repo, "set", "build.model", "sonnet")
+        result = run(self.repo, "show", "--resolved")
+        self.assertIn("model: sonnet", result.stdout)
+        run(self.repo, "unset", "build.model")
+        result = run(self.repo, "show", "--resolved")
+        self.assertNotIn("model:", result.stdout)
+
+    def test_set_a_type_model_applies_to_its_phase(self) -> None:
+        self._write_phase()
+        run(self.repo, "set", "types.t.model", "opus")
+        result = run(self.repo, "show", "--resolved")
+        self.assertIn("model: opus", result.stdout)
 
     def test_set_types_checks_with_items(self) -> None:
         make_skill(self.repo, "x/SKILL.md")
@@ -500,6 +544,36 @@ class ResolutionTest(TempRepoTestCase):
         self.assertIn("built-in default", result.stdout)
         for pid in ("scope", "scope-review", "build", "ship"):
             self.assertIn(pid, result.stdout)
+
+    def test_the_default_pipeline_declares_no_model(self) -> None:
+        result = run(self.repo, "show", "--resolved", "--json", plugin_root=REPO_ROOT / "factory")
+        for phase in json.loads(result.stdout)["phases"]:
+            self.assertNotIn("model", phase, phase)
+        self.assertNotIn("model:", run(self.repo, "show", "--resolved", plugin_root=REPO_ROOT / "factory").stdout)
+
+    def test_a_phase_model_overrides_its_type_model(self) -> None:
+        make_skill(self.repo, "x/SKILL.md")
+        write_json_doc(
+            self.repo,
+            {
+                "version": 1,
+                "types": {"t": {"model": "type-model"}},
+                "phases": [
+                    {"id": "a", "type": "t", "skill": "${repo_root}/x/SKILL.md", "unattended_safe": True},
+                    {"id": "b", "type": "t", "skill": "${repo_root}/x/SKILL.md", "unattended_safe": True,
+                     "model": "phase-model"},
+                ],
+            },
+        )
+        result = run(self.repo, "show", "--resolved")
+        self.assertEqual(result.returncode, 0, result.stdout)
+        blocks = re.split(r"^- ", result.stdout, flags=re.M)[1:]
+        block_a = next(b for b in blocks if b.startswith("a ("))
+        block_b = next(b for b in blocks if b.startswith("b ("))
+        self.assertIn("model: type-model", block_a)
+        self.assertNotIn("model: phase-model", block_a)
+        self.assertIn("model: phase-model", block_b)
+        self.assertNotIn("model: type-model", block_b)
 
     def test_config_with_two_phases_shows_exactly_those_in_order(self) -> None:
         make_skill(self.repo, "x/SKILL.md")

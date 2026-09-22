@@ -26,7 +26,7 @@ The run lives as long as the session; `.dev/{plan}/factory-run.json` is what sur
 
 ## The pipeline config
 
-`python3 factory/scripts/factory-config.py init` writes a starter `.factory/config.yaml`; `show --resolved`, `check`, `set` and `unset` read and edit it, and you normally never edit the file by hand. Each phase names a `type` declared under `types`, and a type declares exactly five things: `interactive`, `requires` (the outcome, in prose), `checks` (argv commands that verify it), `seals` (artifacts watched for drift) and `attempts`. The full schema is in [references/pipeline-config.md](references/pipeline-config.md).
+`python3 factory/scripts/factory-config.py init` writes a starter `.factory/config.yaml`; `show --resolved`, `check`, `set` and `unset` read and edit it, and you normally never edit the file by hand. Each phase names a `type` declared under `types`, and a type declares up to six things: `interactive`, `requires` (the outcome, in prose), `checks` (argv commands that verify it), `seals` (artifacts watched for drift), `attempts`, and an optional `model` passed to the host's subagent tool when it takes one - the built-in pipeline sets none, since the valid values differ by host. The full schema is in [references/pipeline-config.md](references/pipeline-config.md).
 
 A phase is one of three classes. A built-in phase runs from the installed plugin. An injected phase is a copy under `.factory/skills/` whose hash still matches `.factory/.inject.json`. Anything else is foreign, and a foreign phase must declare `unattended_safe: true`: nothing can detect a phase that blocks on a person, so that declaration is the word of whoever read the skill.
 

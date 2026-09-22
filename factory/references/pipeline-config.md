@@ -32,15 +32,24 @@ phases:
 
 `version` is always `1`. `defaults`, `types` and `phases` are the schema's only other top-level keys; an unknown key is a `check` finding.
 
-### Types: exactly five axes, no more
+### Types: six axes, no more
 
 - `interactive` (bool) - runs inline in the orchestrator's own session rather than launched.
 - `requires` (prose) - the outcome contract the orchestrator judges when the type's `checks` don't cover it, the same way `judgment.md` reads a phase today.
 - `checks` (a list of argv lists) - commands that verify the outcome. Each entry is an argv list, never a shell string.
 - `seals` (a list of paths) - artifacts whose drift `run-state.py handoff`/`diff-spec` watches. May use `${plan_dir}`.
 - `attempts` (int) - the per-type default retry budget.
+- `model` (string, optional) - passed to the host's subagent tool when it takes one; see "Model selection" below. Judges nothing and verifies nothing, unlike the other five.
 
 The type set is open: any name declared under `types` is usable by a phase. A type the orchestrator has never seen is judged by its declared axes alone.
+
+### Model selection
+
+`model` is a single string, per type or per phase (a phase's `model` overrides its type's), meant as-is for whichever host subagent tool the run is using. There is no per-host table: D-model-selection in `docs/decisions.md` rejected that as host-specific config, and this stays true - the value is whatever your chosen host's model catalog expects (Claude Code's Agent tool: `sonnet`, `opus`, `haiku`, `fable`; Codex's `spawn_agent` and opencode's `task`: their own model ids, or nothing, if the tool has no model parameter at all).
+
+The orchestrator passes `model` to the launch call when the host tool it is using accepts one; when it does not, the value is silently unused and the subagent inherits the session's model, same as today with no `model` declared. `run/SKILL.md`'s `launch.md` names the exact rule per host.
+
+`model` on an `interactive` type is a `check` finding: an interactive phase runs inline in the orchestrator's own session and never reaches a subagent call, so it has no launch to carry a model to. `scope` in the built-in pipeline can therefore never take one. The built-in pipeline declares no `model` for any type - the choice of host (Claude Code vs. Codex vs. opencode) decides which model ids are even valid, so there is no single default that survives being run from a different host than the one it was written for. Pin one for your own repository with `factory-config.py set types.<name>.model <id>` or `set <phase-id>.model <id>` once you know which host you run `/factory:run` in.
 
 ### Phases: an ordered list
 

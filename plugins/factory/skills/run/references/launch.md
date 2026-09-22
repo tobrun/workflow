@@ -4,10 +4,12 @@ The host transport ladder for one phase agent, and the exact prompt template. Mi
 
 ## Transport ladder
 
-1. **Claude Code**: the Agent tool.
-2. **Codex**: `spawn_agent`.
-3. **opencode**: the `task` tool.
+1. **Claude Code**: the Agent tool. Pass the phase's resolved `model` (`show --resolved`) as the tool's `model` parameter when the type declares one; omit the parameter when it does not, which inherits the session's model exactly as before this axis existed.
+2. **Codex**: `spawn_agent`. Pass `model` the same way if the tool accepts one; if it does not, the value is simply unused and the subagent inherits the session's model - never work around this by any other means (a subprocess, a nested `codex exec`), since that is the per-host argv the runner was removed for.
+3. **opencode**: the `task` tool. Same rule as Codex: pass `model` if the tool takes one, otherwise it is unused.
 4. **Unavailable**: stop before the interview - nobody pays for a scope that cannot run.
+
+A type's `model` is never valid on more than one host's catalog at once - `show --resolved` never validates it against the host you happen to be running on, and an unrecognized value is the launch call's own error, not a config finding. `scope`'s `interview` type - and any other `interactive` type - never reaches this ladder at all: it runs inline in the orchestrator's own session, so it has no launch call to carry a model to, and `factory-config.py check` refuses a `model` declared there.
 
 ## The wrapper
 

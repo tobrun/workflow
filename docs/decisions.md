@@ -12,6 +12,12 @@ D-complexity-threshold: Where does the ship gauntlet's coverage-weighted complex
   ✗ 6 on new functions - splits nearly every new function into helpers that each earn nothing on their own, against keeping indirection earned
   ✗ 6 on every touched function - a refactor of modules outside the change
 
+D-mutation-threshold: Does the gauntlet's mutation-testing check gate shipping, and at what score? (2026-09-22)
+  ✓ no threshold at all - it is scored and reported (killed/survived/uncovered, with the reason recorded against each stubborn survivor) but never a `failed` result on its own; fix agents still chase survivors under the existing two-round loop and equivalent-mutant carve-out (user, 2026-09-22): a real run scored 430/1003 (43%) on a diff-scoped file and the zero-survivor default made it unshippable purely on that inherited coverage debt, which the diff itself did not create ⚠ this was an unexamined default - no prior decision set "zero surviving mutants in scope" before this entry
+  ✗ zero surviving mutants in scope (the prior unexamined default) - unrealistic for a first mutation-testing pass over code whose existing tests were never written against mutants; blocks ordinary changes to weakly-tested areas regardless of what the diff does
+  ✗ a percentage floor (e.g. 70%) - still an absolute line a run can fail on for coverage debt the diff did not create, just a more forgiving one; rejected for the same reason as zero, at a different number
+  ✗ zero-tolerance narrowed to only the diff's added lines - still a hard gate, and a diff that changes existing (not just new) lines still inherits their prior coverage debt
+
 ## Removed
 
 D-remove-factory: The factory plugin and its runner are removed from this repository (2026-09-20)

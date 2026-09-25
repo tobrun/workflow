@@ -8,8 +8,10 @@ This is a monorepo for Tobrun's Claude Code, Codex, and Pi skills. The root
 `.claude-plugin/marketplace.json` references the Claude source plugins.
 `.agents/plugins/marketplace.json` references generated Codex plugins under
 `plugins/`. The root `package.json` exposes the `dev` source skills as a Pi
-package. There are two plugins: `dev`, the hand-invoked development workflow,
-and `factory`, whose `run` skill is the one sanctioned exception to "skills
+package. There are three plugins: `dev`, the hand-invoked development workflow;
+`bootstrap`, whose `agents-md` skill probes a consuming repository and writes
+its root AGENTS.md from the workflow's SDLC lessons; and `factory`, whose `run`
+skill is the one sanctioned exception to "skills
 never invoke each other" - it drives the pipeline declared in the consuming
 repository's `.factory/config.yaml`, or the built-in `scope`, `scope-review`,
 `build`, and `ship` phase bodies under `factory/phases/` by path, and judges
@@ -23,7 +25,7 @@ each phase's completion itself. `run` is the plugin's only invocable skill.
 │   └── marketplace.json    # Marketplace manifest listing all plugins
 ├── .agents/plugins/
 │   └── marketplace.json    # Codex marketplace manifest
-├── {plugin-name}/          # Individual plugin directory (dev)
+├── {plugin-name}/          # Individual plugin directory (dev, factory, bootstrap)
 │   ├── .claude-plugin/
 │   │   └── plugin.json     # Plugin metadata (name, version, author)
 │   ├── README.md           # Plugin documentation
@@ -53,7 +55,7 @@ each phase's completion itself. `run` is the plugin's only invocable skill.
 - Every `SKILL.md` must set `disable-model-invocation: true`; all skills in this repo are human-triggered only, and skills recommend the next step instead of invoking each other - except the factory `run` skill, the one sanctioned invoker, which launches its phase bodies (`factory/phases/`, not skills) by path.
 - Plan files under `.dev/` are never committed.
 - Do not edit `plugins/` directly. Run `python3 scripts/build_codex_plugin.py`
-  after changing `dev/`; the generator builds every configured
+  after changing any source plugin; the generator builds every configured
   plugin, removes Claude-only frontmatter, and writes Codex
   `agents/openai.yaml` invocation policy. It never copies `evals/`.
 - Keep the root Pi package version equal to `dev/.claude-plugin/plugin.json`.

@@ -303,3 +303,36 @@ D-cross-harness: Does this slice also route phases to other harnesses and models
 D-foreign-metrics: Do foreign phases report skill metrics? (2026-09-20, config-driven-factory/spec.md)
   ✗ require the `skill-metrics.py` call in the launch prompt - imposes our tooling on a foreign skill
   ⊘ not doing - the orchestrator records its own per-attempt timestamps under D-phase-timings, so nothing is required of the skill; reopen if a custom pipeline needs per-skill metrics ? verify: the closing report shows per-phase timings on a custom pipeline
+
+## Bootstrap plugin
+
+D-bootstrap-plugin: Where does the skill that writes a repository's AGENTS.md live? (2026-09-25, user request)
+  ✓ a third plugin, `bootstrap` - its audience is any repository, including ones that never install `dev`, and the user named it as a new plugin (user, 2026-09-25) ⚠ D-packaging rejected "a third plugin to version and install", but for factory's phase bodies, a different product with a different audience
+  ✗ a `dev` skill - grows dev's namespace and the Pi package for a one-time setup step most dev sessions never need
+  ✗ a factory phase - bootstrapping happens once per repository, not once per request
+D-bootstrap-skill-name: What is the skill called? (2026-09-25, user request)
+  ✓ `agents-md`, invoked as `/bootstrap:agents-md` - names its one deliverable (auto-applied at Confidence: 85%)
+  ✗ `bootstrap` - `/bootstrap:bootstrap` stutters, and "bootstrap" already names the ledger bootstrap in `dev/skills/scope/references/bootstrap.md`
+  ✗ `init` - collides with the host's built-in `/init`
+D-bootstrap-reach: What does the skill write? (2026-09-25, user request)
+  ✓ the root AGENTS.md only, written as standalone outcome rules any agent follows without the dev plugin; a missing concept becomes an open item, never a scaffold (user, 2026-09-25)
+  ✗ a CLAUDE.md that imports `@AGENTS.md` - Claude Code reads AGENTS.md directly now (user, 2026-09-25); an existing CLAUDE.md is merge input, and the closing report recommends removing it
+  ✗ scaffolding `docs/architecture.md`, `docs/dependencies.md`, or a `.gitignore` entry - out of the reach the user chose
+  ✗ nested per-directory AGENTS.md files - root only (user, 2026-09-25)
+D-bootstrap-merge: What happens to an existing AGENTS.md or CLAUDE.md? (2026-09-25, user request)
+  ✓ merge and prune: every line is classed keep, update, prune, or conflict; a conflict with a lesson is always a question; the diff is approved before writing (user, 2026-09-25)
+  ✗ overwrite - loses the repo-specific gotchas that are the file's most valuable content
+  ✗ audit only - leaves the drift in place
+D-bootstrap-distilled-reference: Where do the lessons the file encodes come from at runtime? (2026-09-25, user request)
+  ✓ the skill's own `concepts.md` and `template.md`, distilled from the dev skills with each row naming its source - the generated Codex tree copies only the plugin's own directory, so a link into `dev/references` would dangle there ⚠ a dev lesson that changes in place is not caught; `test_concept_sources.py` catches only a moved or renamed source
+  ✗ link into `dev/references` - resolves in this repository and breaks in the Codex distribution
+D-bootstrap-checker: How is the written file kept honest? (2026-09-25, user request)
+  ✓ `check-agents-md.py`, which the skill loops against, gated by B01 in `scripts/validate.sh` - per P-deterministic-guards-over-prose; only resolvers that can be definitely wrong raise violations, the rest print notes, so a false positive never traps the loop ⚠ the rule lines' wording stays a judgment call the checker does not read
+  ✗ prose instructions alone - the stale paths and missing scripts found in existing sibling AGENTS.md files show prose alone drifts
+D-bootstrap-metrics: Does the skill report run metrics? (2026-09-25, user request)
+  ✗ copy `skill-metrics.py` - writes `.dev/metrics.jsonl` into a repository whose `.dev/` may not be gitignored yet, against the AGENTS.md-only reach
+  ⊘ not doing - reopen if per-run cost across repositories is wanted
+D-bootstrap-pi: Does bootstrap ship to Pi? (2026-09-25, user request)
+  ⊘ not doing - P01 and D-pi keep the Pi package dev-only; reopen when Pi gains plugin namespaces
+D-bootstrap-dev-reads-agents-md: Do scope and build read AGENTS.md's Commands section? (2026-09-25, user request)
+  ⊘ not doing yet - scope's Validation block and build's command discovery still probe manifests every run; reopen once bootstrap has run on real repositories and the Commands section has proven reliable ? verify: a functional run in `bootstrap/evals/results.md`

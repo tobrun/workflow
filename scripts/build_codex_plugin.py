@@ -100,6 +100,21 @@ PLUGINS = {
             ),
         },
     ),
+    "bootstrap": PluginConfig(
+        name="bootstrap",
+        display_name="Bootstrap",
+        short_description="Write a repository's AGENTS.md from a probe of its stack.",
+        capabilities=("Interactive", "Write"),
+        default_prompts=("Write or refresh this repository's AGENTS.md.",),
+        copied_dirs=("skills",),
+        skill_ui={
+            "agents-md": (
+                "AGENTS.md",
+                "Probe the stack and write a root AGENTS.md",
+                "Use $bootstrap:agents-md to probe this repository and write or refresh its root AGENTS.md.",
+            ),
+        },
+    ),
 }
 
 

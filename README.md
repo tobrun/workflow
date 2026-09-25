@@ -4,26 +4,29 @@
 | ------ | -------- | ----- |
 | [dev](dev/) | A test-focused development workflow for Claude Code, Codex, opencode, and Pi. | `scope`, `commit`, `build`, `ship`, `to-pitch`, `to-quiz` |
 | [factory](factory/) | Take a request from scope to a shipped pull request unattended, on Claude Code or Codex. | `run` |
+| [bootstrap](bootstrap/) | Prepare any repository for agent work: probe its stack and write its root AGENTS.md from the workflow's SDLC lessons, on Claude Code or Codex. | `agents-md` |
 
 ## Claude Code
 
 ```bash
 /plugin marketplace add tobrun/workflow
 /plugin install dev@nurbot
+/plugin install bootstrap@nurbot
 ```
 
-Invoke skills as `/scope`, `/build`, and so on, or namespaced as `/dev:scope`.
+Invoke skills as `/scope`, `/build`, and so on, or namespaced as `/dev:scope`; bootstrap's skill is `/bootstrap:agents-md`.
 
 ## Codex
 
 ```bash
 codex plugin marketplace add tobrun/workflow
 codex plugin add dev@nurbot
+codex plugin add bootstrap@nurbot
 ```
 
-Invoke skills as `$dev:scope`, `$dev:build`, and so on.
+Invoke skills as `$dev:scope`, `$dev:build`, `$bootstrap:agents-md`, and so on.
 The distribution is explicit-invocation only.
-The checked-in Codex package under `plugins/` is generated from `dev/`:
+The checked-in Codex packages under `plugins/` are generated from each source plugin:
 
 ```bash
 python3 scripts/build_codex_plugin.py

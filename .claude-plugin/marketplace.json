@@ -16,6 +16,11 @@
       "name": "factory",
       "source": "./factory",
       "description": "An orchestrator skill that drives a pipeline of typed phases declared in .factory/config.yaml (the built-in scope, scope-review, build, and ship by default), judging each phase's completion itself, ending in a pull request or a report."
+    },
+    {
+      "name": "bootstrap",
+      "source": "./bootstrap",
+      "description": "Probe a repository's stack and write or refresh its root AGENTS.md, encoding the dev workflow's SDLC lessons (test layers, mocking at boundaries, CI parity, fix-at-source quality, commit and PR conventions) with the repo's exact commands and its gaps as open items."
     }
   ]
 }

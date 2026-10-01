@@ -27,7 +27,7 @@ Captured: 2026-09-17 (full, scope) - Updated: 2026-09-20 (the factory plugin and
 
 ### Building the Codex distribution
 1. `scripts/build_codex_plugin.py` copies skills/, references/, and `scripts/` of the source plugin into plugins/{name}/, strips Claude-only frontmatter, and writes agents/openai.yaml.
-2. `scripts/validate.sh` checks structure, links, skill length, the Codex distribution (C01), and the Pi package and transport (P01); `--check` mode of the generator fails when `plugins/` is stale.
+2. `scripts/validate.sh` checks structure, links, skill length, the Codex distribution (C01), the Pi package and transport (P01), and the dev spec-lint and change-set-brief tests (D01); `--check` mode of the generator fails when `plugins/` is stale.
 
 ## Boundaries
 

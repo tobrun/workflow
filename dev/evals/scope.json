@@ -12,6 +12,8 @@
         "The change is sized small or full, the choice is told to the user with a reason, and the user can override",
         "The spec is written to .dev/{plan-name}/spec.md with a research section of D- slugged decisions using the marks (chosen, rejected, open, accepted downside, not doing)",
         "The scope section ends with a Validation block listing the repo's real commands, discovered rather than guessed",
+        "The Validation block lists each check once, and any e2e suite, benchmark, or coverage re-run in it is marked (end of build)",
+        "No change set carries more than 25 scenarios, and edits to a file several change sets need are gathered into one change set rather than repeated across them",
         "The spec does not implement code; no source files are modified",
         "The run ends by recommending build; it is never invoked directly",
         "Every change set ends with one tests: line whose scenarios carry [unit], [integration], or [e2e] tags, or tests: none with a reason",

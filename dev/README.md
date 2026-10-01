@@ -14,7 +14,8 @@ Every skill is explicit-invocation only: Claude Code and Pi use `disable-model-i
 
 Specs a change by interviewing for the real problem behind the request, cataloging every design decision (with a subagent blind-spot pass on full-size changes), and arguing each one against alternatives in a `✓`/`✗`/`?`/`⚠`/`⊘` notation with evidence marks.
 Writes a self-contained spec at `.dev/{plan-name}/spec.md` - research decisions, scope with invariants and a Validation block of the repo's real commands, and a change plan of numbered change sets each ending in a layer-tagged `tests:` line - designed as a fresh-context handoff to `build`.
-A checker (`scripts/lint-spec.py`) enforces the spec's mechanics - unique slugs, argued alternatives, echoes that match their decision, tagged test scenarios - so the prose stays about judgment.
+A checker (`scripts/lint-spec.py`) enforces the spec's mechanics - unique slugs, argued alternatives, echoes that match their decision, tagged test scenarios, at most 25 scenarios per change set - so the prose stays about judgment.
+On a clean spec it prints the build waves the file lists allow and the shared files that make change sets wait, so the plan is shaped for parallel work before build starts.
 Promotes durable decisions to `docs/decisions.md` and cross-boundary invariants to `docs/contracts.md`, renders an expandable-card spec view, and has a reverse mode that audits the implicit decisions already embedded in existing code.
 
 ### scope-review
@@ -28,7 +29,9 @@ An APPROVED verdict means every finding was refined or answered: `build` can sta
 
 Executes a spec's change sets at the layer each `tests:` scenario is tagged with - unit for business logic, integration for real cross-component seams, e2e for driving the actual running application.
 Enforces outcomes rather than rituals: every test must have been seen to fail before its green counts, with strict failing-test-first reserved for bug fixes, where red is the proof the issue was actually reproduced.
+The red is kept cheap: free when the test is written first, one break per slice and one test file otherwise.
 Runs independent change sets in parallel as waves of subagents batched by disjoint file lists in spec order, committing each change set and appending to a running `implementation-notes.md` that logs any deviations forced by an edge case.
+Each subagent starts from a brief that `scripts/change-set-brief.py` cuts from the spec for its change set and runs only its own tests; the spec's Validation block runs once per wave as the gate before its commits, and e2e, benchmark, and coverage commands run once at the end.
 Once every change set is committed, drives the real app against a mocked environment, loops until every e2e scenario passes, then renders the e2e report: screenshots per scenario for frontend systems, Test Scenario and Data Model State tables for everything else.
 Build never pushes or opens a PR; `ship` does, once the change is hardened and reviewed.
 

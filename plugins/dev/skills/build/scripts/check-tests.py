@@ -18,6 +18,8 @@ CHANGE_SET = re.compile(r"^\s*(\d+)\.\s+\S")
 TESTS = re.compile(r"^\s*tests:\s*(.*)$", re.IGNORECASE)
 NOTE_ENTRY = re.compile(r"^##\s+Change set\s+(\d+)\b", re.IGNORECASE)
 NOTE_TESTS = re.compile(r"^\s*-\s*Tests added:\s*(.*)$", re.IGNORECASE)
+# A comma separates two references only when a path::name follows it; a test name may hold commas.
+NOTE_SEPARATOR = re.compile(r",\s*(?=[^,]*::)")
 
 
 def spec_scenarios(spec: Path, problem) -> dict[int, int]:
@@ -65,7 +67,7 @@ def note_entries(notes: Path) -> dict[int, list[str]]:
         value = named.group(1).strip()
         if value.lower().startswith("none"):
             continue
-        entries[current].extend(t.strip() for t in value.split(",") if t.strip())
+        entries[current].extend(t.strip() for t in NOTE_SEPARATOR.split(value) if t.strip())
     return entries
 
 

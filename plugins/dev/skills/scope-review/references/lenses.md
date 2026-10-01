@@ -11,7 +11,8 @@ Does the change plan survive contact with the repo?
 - Every file a change set names exists, or the set says it is new; the described edit is possible at that site - the function, hook, or config it assumes is really there.
 - Prior art and idioms the spec cites exist where it says they do.
 - Premises about current behavior are checked against the code, never trusted: an "X already handles Y" claim that is false is a BLOCK naming the site.
-- The Validation block's commands exist in the repo's manifests and run the layers the plan relies on.
+- The Validation block's commands exist in the repo's manifests and run the layers the plan relies on - and nothing slower: an e2e suite, benchmark, or coverage re-run listed there without its `(end of build)` mark is a CONCERN, because build pays for the block every wave.
+- The plan is as wide as the change allows: change sets queued behind one shared file that a single change set could own are a CONCERN naming the file (`lint-spec.py` prints the waves).
 
 ## completeness
 

@@ -90,6 +90,7 @@ Name the components and flows the change adds, removes, or reshapes, in the over
 Efforts have second-order effects - capture them as nested sub-efforts, each carrying its own decisions back into the research section (rate limiting in scope means Redis setup, which carries config and deploy decisions).
 Record considered non-goals as `⊘` lines with a because clause - things someone weighed and cut, not mere omissions.
 End the scope with a `### Validation` block listing the repo's real typecheck/test/lint/build commands, discovered from `package.json`, a `Makefile`, CI config, or equivalent - never guess `npm test` into a `pytest` repo; ask if you cannot determine them.
+`build` runs this block once per wave, so list each check once and mark every command a wave does not need - the e2e suite, a benchmark, a coverage or complexity run that repeats the suite - `(end of build)`: build runs those once, on the final tree.
 Writing style for the spec: ELI12, no similes or metaphors.
 
 ## 5. Review and research
@@ -104,7 +105,9 @@ Writing style for the spec: ELI12, no similes or metaphors.
 Short fragmented sentences. Link decisions by ID wherever one applies, echoing the choice.
 Each change set ends with one `;`-separated `tests:` line - concrete scenarios as input -> expected outcome, each tagged `[unit]`, `[integration]`, or `[e2e]`, covering happy path, edge cases, and failure paths; a set with nothing to test says `tests: none - {reason}`.
 Specific enough that whoever writes the tests invents nothing; the author tags layers here because a fresh implementation session can't recover that intent.
-Order change sets so each builds only on the ones before it; keep file lists disjoint where possible - `build` parallelizes consecutive change sets whose files don't overlap.
+Order change sets so each builds only on the ones before it, and shape the plan wide: `build` runs change sets in parallel only while their file lists are disjoint, so a file three change sets edit makes them queue.
+Land what several change sets share - a port, a schema, a registry, the composition root, a regenerated artifact - in one change set, and let the ones building on it own disjoint files.
+Size each change set for one agent: past 25 scenarios it is several change sets, split along a seam.
 
 ```
 1. Change set 1
@@ -119,6 +122,7 @@ Order change sets so each builds only on the ones before it; keep file lists dis
 
 Then loop `python3 {scope-skill-root}/scripts/lint-spec.py .dev/{plan-name}/spec.md` until it exits clean.
 It owns the mechanics above; the spec is not final while it reports anything.
+Once clean it prints the build waves the file lists allow and the files that make a change set wait; where change sets queue behind a shared file, move that file's edits into one change set and lint again.
 
 ## 7. Visualize
 

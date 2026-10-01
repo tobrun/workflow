@@ -1017,6 +1017,27 @@ PYEOF
 }
 
 # ===========================================================================
+# D01: the dev plugin's spec-lint and change-set-brief tests pass
+# ===========================================================================
+check_dev_script() {
+  local dir="dev/evals/tests"
+  [ -d "$dir" ] || return
+  if ! python3 - "$dir" >"$LOG_DIR/dev-script-tests.log" 2>&1 <<'PYEOF'
+import sys, unittest
+
+loader = unittest.TestLoader()
+suite = loader.discover(start_dir=sys.argv[1], top_level_dir=".")
+result = unittest.TextTestRunner(verbosity=2).run(suite)
+sys.exit(0 if result.wasSuccessful() and result.testsRun > 0 else 1)
+PYEOF
+  then
+    tail -60 "$LOG_DIR/dev-script-tests.log" >&2
+    fail "D01" "$dir" \
+      "Dev script tests failed (full output: $LOG_DIR/dev-script-tests.log); run: python3 -m unittest discover -s dev/evals/tests -t ."
+  fi
+}
+
+# ===========================================================================
 # Main
 # ===========================================================================
 check_01
@@ -1041,6 +1062,7 @@ check_factory_unattended
 check_factory_protocol
 check_factory_script
 check_bootstrap_script
+check_dev_script
 
 if [ -s "$ERROR_FILE" ]; then
   echo ""

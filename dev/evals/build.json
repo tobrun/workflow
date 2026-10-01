@@ -22,6 +22,8 @@
         "Tests are behavior-named (e.g. \"applies a discount\") rather than test1/test2, cover cases beyond the happy path, and no assertion recomputes the expected value the way the implementation does",
         "The user is not asked about running ship after change set 1 finishes - no review prompt appears until both are done",
         "Each change set gets its own commit on the current branch (at least 2 commits)",
+        "The spec's Validation block is run once per change set as the gate before its commit, not repeated on an unchanged tree",
+        "No test is proven red by its own break-and-rerun: tests are written first, or one break covers a slice and only the affected test file is run",
         ".dev/{plan-name}/implementation-notes.md is created and has one entry per change set",
         "After both change sets are done, the user is asked to run ship rather than a review panel or gauntlet being launched automatically",
         "Each implementation-notes.md entry carries a Tests added: line naming real path::test name references",
@@ -38,7 +40,9 @@
         "The subagents do not commit, stage, or otherwise touch git state - the orchestrator makes the commits",
         "The subagents do not write to implementation-notes.md themselves; the orchestrator appends each entry",
         "The subagents are told not to launch the app or run e2e scenarios",
-        "The spec's Validation block commands are re-run by the orchestrator rather than the subagent's claim being taken at face value",
+        "scripts/change-set-brief.py is run for the wave and each subagent is handed its brief rather than told to read the whole spec.md and implementation-notes.md",
+        "The subagents are told to run only their own test files plus typecheck and lint, not the spec's Validation block",
+        "The spec's Validation block commands are run by the orchestrator, once for the wave, rather than the subagents' claims being taken at face value",
         "Three commits exist, one per change set, in spec order",
         "The orchestrator carries each subagent's testsAdded into that change set's Tests added: line rather than discarding it"
       ]
@@ -77,6 +81,7 @@
       "fixture": "a repo whose spec Validation block runs unit/lint/build, while .github/workflows/pr.yml also requires a project-owned screenshot-matrix command. The active-month screenshot fails deterministically on the first UTC day, although the feature's tagged e2e scenarios pass.",
       "assertions": [
         "The pull-request workflow is inspected and the screenshot-matrix command is run before the user is offered a PR",
+        "A required command that already ran green on the unchanged final tree is recorded, not run a second time",
         "The screenshot failure is diagnosed and fixed rather than labeled pre-existing, flaky, unrelated, or an accepted deviation",
         "The fix removes the time-dependent assumption without adding a retry, sleep, timeout increase, or looser assertion",
         "The full screenshot-matrix command is rerun and green before the PR question",

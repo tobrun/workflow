@@ -21,6 +21,8 @@ Record the commands and outcomes in the plan's `implementation-notes.md`.
 
 Run every reproducible project-owned required-check command against the final
 checkout, after feature E2E and after any hardening edits.
+A command that already ran green on this exact tree - no file changed since -
+is not run a second time: record its result and where it came from.
 
 - A failure is work to fix, including a test described as flaky, unrelated, or
   pre-existing. Diagnose and remove its nondeterminism; do not add retries,

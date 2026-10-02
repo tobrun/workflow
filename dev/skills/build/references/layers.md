@@ -19,7 +19,7 @@ Two rules follow, and they matter more than the ratios:
 - **Push every check down to the cheapest layer that can still fail for the right reason.** If a rule can be wrong in a pure function, test it in a pure function. Proving a rounding rule through a browser click is a slow test that also localizes badly: when it fails, it doesn't tell you where.
 - **Push up only what lower layers structurally cannot see.** Wiring, configuration, serialization across a boundary, and the shape of a real user journey are invisible to a unit test no matter how many you write. That is what the upper layers are for, and why they exist at all.
 
-Two shapes to avoid: the **ice-cream cone**, where the suite is mostly e2e and every change costs a long red-green cycle, and the **hourglass**, where unit and e2e are both fat but nothing tests real collaboration, so integration bugs surface only in production.
+Two shapes to avoid: the **ice-cream cone**, where the suite is mostly e2e and every change waits on a slow run, and the **hourglass**, where unit and e2e are both fat but nothing tests real collaboration, so integration bugs surface only in production.
 
 ## Unit
 

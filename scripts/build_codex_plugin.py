@@ -42,7 +42,7 @@ PLUGINS = {
         capabilities=("Interactive", "Write"),
         default_prompts=(
             "Scope this change with argued decisions.",
-            "Build the current spec test-first.",
+            "Build the current spec with tests at every layer.",
             "Ship this change with the gauntlet and a verified review.",
         ),
         skill_ui={
@@ -53,8 +53,8 @@ PLUGINS = {
             ),
             "build": (
                 "Build",
-                "Execute a spec test-first through e2e",
-                "Use $dev:build to execute the current spec test-first and verify it end to end.",
+                "Execute a spec with tests through e2e",
+                "Use $dev:build to execute the current spec with its tests and verify it end to end.",
             ),
             "scope": (
                 "Scope",

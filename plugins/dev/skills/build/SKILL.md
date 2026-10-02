@@ -57,12 +57,12 @@ Neither does a failed e2e loop: say what is blocked, then still point at `ship`.
 Each change set, whether you run it yourself or a subagent runs it, follows the same loop:
 
 - Test at the seams the spec's scope section declares, per [references/tests.md](references/tests.md); if the declared boundary is wrong or missing, follow its fallback and log the change under Deviations - do not stall on it.
-- Implement in **vertical slices**: one scenario's behavior at a time, its test written before the code or right after it - before is the cheap order, because its first run is then the red the rules below ask for. Each `tests:` scenario's test lives at its tagged layer ([references/layers.md](references/layers.md)); a scenario isn't met until a real test exists there.
+- Implement in **vertical slices**: one scenario's behavior at a time, its test written with the code, in whichever order is quicker. Each `tests:` scenario's test lives at its tagged layer ([references/layers.md](references/layers.md)); a scenario isn't met until a real test exists there.
 - Run the change set's own tests and typecheck continuously - the test files it adds or edits, never the whole suite - and report done when they are green. The spec's Validation block is not run per change set: it is the wave gate, run once per wave before its commits, per "The wave gate" in [references/parallel.md](references/parallel.md).
 
 ## Rules of the loop
 
-- **Every test must have been seen red, once and cheaply.** A test that has never failed proves nothing. Written before the code, its first run is that red and costs nothing. Written after, break the behavior once per slice - one break covers every test of the slice - and run only the affected test file: never one break per test, never the suite for a red. Bug fixes are strictly test-first: a defect change set starts with a failing test that reproduces the reported issue - red is the proof it was actually reproduced - only then fix, and watch that same test go green.
+- **No red step.** A test is written with its slice and run to green: never run a test just to watch it fail, and never break working code to prove that it can. What keeps a test able to fail is an expected value the code did not produce, per [references/tests.md](references/tests.md); `ship`'s mutation run reports the ones that still cannot. A bug fix is the one exception: a defect change set starts with a test that reproduces the reported issue, run once before the fix - that failure is the proof it was actually reproduced - only then fix, and watch that same test go green.
 - **One slice at a time.** One seam, one behavior, one test, one minimal implementation per cycle.
 - **Refactoring is not part of the loop.** It belongs to `ship`'s review phase.
 - **Keep going.** A red test, a failing e2e scenario, or an edge case that contradicts the spec is work to do, not a reason to hand back. Fix it, log the deviation, continue. Stop early only when a blocking question makes further work unsafe or wasted.
@@ -76,7 +76,7 @@ E2E scenarios are proven by running the actual application against the **fully m
    - `kind: "frontend"` - use available browser automation (the host browser integration or Playwright) to exercise the scenario, one screenshot per meaningful step, embedded as a base64 data URI.
    - `kind: "non-frontend"` - capture the entity's real before/after state from the run's own output or fixtures.
 3. **Never fabricate a screenshot or a data-model-state entry.** Both come from this actual run.
-4. **Loop until green.** A failed scenario is a bug: diagnose it, fix the code (a new red-green cycle at the right layer), re-run and re-capture that scenario. Never flip a status to pass without a fresh capture. If a scenario fails three times on the same root cause, write what you found into Deviations and ask the user before continuing.
+4. **Loop until green.** A failed scenario is a bug: diagnose it, fix the code, add a test at the cheapest layer that can catch it - the failed scenario is already the reproduction - then re-run and re-capture that scenario. Never flip a status to pass without a fresh capture. If a scenario fails three times on the same root cause, write what you found into Deviations and ask the user before continuing.
 5. Map the results onto `E2E_DATA` per [references/e2e-report.md](references/e2e-report.md) and render `templates/e2e-report.html` to `/tmp/{project-slug}/reports/{plan-name}-e2e-report.html`, opening and publishing per [../../references/reporting.md](../../references/reporting.md).
 
 ## Implementation notes

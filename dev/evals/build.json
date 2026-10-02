@@ -23,7 +23,7 @@
         "The user is not asked about running ship after change set 1 finishes - no review prompt appears until both are done",
         "Each change set gets its own commit on the current branch (at least 2 commits)",
         "The spec's Validation block is run once per change set as the gate before its commit, not repeated on an unchanged tree",
-        "No test is proven red by its own break-and-rerun: tests are written first, or one break covers a slice and only the affected test file is run",
+        "No test is run just to be seen failing and no working code is broken to prove a test red: each test is written with its slice and run to green",
         ".dev/{plan-name}/implementation-notes.md is created and has one entry per change set",
         "After both change sets are done, the user is asked to run ship rather than a review panel or gauntlet being launched automatically",
         "Each implementation-notes.md entry carries a Tests added: line naming real path::test name references",
@@ -69,7 +69,7 @@
       "fixture": "a git repo like e2e-cli-mocked-env, but the CLI has a latent formatting bug that only shows when the built binary runs end to end, so the first e2e capture fails",
       "assertions": [
         "The failing e2e scenario is diagnosed and fixed rather than reported as an accepted failure or a limitation",
-        "The fix is driven by a new failing test at the layer that can catch it, not only by patching until the e2e passes",
+        "The fix adds a test at the cheapest layer that can catch the bug, rather than only patching until the e2e passes",
         "The scenario is re-run and re-captured after the fix, not flipped to pass with the original capture",
         "The final report's summary counts match the scenarios array and reflect the passing re-run",
         "The user is asked to run ship only after the e2e run is green"

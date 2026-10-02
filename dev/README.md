@@ -28,8 +28,8 @@ An APPROVED verdict means every finding was refined or answered: `build` can sta
 ### build
 
 Executes a spec's change sets at the layer each `tests:` scenario is tagged with - unit for business logic, integration for real cross-component seams, e2e for driving the actual running application.
-Enforces outcomes rather than rituals: every test must have been seen to fail before its green counts, with strict failing-test-first reserved for bug fixes, where red is the proof the issue was actually reproduced.
-The red is kept cheap: free when the test is written first, one break per slice and one test file otherwise.
+Enforces outcomes rather than rituals: every scenario gets a real test at its tagged layer, written with the code and run to green, with no red step.
+Failing-test-first is reserved for bug fixes, where one red run is the proof the issue was actually reproduced.
 Runs independent change sets in parallel as waves of subagents batched by disjoint file lists in spec order, committing each change set and appending to a running `implementation-notes.md` that logs any deviations forced by an edge case.
 Each subagent starts from a brief that `scripts/change-set-brief.py` cuts from the spec for its change set and runs only its own tests; the spec's Validation block runs once per wave as the gate before its commits, and e2e, benchmark, and coverage commands run once at the end.
 Once every change set is committed, drives the real app against a mocked environment, loops until every e2e scenario passes, then renders the e2e report: screenshots per scenario for frontend systems, Test Scenario and Data Model State tables for everything else.

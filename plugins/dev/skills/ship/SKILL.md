@@ -44,6 +44,7 @@ Never weaken or skip a check because acquiring its tool is work.
 8. **Mutation testing** over the in-scope source.
 
 Run each check to completion per the loop in [references/gauntlet.md](references/gauntlet.md).
+A run that will reach phase 3 opens `.dev/{plan-name}/pr.md` before the first check and records each check's result in it as that check finishes, per the Body section of [references/pull-request.md](references/pull-request.md).
 When any check dispatched fixes, end the phase with the e2e refresh in the same reference: re-run the spec's `[e2e]` scenarios and overwrite the report, so phase 2 judges the post-fix code instead of stale evidence.
 Before phase 2, always run the required pull-request commands per
 [../../references/ci-parity.md](../../references/ci-parity.md), even when no
@@ -75,6 +76,7 @@ Read [references/lenses.md](references/lenses.md); select only lenses with surfa
 Include `spec-conformance` whenever a spec was found, and always include `simplify` - every diff has simplification surface.
 At most one diff-specific custom lens (migrations, concurrency, i18n) when clearly warranted, defined in the same shape as the built-ins.
 Tell the user which lenses you selected and why before launching.
+Then open `.dev/{plan-name}/review_N.md` at the next free index, or the one a dead run left `IN PROGRESS`, in the shape of [references/report-format.md](references/report-format.md), with `Verdict: IN PROGRESS`, the panel, the base, the brief's summary, and on a re-review the previous findings as open verification items; a finding enters it only once verified.
 
 ### 4. Run the review panel
 
@@ -101,9 +103,9 @@ A failed lens doesn't abort the review - the report names it, so the verdict is 
 
 Then, with findings verified, read the target repo's `docs/decisions.md` if it keeps one, and classify each colliding finding per the recommender contract in [../../references/decision-ledger.md](../../references/decision-ledger.md). Read-only - this phase never edits the ledger; classifications land in the report's Decision reconciliation section, and ledger writes belong to the follow-up `scope` run.
 
-### 6. Write the report
+### 6. Complete the report
 
-Write `.dev/{plan-name}/review_N.md` in the shape of [references/report-format.md](references/report-format.md), at the next free index.
+`review_N.md` has been open since step 3: write the aggregated findings and the verdict into it as soon as the script returns them, and the Decision reconciliation section once its classifications are made - written as the run goes per [../../references/plan-layout.md](../../references/plan-layout.md), never composed in one pass at the end.
 
 ### 7. Publish the report
 
@@ -121,7 +123,7 @@ Open the PR automatically, with evidence a reviewer can see before reading the d
 
 1. Commit what the gauntlet left uncommitted, branch off the default branch if still on it, and push.
 2. Build the Evidence section from the e2e report with `python3 {ship-skill-root}/scripts/pr-evidence.py extract`, publishing frontend screenshots to the `pr-evidence` branch with its `publish` command; without an e2e report, capture the evidence now per the reference - screenshots for a UI, a labeled before/after pair otherwise, and a red-on-base, green-on-branch reproducing test for every bug fix.
-3. Write `.dev/{plan-name}/pr.md` in the reference's body shape and loop `pr-evidence.py check` on it until it passes; the check, not your judgment, decides whether the proof is real enough.
+3. Add that section to the run's `.dev/{plan-name}/pr.md`, in the reference's body shape, and loop `pr-evidence.py check` on it until it passes; the check, not your judgment, decides whether the proof is real enough.
 4. Create the PR (draft when a real blocker survived remediation) or update the one that already exists, then follow its required checks to green per [../../references/ci-parity.md](../../references/ci-parity.md).
 
 ## Wrap up

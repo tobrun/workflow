@@ -14,7 +14,7 @@
         "Answer 4: the accepted threshold is recorded as a D- entry in docs/decisions.md, dated and sourced to this run, so the next run reads it instead of re-arguing; never adjusted silently",
         "Answer 5: the branch diff against the default branch; full-repo only when the user asks",
         "Answer 6: it becomes a human call - presented as a real defect, a threshold worth changing, or a rule the spec should have amended; the loop does not grind on",
-        "Answer 7: mechanics only, not meaning; by default the review phase runs next over the post-fix diff, and commit is recommended for the accumulated fixes at wrap up, never invoked",
+        "Answer 7: mechanics only, not meaning; by default the review phase runs next over the post-fix diff, then the pull request phase; commit is recommended at wrap up only when phase 3 did not run, never invoked",
         "Answer 8: no; ship always runs required PR commands before review, the red screenshot is a violation even if called flaky or pre-existing, and pre-existing status requires merge-base proof plus a human call"
       ]
     },
@@ -32,6 +32,18 @@
         "Answer 8: hosts with native multi-agent support keep the existing plain parallel subagent batches; Pi uses the bundled runner to launch isolated pi --print processes in the same lens-then-verifier batches, never replacing the panel with orchestrator review",
         "Answer 9: no; a single phase runs on request, and the mutating gauntlet is skipped entirely in a review-only run",
         "Answer 10: scripts/aggregate-findings.py does both - plan numbers the BLOCK and CONCERN findings for the verifiers, aggregate applies the verdicts; never another agent, and never hand-aggregation"
+      ]
+    },
+    {
+      "id": "ship-files-as-the-run-goes",
+      "prompt": "Answer briefly, from the skill text and the references it links only: (1) In a default run, when is pr.md created, and what is in it after the five read-only analyzers have finished but before the complexity check starts? (2) The user asked for a gauntlet only run. Is pr.md written? (3) When is review_N.md created, and what does it hold while the lens agents are still working? (4) Batch 1 has returned eleven findings and the verifiers have not run yet. Do those findings go into review_N.md's Blockers and Concerns now? (5) The gauntlet has finished and phase 2 has not; someone opens pr.md and sees no Evidence section and no review line. Is that a defect? (6) Remediation round 1 has ended with one blocker still standing. Where and when is that attempt recorded?",
+      "assertions": [
+        "Answer 1: before the first check, by a run that will reach phase 3; it holds the Summary and one Quality row per check of the batched five, each with its found, fixed, and surviving counts, plus any human call raised so far under Open calls - no Evidence, no review line",
+        "Answer 2: no - only a run that will reach phase 3 keeps a pr.md, so a partial run cannot overwrite the body an open PR was proposed with",
+        "Answer 3: when the panel is selected, at the next free index; Verdict: IN PROGRESS, the panel, the base, the brief's summary, and on a re-review the previous findings as open verification items",
+        "Answer 4: no - only verified findings reach the report; they are written when the aggregate script returns them, together with the verdict",
+        "Answer 5: no - a part the run has not reached is absent from the file, never a placeholder or a guess; Evidence is added in phase 3 and the review line when a verdict is set",
+        "Answer 6: under Open calls in pr.md, when the round ends - not composed from memory in phase 3"
       ]
     }
   ]

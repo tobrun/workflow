@@ -73,7 +73,18 @@
         "Answer 0: no question; the table is applied and its chosen line carries `auto-applied at Confidence: 82%` in its because clause",
         "Answer 1: yes, 55% is below the 75% threshold, so the user is asked",
         "Answer 2: yes, whatever the score, because it changes what was asked for (a different problem than the request names)",
-        "Answer 3: once, in one block at the end of the interview, so a single reply can overturn any of them before the spec is written"
+        "Answer 3: once, in one block at the end of the interview, so a single reply can overturn any of them before the catalog builds on them"
+      ]
+    },
+    {
+      "id": "scope-written-as-the-run-goes",
+      "prompt": "Answer briefly, from the skill text and the references it links only. (1) At what point in a run is spec.md created, and what does it hold at that moment? (2) You have just cataloged nine decisions and are about to talk the big ones through with the user. Where are those nine decisions right now? (3) The user answers a question that settles D-file-storage. When does the spec change? (4) The blind spot subagent is hunting through the repo while you catalog. What keeps it from reading your catalog? (5) The session dies halfway through the decision talk-through. What does the next scope run find, and how does it treat it?",
+      "assertions": [
+        "Answer 1: during the interview, once the first answers say what the change is about - not after the interview or the catalog; it holds the title, the date, what was understood so far, and empty Research, Scope, and Change plan sections",
+        "Answer 2: in the research section of spec.md, each written as an [open] entry the moment it was cataloged - not only in the conversation",
+        "Answer 3: at once, when the answer lands - the decision's marks change in the file as the talk-through settles it, not in a later write-up",
+        "Answer 4: it is handed only the original request and the relevant code, and is told to stay out of .dev/, where the catalog is being written",
+        "Answer 5: a spec.md that lint-spec.py does not pass, holding everything established before the session died; it is a draft that scope picks up where it stopped, and no other skill builds on it"
       ]
     }
   ]

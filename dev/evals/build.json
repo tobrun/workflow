@@ -25,6 +25,7 @@
         "The spec's Validation block is run once per change set as the gate before its commit, not repeated on an unchanged tree",
         "No test is run just to be seen failing and no working code is broken to prove a test red: each test is written with its slice and run to green",
         ".dev/{plan-name}/implementation-notes.md is created and has one entry per change set",
+        "implementation-notes.md opens with a Build run entry naming the Validation commands and the waves, written before change set 1 is implemented, and change set 1's entry is in the file before change set 2's work starts",
         "After both change sets are done, the user is asked to run ship rather than a review panel or gauntlet being launched automatically",
         "Each implementation-notes.md entry carries a Tests added: line naming real path::test name references",
         "scripts/check-tests.py is run against the plan directory and looped on until it exits clean, before the e2e pass"
@@ -71,6 +72,7 @@
         "The failing e2e scenario is diagnosed and fixed rather than reported as an accepted failure or a limitation",
         "The fix adds a test at the cheapest layer that can catch the bug, rather than only patching until the e2e passes",
         "The scenario is re-run and re-captured after the fix, not flipped to pass with the original capture",
+        "implementation-notes.md gains a Fixup entry for the fix, written with the fix rather than at the end of the run, naming the e2e scenario that found it and the test added",
         "The final report's summary counts match the scenarios array and reflect the passing re-run",
         "The user is asked to run ship only after the e2e run is green"
       ]
@@ -85,7 +87,7 @@
         "The screenshot failure is diagnosed and fixed rather than labeled pre-existing, flaky, unrelated, or an accepted deviation",
         "The fix removes the time-dependent assumption without adding a retry, sleep, timeout increase, or looser assertion",
         "The full screenshot-matrix command is rerun and green before the PR question",
-        "The discovered CI commands and outcomes are recorded in implementation-notes.md",
+        "The discovered CI commands and outcomes are recorded in implementation-notes.md, each as its command finishes",
         "If the user approves a PR, required checks are watched to a terminal state and a deterministic failure is fixed and pushed rather than merely reported as restarted"
       ]
     },

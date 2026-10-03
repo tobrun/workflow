@@ -15,7 +15,7 @@ Read [references/layers.md](references/layers.md), [references/tests.md](referen
 ## Workflow
 
 1. Run `python3 {build-skill-root}/../../scripts/skill-metrics.py start build`, then read `spec.md` in full: the research section (the decisions and their rationale), the scope section (including its Validation block of real repo commands), and the change plan. Explore the relevant code. If the Validation block is absent, discover the repo's real test and typecheck commands yourself from `package.json`, a `Makefile`, or CI config, and log them in `implementation-notes.md`.
-2. Build waves by disjoint batching per [references/parallel.md](references/parallel.md): sequential in spec order by default, batched only when file lists are disjoint and nothing a wave-mate or earlier unfinished change set introduces is consumed. Every change set in the plan is in scope, not just the first.
+2. Build waves by disjoint batching per [references/parallel.md](references/parallel.md): sequential in spec order by default, batched only when file lists are disjoint and nothing a wave-mate or earlier unfinished change set introduces is consumed. Every change set in the plan is in scope, not just the first. Append the run entry to `implementation-notes.md` before the first wave launches.
 3. For each wave, run its change sets in parallel per the same reference, pass its wave gate once, then commit each finished change set on the current branch and append its entry to `implementation-notes.md`. A change set that adds, removes, moves, or rewires a component, flow, or boundary updates `docs/architecture.md` in the same commit and passes `architecture-check.py` first, per [../../references/architecture.md](../../references/architecture.md).
 4. Move straight to the next wave. Never stop after one change set or wave to ask about review.
 5. When every change set is committed, loop `python3 {build-skill-root}/scripts/check-tests.py .dev/{plan-name}` until it exits clean: it proves every specced scenario has a test that really exists, rather than one that was reported.
@@ -81,15 +81,27 @@ E2E scenarios are proven by running the actual application against the **fully m
 
 ## Implementation notes
 
-Maintain `.dev/{plan-name}/implementation-notes.md`, appended after each change set completes, never written once at the end.
+Maintain `.dev/{plan-name}/implementation-notes.md` as the run goes, per [../../references/plan-layout.md](../../references/plan-layout.md), never written once at the end: the run entry before the first wave launches, a change set's entry when that change set completes, and a fixup entry each time the wave gate, the e2e loop, or the CI-parity gate makes you change code, written with the fix.
 It is the shared state across waves - parallel change-set agents can't see each other's conversation, only this file and the code - and the evidence `ship`, `to-pitch`, and `to-quiz` read later.
 
 ```markdown
+## Build run {date}
+- Validation: {the commands this run gates on, and where they came from}
+- Waves: [1 2] [3] [4 5]
+
 ## Change set {n}: {title}
 - What was done: ...
 - Seams tested: ...
 - Tests added: {path::test name}, ...   # or "none - {reason}"; the checker reads this line
 - Deviations from spec: {edge case found} -> conservative choice made: {what/why}   # only when a deviation occurred
+
+## Fixup: {what was wrong}
+- Found by: {the wave gate | e2e scenario {id} | CI-parity command}
+- What was done: ...
+- Tests added: ...
+
+## CI parity
+- {command} -> {green | red: what failed | remote-only: why}   # one line as each command finishes
 ```
 
 This file is a short running log, not a rendered report.

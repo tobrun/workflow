@@ -15,7 +15,9 @@ Do not attempt to reproduce GitHub-owned setup actions locally. Reproduce the
 project command after performing its documented local setup. Prefer a
 repository-provided aggregate target when it covers the same jobs.
 
-Record the commands and outcomes in the plan's `implementation-notes.md`.
+Record each command and its outcome as it finishes, not after the whole set:
+`build` in the plan's `implementation-notes.md`, `ship` on the CI parity line
+of the `pr.md` its run keeps.
 
 ## Run before proposing a PR
 

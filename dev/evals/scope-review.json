@@ -7,7 +7,7 @@
       "id": "scope-review-contract",
       "prompt": "Answer briefly, from the skill text only: (1) What may scope-review edit, and what must it never touch? (2) Can a finding reach the spec without being verified, and can the orchestrator apply its own opinion as a refinement? (3) What happens when lint-spec.py reports problems before the loop starts? (4) A verified finding shows a change set implements the S3 alternative that its linked decision rejected in favor of local disk - is that refinable, and if so what does the refine agent write?",
       "assertions": [
-        "Answer 1: it edits spec.md and nothing else - never code, never docs/decisions.md, never docs/contracts.md",
+        "Answer 1: it edits spec.md, keeps its own spec-review_N.md report, and promotes settled changes to docs/decisions.md and docs/contracts.md - never code, and never any other file",
         "Answer 2: no - findings reach the spec only through verification (REFUTED findings drop, a BLOCK survives only when CONFIRMED), and the orchestrator's own reading is not a lens",
         "Answer 3: stop and recommend finishing the scope run - refinement presumes a mechanically settled spec, and repairing an unfinished draft is scope's job",
         "Answer 4: refinable - a settled chosen decision outranks the spec's prose in the authority order, so the change set is rewritten to match the decision (local disk), not the other way around"
@@ -21,6 +21,17 @@
         "Answer 2: any three of: flipping a chosen decision to a rejected alternative, changing user-visible scope or behavior, adding or dropping a dependency, contradicting the user's recorded intent - each is asked to the user as a decision (one at a time, alternatives with tradeoffs) and the answer is applied to the spec before the run finishes",
         "Answer 3: recorded user intent, then the repo's reality, then settled chosen decisions, then the spec's prose - each level beats everything below it",
         "Answer 4: APPROVED when every finding was refined or answered (build can start directly); APPROVED WITH DEFERRALS when something remains - an escalation defers only when the answer invalidates the premise or opens a genuinely new effort, when there is no interactive channel, or when the user declines to answer"
+      ]
+    },
+    {
+      "id": "scope-review-report-as-the-run-goes",
+      "prompt": "Answer briefly, from the skill text and the references it links only: (1) When is spec-review_N.md created, and what does its Verdict line say then? (2) Round 1's refine agents have just returned with four refinements applied, and round 2's panel is about to start. What does the report hold now? (3) The user answers the first of three escalations. When is that recorded in the report? (4) What is left to write into the report at the wrap-up? (5) A later scope run finds a spec-review_2.md whose verdict is still IN PROGRESS and no scope-review run is going. May it take the report's findings as its opening agenda?",
+      "assertions": [
+        "Answer 1: in step 1, after the lint gate passes and before round 1's panel runs, at the next free index; Verdict: IN PROGRESS",
+        "Answer 2: round 1's finding counts and each of the four refinements, written when the refine agents returned - not held back until the end of the run",
+        "Answer 3: at once, when it is answered (or deferred) - not after all three escalations are done",
+        "Answer 4: only the verdict - everything else has been filling since step 1",
+        "Answer 5: no - an unfinished file left by a run that is no longer going is a draft, never a result; scope-review picks it up at the same index and no other skill builds on it"
       ]
     }
   ]

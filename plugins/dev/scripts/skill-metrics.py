@@ -148,7 +148,8 @@ def numstat(ref: str | None) -> tuple[int, int, set[str]]:
     for path in untracked:
         files.add(path)
         try:
-            added += sum(1 for _ in Path(path).open(encoding="utf-8", errors="ignore"))
+            with Path(path).open(encoding="utf-8", errors="ignore") as handle:
+                added += sum(1 for _ in handle)
         except OSError:
             pass
     return added, removed, files
@@ -295,8 +296,10 @@ def cmd_end(skill: str, counts: dict[str, str]) -> int:
         change = (total(all_tokens) - med_tokens) / med_tokens * 100 if med_tokens else 0
         rows.append((
             f"vs previous {skill} runs",
-            f"{len(previous)} on record, median {human(med_tokens)} tokens in {duration(med_secs)}; "
-            f"this run {change:+.0f}% tokens",
+            (
+                f"{len(previous)} on record, median {human(med_tokens)} tokens in {duration(med_secs)}; "
+                f"this run {change:+.0f}% tokens"
+            ),
         ))
 
     width = max(len(name) for name, _ in rows)

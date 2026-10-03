@@ -83,6 +83,38 @@ PLUGINS = {
             ),
         },
     ),
+    "factory": PluginConfig(
+        name="factory",
+        display_name="Factory",
+        short_description="Drive a declared pipeline of phases unattended.",
+        capabilities=("Interactive", "Write"),
+        default_prompts=(
+            "Take this request through scope, then run it unattended to a pull request.",
+        ),
+        copied_dirs=("skills", "phases", "references", "scripts"),
+        skill_ui={
+            "run": (
+                "Run",
+                "Take a request from scope to a shipped change unattended",
+                "Use $factory:run to drive the pipeline declared in .factory/config.yaml, or the built-in scope, scope-review, build, and ship, unattended.",
+            ),
+        },
+    ),
+    "bootstrap": PluginConfig(
+        name="bootstrap",
+        display_name="Bootstrap",
+        short_description="Write a repository's AGENTS.md from a probe of its stack.",
+        capabilities=("Interactive", "Write"),
+        default_prompts=("Write or refresh this repository's AGENTS.md.",),
+        copied_dirs=("skills",),
+        skill_ui={
+            "agents-md": (
+                "AGENTS.md",
+                "Probe the stack and write a root AGENTS.md",
+                "Use $bootstrap:agents-md to probe this repository and write or refresh its root AGENTS.md.",
+            ),
+        },
+    ),
 }
 
 
@@ -124,6 +156,15 @@ def openai_yaml(config: PluginConfig, skill_name: str) -> str:
     )
 
 
+def strip_phase_policy(destination: Path) -> None:
+    """Phase bodies are read by path, not invoked, so they need no UI entry - only the strip."""
+    for skill_md in sorted((destination / "phases").glob("*/SKILL.md")):
+        skill_md.write_text(
+            codex_skill(skill_md.read_text(encoding="utf-8"), skill_md.parent.name),
+            encoding="utf-8",
+        )
+
+
 def build(config: PluginConfig, destination: Path) -> None:
     source = config.source
     claude_manifest = json.loads(
@@ -158,6 +199,8 @@ def build(config: PluginConfig, destination: Path) -> None:
             openai_yaml(config, skill_name),
             encoding="utf-8",
         )
+
+    strip_phase_policy(destination)
 
     manifest = {
         "name": config.name,

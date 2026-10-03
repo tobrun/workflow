@@ -1,0 +1,103 @@
+# Pipeline config
+
+`.factory/config.yaml` in the consuming repository declares the pipeline the orchestrator drives.
+Its absence is not an error: the built-in default pipeline applies, our four phases run from the installed plugin, and nothing is written to the repo.
+
+## Schema
+
+```yaml
+version: 1
+defaults:
+  ceiling: 12
+  attempts: 3
+types:
+  <type-name>:
+    interactive: true
+    requires: "prose the orchestrator judges by running a tool itself"
+    checks:
+      - - lint-spec.py
+        - ${plan_dir}/spec.md
+    seals:
+      - ${plan_dir}/spec.md
+    attempts: 3
+phases:
+  - id: <phase-id>
+    type: <type-name>
+    skill: ${plugin_root}/phases/<phase-id>/SKILL.md
+    checks:
+      - - check-tests.py
+        - ${plan_dir}
+    unattended_safe: true
+```
+
+`version` is always `1`. `defaults`, `types` and `phases` are the schema's only other top-level keys; an unknown key is a `check` finding.
+
+### Types: six axes, no more
+
+- `interactive` (bool) - runs inline in the orchestrator's own session rather than launched.
+- `requires` (prose) - the outcome contract the orchestrator judges when the type's `checks` don't cover it, the same way `judgment.md` reads a phase today.
+- `checks` (a list of argv lists) - commands that verify the outcome. Each entry is an argv list, never a shell string.
+- `seals` (a list of paths) - artifacts whose drift `run-state.py handoff`/`diff-spec` watches. May use `${plan_dir}`.
+- `attempts` (int) - the per-type default retry budget.
+- `model` (string, optional) - passed to the host's subagent tool when it takes one; see "Model selection" below. Judges nothing and verifies nothing, unlike the other five.
+
+The type set is open: any name declared under `types` is usable by a phase. A type the orchestrator has never seen is judged by its declared axes alone.
+
+### Model selection
+
+`model` is a single string, per type or per phase (a phase's `model` overrides its type's), meant as-is for whichever host subagent tool the run is using. There is no per-host table: D-model-selection in `docs/decisions.md` rejected that as host-specific config, and this stays true - the value is whatever your chosen host's model catalog expects (Claude Code's Agent tool: `sonnet`, `opus`, `haiku`, `fable`; Codex's `spawn_agent` and opencode's `task`: their own model ids, or nothing, if the tool has no model parameter at all).
+
+The orchestrator passes `model` to the launch call when the host tool it is using accepts one; when it does not, the value is silently unused and the subagent inherits the session's model, same as today with no `model` declared. `run/SKILL.md`'s `launch.md` names the exact rule per host.
+
+`model` on an `interactive` type is a `check` finding: an interactive phase runs inline in the orchestrator's own session and never reaches a subagent call, so it has no launch to carry a model to. `scope` in the built-in pipeline can therefore never take one. The built-in pipeline declares no `model` for any type - the choice of host (Claude Code vs. Codex vs. opencode) decides which model ids are even valid, so there is no single default that survives being run from a different host than the one it was written for. Pin one for your own repository with `factory-config.py set types.<name>.model <id>` or `set <phase-id>.model <id>` once you know which host you run `/factory:run` in.
+
+### Phases: an ordered list
+
+Each entry is `{id, type, skill, checks, unattended_safe}`. `id`, `type` and `skill` are required; `checks` and `unattended_safe` are optional per-phase overrides.
+
+- `checks`, when present on a phase, **replaces** the type's `checks` entirely - it never merges.
+- `unattended_safe: true` is required for a foreign phase (see Phase classes below); built-in and injected phases don't need it.
+
+`defaults` and `types` are reserved words: no phase may take either as its `id`, since the key-path grammar below roots at both.
+
+### Placeholders
+
+A `skill` path and a check's argv elements may use `${plugin_root}`, `${repo_root}`, `${plan_dir}`, `${phase}` and `${attempt}`. A check's **executable** element (argv[0]) may only use `${plugin_root}` or `${repo_root}` - `${plan_dir}` and the others can't be allowlisted before a run exists. `show --resolved` leaves every placeholder literal; the orchestrator substitutes them when it launches or runs a check.
+
+### Phase classes
+
+Three classes, by path and provenance, established by `factory-config.py check`:
+
+- **built-in** - the skill path starts with `${plugin_root}`.
+- **injected** - the skill sits under `.factory/skills/` and its current sha256 matches the entry `.factory/.inject.json` recorded for it.
+- **foreign** - anything else, including an injected copy whose hash has drifted from its manifest entry.
+
+Only a foreign phase needs `unattended_safe: true`; the orchestrator never hand-repairs a foreign phase's failure, only relaunches it or ends the run.
+
+## The key-path grammar
+
+`set` and `unset` address one value at a time by a dotted path:
+
+- `<phase-id>.<key>` - a key on an existing phase entry. The phase must already exist; `set` never creates a phase implicitly.
+- `defaults.<key>` - a key under `defaults`, created if absent.
+- `types.<name>.<axis>` - an axis of a type, created if absent.
+
+A list-valued key takes repeated `--item` flags in place of a positional value. `unset` removes the named key; a phase left with no keys at all is dropped from `phases` entirely.
+
+## The manifest `check` reads
+
+`.factory/.inject.json`, written by `inject`, at the shape:
+
+```json
+{"plugin": "<name>", "version": "<semver>", "files": {"<path relative to .factory/>": "<sha256>"}}
+```
+
+## The built-in default pipeline
+
+Equal to today's four phases: `scope` (interview, interactive), `scope-review` (review), `build` (implement), `ship` (ship), each declared with `${plugin_root}` so a plugin move only touches this one reference and `factory/scripts/factory-config.py`'s embedded copy. Today's criteria partition across the allowlist: `lint-spec.py ${plan_dir}/spec.md` (scope), `check-tests.py ${plan_dir}` (build) and `pr-evidence.py check ${plan_dir}/pr.md` (ship) become `checks` entries, each executable written as a `${plugin_root}/phases/{phase}/scripts/...` path; `gh pr view`, `git ls-remote` and the `Verdict: APPROVED` grep stay `requires` prose the orchestrator judges itself. `scope`'s `interview` type seals `${plan_dir}/spec.md`. Every built-in type declares `attempts: 3`; the default declares a ceiling of 12 attempts per run.
+
+## `inject`
+
+`factory-config.py inject [phase ...] [--force]` copies the named phase bodies (all four when none is named) and the transitive closure of what they reference into `.factory/`, keeping the plugin's relative depth so no link needs rewriting: `phases/{phase}/` lands at `.factory/skills/{phase}/`, `references/` at `.factory/references/` and `scripts/` at `.factory/scripts/`. The closure follows three forms in Markdown files: relative links, `{x-skill-root}/...` paths and backticked `templates/*.html` paths. The only rewrite is each `{x-skill-root}` placeholder, which becomes the copy's own `.factory/skills/{x}` path relative to the repository root. Each copied `SKILL.md` gains an `injected-from: {plugin}@{version}` frontmatter key; no other file carries a header, and `.factory/.inject.json` is the provenance for the rest.
+
+A target that exists is refused, naming the file, unless `--force`, when its sha256 differs from its manifest entry, or when the manifest is missing, unparseable or has no entry for it. An unedited copy takes an upgrade without `--force`. `inject` also writes or updates `.factory/config.yaml` so each injected phase entry points at `${repo_root}/.factory/skills/{phase}/SKILL.md`, creating the config from the built-in default when there is none, and never sets `unattended_safe`, since a copy matching its manifest is injected rather than foreign.

@@ -36,16 +36,16 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
-DATA_BLOCK = re.compile(r"E2E_DATA_START.*?const\s+E2E_DATA\s*=\s*(\{.*?\})\s*;\s*/\*\s*E2E_DATA_END", re.S)
+DATA_BLOCK = re.compile(r"E2E_DATA_START.*?const\s+E2E_DATA\s*=\s*(\{.*?\})\s*;\s*/\*\s*E2E_DATA_END", re.DOTALL)
 IDENT = re.compile(r"[A-Za-z_$][A-Za-z0-9_$]*")
-PLACEHOLDERS = re.compile(r"\bTODO\b|\bTBD\b|\{[a-z][a-z0-9-]*\}|<[^>]*placeholder[^>]*>|screenshot here|data:image/", re.I)
+PLACEHOLDERS = re.compile(r"\bTODO\b|\bTBD\b|\{[a-z][a-z0-9-]*\}|<[^>]*placeholder[^>]*>|screenshot here|data:image/", re.IGNORECASE)
 IMAGE = re.compile(r"!\[[^\]]*\]\((https?://[^)\s]+)\)")
 PAIR_LABELS = {
     "before": "before", "after": "after",
     "on merge base": "base", "on the merge base": "base", "merge base": "base",
     "on this branch": "branch", "on the branch": "branch", "this branch": "branch",
 }
-LABEL_LINE = re.compile(r"^\s*\*\*([^*]+?)\*\*", re.I)
+LABEL_LINE = re.compile(r"^\s*\*\*([^*]+?)\*\*", re.IGNORECASE)
 FENCE_OPEN = re.compile(r"^\s*```")
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
 
@@ -138,7 +138,7 @@ def node_json(literal: str) -> str | None:
         handle.write(literal)
     script = f"process.stdout.write(JSON.stringify(eval('(' + require('fs').readFileSync({handle.name!r}, 'utf8') + ')')))"
     try:
-        result = subprocess.run(["node", "-e", script], capture_output=True, text=True)
+        result = subprocess.run(["node", "-e", script], capture_output=True, text=True, check=False)
         return result.stdout if result.returncode == 0 else None
     except OSError:
         return None
@@ -147,7 +147,7 @@ def node_json(literal: str) -> str | None:
 
 
 def git(*args: str, env: dict | None = None, check: bool = True) -> str:
-    result = subprocess.run(["git", *args], capture_output=True, text=True, env=env)
+    result = subprocess.run(["git", *args], capture_output=True, text=True, env=env, check=False)
     if check and result.returncode != 0:
         fail(f"git {' '.join(args)} failed: {result.stderr.strip()}")
     return result.stdout.strip()
@@ -188,7 +188,7 @@ def extract(args: argparse.Namespace) -> None:
 
     lines = ["## Evidence", "",
              f"Captured from the e2e run of `{plan}` at {data.get('generatedAt', 'unknown time')}: "
-             f"{summary.get('passed', 0)}/{summary.get('total', len(scenarios))} scenarios passed.", ""]
+             + f"{summary.get('passed', 0)}/{summary.get('total', len(scenarios))} scenarios passed.", ""]
     written: list[str] = []
     for index, scenario in enumerate(scenarios, 1):
         scenario_id = slug(str(scenario.get("id") or scenario.get("title") or index), f"scenario-{index}")
@@ -226,7 +226,7 @@ def publish(args: argparse.Namespace) -> None:
     if not files:
         fail(f"nothing to publish: no image files under {root}")
     ref = f"refs/remotes/{args.remote}/{args.branch}"
-    subprocess.run(["git", "fetch", args.remote, args.branch], capture_output=True, text=True)
+    subprocess.run(["git", "fetch", args.remote, args.branch], capture_output=True, text=True, check=False)
     parent = git("rev-parse", "--verify", "--quiet", ref, check=False) or None
     with tempfile.TemporaryDirectory() as tmp:
         env = {**os.environ, "GIT_INDEX_FILE": str(Path(tmp) / "index")}
@@ -243,7 +243,7 @@ def publish(args: argparse.Namespace) -> None:
 
 
 def evidence_section(body: str) -> str | None:
-    match = re.search(r"^##\s+Evidence\s*$(.*?)(?=^##\s|\Z)", body, re.M | re.S)
+    match = re.search(r"^##\s+Evidence\s*$(.*?)(?=^##\s|\Z)", body, re.MULTILINE | re.DOTALL)
     return match.group(1) if match else None
 
 

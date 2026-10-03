@@ -247,5 +247,52 @@ class TestNameWithCommaTest(PlanCase):
         self.assertIn("contains no test named 'never written'", result.stdout)
 
 
+class RunAndFixupEntryTest(PlanCase):
+    """The notes are written as the run goes, so they hold more than change set entries."""
+
+    RUN = "## Build run 2026-10-02\n- Validation: `npm test`, from the spec\n- Waves: [1]\n\n"
+
+    def check(self, entry: str, fixup: str) -> subprocess.CompletedProcess[str]:
+        self.write_spec(change_set(1, "`src/a.ts`", 2))
+        repo = self.plan.parent
+        (repo / "a.test.ts").write_text(
+            'test("reads a coupon", () => {});\ntest("rejects an expired coupon", () => {});\n',
+            encoding="utf-8",
+        )
+        self.write_notes(
+            f"{self.RUN}## Change set 1: Change set 1\n- Tests added: {entry}\n\n"
+            f"## Fixup: the built CLI printed no newline\n- Found by: e2e scenario 3\n- Tests added: {fixup}\n"
+        )
+        return run(CHECK, str(self.plan), "--repo-root", str(repo))
+
+    def test_run_entry_and_fixup_entry_leave_a_complete_change_set_clean(self) -> None:
+        result = self.check(
+            "a.test.ts::reads a coupon, a.test.ts::rejects an expired coupon", "a.test.ts::reads a coupon"
+        )
+        self.assertEqual(result.returncode, 0, result.stdout)
+
+    def test_fixup_tests_do_not_count_toward_the_change_set_above(self) -> None:
+        result = self.check("a.test.ts::reads a coupon", "a.test.ts::rejects an expired coupon")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("change set 1: 2 scenario(s) specced, 1 test(s) named", result.stdout)
+
+    def test_fixup_test_that_was_never_written_fails_naming_the_fixup(self) -> None:
+        result = self.check(
+            "a.test.ts::reads a coupon, a.test.ts::rejects an expired coupon", "a.test.ts::never written"
+        )
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("a fixup entry: a.test.ts contains no test named 'never written'", result.stdout)
+
+    def test_brief_carries_the_fixup_to_later_change_sets(self) -> None:
+        self.write_spec(change_set(1, "`src/a.ts`"), change_set(2, "`src/b.ts`"))
+        self.write_notes(
+            f"{self.RUN}## Change set 1: Change set 1\n- What was done: it\n\n"
+            "## Fixup: the built CLI printed no newline\n- What was done: print one\n"
+        )
+        out = run(BRIEF, str(self.plan), "2").stdout
+        self.assertIn("### Fixup: the built CLI printed no newline", out)
+        self.assertIn("- What was done: print one", out)
+
+
 if __name__ == "__main__":
     unittest.main()

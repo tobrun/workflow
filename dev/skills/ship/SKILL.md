@@ -1,6 +1,6 @@
 ---
 name: ship
-description: Run the quality pass that ships a change in three phases - phase 1 is a deterministic harden gauntlet (the repo's own static analysis, security scan, dead code, duplication, dependency rules, coverage-weighted complexity, test flakiness, mutation testing) that loops fresh-context fix agents until every check passes, phase 2 is a read-only adversarially verified review panel over the post-fix diff, writing .dev/{plan-name}/review_N.md, a BLOCK verdict gets two autonomous fix-and-re-review rounds before it counts as a real blocker, and phase 3 pushes and opens the pull request with visual proof of the change (e2e screenshots for a frontend, before/after state or a red-then-green reproducing test otherwise) gated by a deterministic evidence check. Use after build to finish a change and open its PR, or on request for a single phase such as gauntlet only or review only.
+description: Run the quality pass that ships a change in three phases - phase 1 is a deterministic harden gauntlet (the repo's own static analysis, security scan, dead code, duplication, dependency rules, coverage-weighted complexity, test flakiness, mutation testing) that loops fresh-context fix agents until every gating check passes - mutation testing is scored and reported, never a shippability gate - phase 2 is a read-only adversarially verified review panel over the post-fix diff, writing .dev/{plan-name}/review_N.md, a BLOCK verdict gets two autonomous fix-and-re-review rounds before it counts as a real blocker, and phase 3 pushes and opens the pull request with visual proof of the change (e2e screenshots for a frontend, before/after state or a red-then-green reproducing test otherwise) gated by a deterministic evidence check. Use after build to finish a change and open its PR, or on request for a single phase such as gauntlet only or review only.
 disable-model-invocation: true
 ---
 
@@ -42,7 +42,7 @@ Never weaken or skip a check because acquiring its tool is work.
 5. **Dependency rules** against `docs/dependencies.md` ([../../references/dependency-rules.md](../../references/dependency-rules.md) owns the checker semantics; absent file: skip with a clear note, never invent rules).
 6. **Coverage-weighted complexity** per in-scope function.
 7. **Flakiness** - the tests the diff added or touched, repeated and shuffled until trusted.
-8. **Mutation testing** over the in-scope source.
+8. **Mutation testing** over the in-scope source - scored and reported in the wrap-up, never a reason on its own to block shipping (see gauntlet.md's "Mutation testing is reported, not a threshold").
 
 Run each check to completion per the loop in [references/gauntlet.md](references/gauntlet.md).
 When any check dispatched fixes, end the phase with the e2e refresh in the same reference: re-run the spec's `[e2e]` scenarios and overwrite the report, so phase 2 judges the post-fix code instead of stale evidence.

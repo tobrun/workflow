@@ -1,0 +1,6 @@
+interface:
+  display_name: "AGENTS.md"
+  short_description: "Probe the stack and write a root AGENTS.md"
+  default_prompt: "Use $bootstrap:agents-md to probe this repository and write or refresh its root AGENTS.md."
+policy:
+  allow_implicit_invocation: false

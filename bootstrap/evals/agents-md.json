@@ -1,0 +1,67 @@
+{
+  "skill": "agents-md",
+  "mode": "functional",
+  "note": "Run each eval on a scratch copy made with git clone --local (it keeps history and origin/HEAD), never on the live repository. results.md names the reference repository and commit behind each fixture.",
+  "evals": [
+    {
+      "id": "merge-prune",
+      "prompt": "Write this repository's AGENTS.md.",
+      "fixture": "an Astro blog with both an AGENTS.md and a CLAUDE.md; AGENTS.md cites a config path that has since moved and contains em dashes; no test runner; one GitHub workflow that only deploys on push",
+      "assertions": [
+        "The moved path is rewritten to the file that exists now, and the table cites the probe evidence",
+        "No em dash remains in the written file",
+        "Unit, Integration, and E2E are none, each with a matching open item, and there is an open item with slug ci because the deploy workflow is not a merge gate",
+        "CLAUDE.md is not modified, and the closing report recommends deleting or trimming it",
+        "The diff and the kept/updated/pruned table are shown before AGENTS.md is written"
+      ]
+    },
+    {
+      "id": "claude-only-python",
+      "prompt": "Bootstrap an AGENTS.md here.",
+      "fixture": "a Python service with a Makefile whose check target runs lint, types, and tests, a pull-request workflow that runs make check, a robot framework suite that drives the built service, and a CLAUDE.md with two repo-specific gotchas but no AGENTS.md",
+      "assertions": [
+        "The Merge gate slot is `make check`",
+        "The robot suite is recognized as the e2e layer, and its environment is either described in Tests or recorded as an e2e-env open item",
+        "Both CLAUDE.md gotchas appear in AGENTS.md in the section they concern",
+        "CLAUDE.md is not modified, and the closing report recommends deleting or trimming it"
+      ]
+    },
+    {
+      "id": "rich-existing",
+      "prompt": "Refresh our AGENTS.md against the current code.",
+      "fixture": "a bun monorepo with a curated AGENTS.md that says tests must not run from the root, an e2e script that needs a live SSO session and a real access token, and conventional commits with scopes such as core, mapbox, server, and tui",
+      "assertions": [
+        "The rule that tests must not run from the root is kept",
+        "The live e2e run is recorded as an e2e-env open item rather than presented as a mocked e2e layer",
+        "The scope list names the scopes the history actually uses",
+        "A second run on the written file produces a diff limited to facts that changed"
+      ]
+    },
+    {
+      "id": "bare",
+      "prompt": "Write an AGENTS.md for this repo.",
+      "fixture": "a repository holding a single index.html game and a README, no package manifest, no CI, a handful of unconventional commits",
+      "assertions": [
+        "The skill asks for commands it cannot find instead of guessing a runner",
+        "Every Commands slot the user cannot answer is none or n/a with a matching open item",
+        "The written file is under 60 lines"
+      ]
+    },
+    {
+      "id": "conflict",
+      "prompt": "Update AGENTS.md.",
+      "fixture": "a JS repository whose AGENTS.md says to retry flaky e2e tests twice and whose playwright config sets retries: 2",
+      "assertions": [
+        "The retry rule is raised as an interview question with a recommendation and a confidence score",
+        "The retry rule is neither silently kept nor silently removed",
+        "The written file does not state both the retry rule and the no-retries rule"
+      ]
+    }
+  ],
+  "every_eval": [
+    "check-agents-md.py exits 0 on the written AGENTS.md",
+    "No file other than the root AGENTS.md changes in the repository",
+    "Nothing is committed",
+    "No question asks about a fact the probe table already resolved"
+  ]
+}

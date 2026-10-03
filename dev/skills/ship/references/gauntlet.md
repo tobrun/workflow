@@ -50,7 +50,12 @@ Fix agents never edit thresholds, rules files, or the tools themselves, and neve
 
 ## Thresholds are decisions
 
-Defaults: zero static analysis findings in scope; zero security findings; zero dead symbols in scope; no new clones over the 50-token threshold; zero dependency violations; complexity-coverage score at most 6 per function; zero flaky tests among those the diff touched; zero surviving mutants in scope.
+Defaults: zero static analysis findings in scope; zero security findings; zero dead symbols in scope; no new clones over the 50-token threshold; zero dependency violations; complexity-coverage score at most 6 per function; zero flaky tests among those the diff touched.
 Agent-written code tolerates a higher complexity threshold than the human default of 4 - agents hold more paths in working memory - but where the line sits is a decision, not a config value.
 When the user accepts a different threshold, record it in `docs/decisions.md` as a `D-` entry (notation in [../../../references/decision-ledger.md](../../../references/decision-ledger.md)), dated and sourced to this run; the next run reads it from there instead of re-arguing.
 Never adjust a threshold silently to make a run pass.
+
+## Mutation testing is reported, not a threshold
+
+The other seven checks above judge whether this run may ship; mutation testing does not, and it is the one check with no default threshold at all. A codebase's baseline kill rate depends on how much test coverage the diff's area already had going in, which this run did not choose - failing the run over that inherited debt would make ordinary changes to weakly-tested code unshippable regardless of what the diff itself does.
+Fix agents still chase survivors under the loop above and the fix vocabulary's "kill a mutant" entry, and equivalent mutants still get marked and left, exactly as before. When a survivor resists two fix rounds (item 4 of the loop), present it and move on rather than treating it as a blocker. The ship report's counts - killed, survived, uncovered, with the reason recorded against each stubborn survivor - are the evidence a person reads; there is no score below which the run fails.

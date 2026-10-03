@@ -30,10 +30,10 @@ explicitly requested heavyweight runs only lives in
 ## Native transport
 
 Use the host's plain subagent tool exactly as provided (the Agent tool on
-Claude Code, the `task` tool on opencode). Launch all agents of a batch in a
-single parallel call: on opencode that means issuing every `task` call of the
-batch in one message with the default general subagent. Native subagents
-receive the prompt contracts below directly.
+Claude Code, `spawn_agent` on Codex, the `task` tool on opencode). Launch all
+agents of a batch in a single parallel call: on opencode that means issuing
+every `task` call of the batch in one message with the default general
+subagent. Native subagents receive the prompt contracts below directly.
 
 Result delivery is file-based, because on some hosts subagents run in the
 background and their final message never reaches the orchestrator:

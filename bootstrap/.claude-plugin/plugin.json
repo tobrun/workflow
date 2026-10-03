@@ -1,0 +1,8 @@
+{
+  "name": "bootstrap",
+  "version": "0.1.0",
+  "description": "Prepare a repository for agent work: probe its stack, map it onto the dev workflow's SDLC concepts (test layers, mocking at boundaries, CI parity, fix-at-source quality, commit and PR conventions), and write or refresh its root AGENTS.md with the repo's exact commands and its gaps as open items. Use on any repository, whether or not the dev plugin is installed.",
+  "author": {
+    "name": "Tobrun"
+  }
+}

@@ -8,7 +8,7 @@ Run the harness below against the current 6 skills (`scope`, `commit`, `build`, 
 ## Partial run, 2026-10-01: build `parallel-wave`, before and after the build-speed change
 
 One functional run per version, not the full harness.
-Old is the build skill before this change, new is the version that adds the wave gate, the change-set brief, and the cheap-red rule.
+Old is the build skill at commit 22cbfca, new is the working tree that adds the wave gate, the change-set brief, and the cheap-red rule.
 The fixture was a Node library with a 20 second legacy test in its suite, and a spec with change sets 1 and 2 disjoint and change set 3 editing files of both.
 Every run of a Validation command was written to a log by the fixture's package scripts, so the counts are measured, not reported.
 

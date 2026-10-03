@@ -62,6 +62,8 @@ Keep it affordable: only diff-touched tests, reuse build caches between repeats,
 
 ## 8. Mutation testing
 
+Scored and reported, never a shippability gate - see gauntlet.md's "Mutation testing is reported, not a threshold" for why and how a stubborn survivor is left in place rather than blocking the run.
+
 Prefer the ecosystem's mutation framework - Stryker (JS/TS), mutmut or cosmic-ray (Python), PIT (JVM), cargo-mutants (Rust), go-mutesting (Go).
 These handle mutant generation, test selection, and reporting far better than a hand-rolled loop; write only the thin config that scopes them.
 Hand-roll only when the ecosystem has nothing: an agent-written script that applies one mutation at a time (flip `<` to `<=`, `==` to `!=`, `+` to `-`, negate conditions, drop return values), runs the narrowest relevant test command, and records survivors.
@@ -70,7 +72,7 @@ Keeping it affordable:
 
 - **Scope to the diff**: mutate only in-scope files, run only the tests that cover them (most frameworks do incremental or per-file runs; use that).
 - Set a per-mutant test timeout so an infinite-loop mutant cannot hang the run.
-- Equivalent mutants (mutations that provably cannot change behavior) are the one legitimate survivor category: mark them as such in the report with the reasoning, don't chase them forever - two fix rounds, then escalate per the loop rule.
+- Equivalent mutants (mutations that provably cannot change behavior) are one legitimate reason to leave a survivor in place, marked as such with the reasoning; a survivor that resists two fix rounds for any other reason is left in place too, per the loop rule - killing every mutant is the goal, not the bar for shipping.
 
 ## Fix-agent prompts
 

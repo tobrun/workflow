@@ -247,5 +247,18 @@ class TestNameWithCommaTest(PlanCase):
         self.assertIn("contains no test named 'never written'", result.stdout)
 
 
+class FactoryCopiesTest(unittest.TestCase):
+    """The factory build and scope phases ship the same scripts."""
+
+    def test_factory_copies_match_dev(self) -> None:
+        for dev, factory in (
+            (LINT, REPO_ROOT / "factory" / "phases" / "scope" / "scripts" / LINT.name),
+            (BRIEF, REPO_ROOT / "factory" / "phases" / "build" / "scripts" / BRIEF.name),
+            (CHECK, REPO_ROOT / "factory" / "phases" / "build" / "scripts" / CHECK.name),
+        ):
+            with self.subTest(script=dev.name):
+                self.assertEqual(dev.read_bytes(), factory.read_bytes())
+
+
 if __name__ == "__main__":
     unittest.main()

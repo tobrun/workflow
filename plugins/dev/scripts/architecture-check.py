@@ -20,7 +20,7 @@ import sys
 from pathlib import Path
 
 SECTIONS = ["Components", "Flows", "Boundaries", "Cross-cutting", "Entry points"]
-HEADER = re.compile(r"^##\s+(.+?)\s*$", re.M)
+HEADER = re.compile(r"^##\s+(.+?)\s*$", re.MULTILINE)
 BACKTICK = re.compile(r"`([^`\n]+)`")
 PATH_LIKE = re.compile(r"^[^\s]+(/[^\s]*|\.[A-Za-z0-9]{1,6})$")
 TABLE_ROW = re.compile(r"^\|(.+)\|\s*$")
@@ -90,9 +90,9 @@ def main() -> int:
     text = map_path.read_text(encoding="utf-8", errors="replace")
     violations: list[str] = []
 
-    if not re.search(r"^Purpose:", text, re.M):
+    if not re.search(r"^Purpose:", text, re.MULTILINE):
         violations.append("section: no 'Purpose:' line")
-    if not re.search(r"^Captured:\s*\d{4}-\d{2}-\d{2}", text, re.M):
+    if not re.search(r"^Captured:\s*\d{4}-\d{2}-\d{2}", text, re.MULTILINE):
         violations.append("section: no dated 'Captured:' line")
     found = sections(text)
     order = [name for name in found if name in SECTIONS]

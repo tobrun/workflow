@@ -38,5 +38,6 @@ A re-run of `ship` after the human call starts a fresh budget.
 ## Real blockers
 
 A real blocker is listed in the PR under Open calls with its history: the finding, the round-1 and round-2 attempts (commit and what each changed), and why it still stands - unfixable in scope, escalated, or a new blocker the fixes introduced.
+Each attempt goes into `pr.md` when its round ends, so the history is a record of the rounds and not a recollection of them.
 Phase 3 opens the PR as a draft.
 The wrap-up presents each real blocker as the human call it is: a real defect the fixes could not reach, a decision worth reopening, or a spec the change outgrew - the same three outcomes the gauntlet's human calls have.

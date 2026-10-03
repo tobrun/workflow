@@ -37,7 +37,9 @@ On a non-GitHub remote pass `--url-template` with wherever the images are hosted
 
 ## Body
 
-Write the body to `.dev/{plan-name}/pr.md` and hand it to the PR tool with `--body-file`; the file stays as the record of what was proposed.
+The body lives at `.dev/{plan-name}/pr.md` and is handed to the PR tool with `--body-file`; the file stays as the record of what was proposed.
+A run that will reach this phase opens the file in the shape below before its first check and fills it as the run goes, per [../../../references/plan-layout.md](../../../references/plan-layout.md): the Summary at once, a Quality row when its check finishes, the CI parity line as each command returns, the review line when a verdict is set, an Open call when it is raised and each remediation round's attempt when the round ends.
+Only the Evidence section is left for this phase; a part the run has not reached is absent from the file, never a placeholder or a guess.
 
 ```markdown
 ## Summary

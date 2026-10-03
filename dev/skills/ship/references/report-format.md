@@ -1,12 +1,13 @@
 # Review Report Format
 
 The shape of `.dev/{plan-name}/review_N.md`, written by phase 2 at the next free index starting at 1.
+Phase 2 opens it when the panel is selected, holding `Verdict: IN PROGRESS` and only the sections it can already fill, and completes it as the aggregator and the reconciliation return.
 `REVIEW_DATA` ([data-schema.md](data-schema.md)) mirrors this file section for section; the aggregator's JSON fills both.
 
 ```markdown
 # Review {N}: {title}
 
-Verdict: {PASS | CONCERNS | BLOCK}
+Verdict: {IN PROGRESS | PASS | CONCERNS | BLOCK}
 Panel: {lenses run}, {failed lenses if any}
 Base: {branch or PR}, {date}
 

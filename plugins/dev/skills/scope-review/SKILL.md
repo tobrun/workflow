@@ -10,7 +10,7 @@ A defect caught here costs a spec edit; the same defect after build costs a re-i
 The few findings only the user can decide are asked as questions at the end of the run, and the answers are applied before it finishes.
 The panel judges the plan against the actual repo, not against the conversation that produced it.
 You are the orchestrator: run tools, dispatch agents, apply the loop, report - your own reading of the spec is not a lens, and findings reach the spec only through verification.
-This skill edits `spec.md`, and promotes settled changes to `docs/decisions.md` and `docs/contracts.md` per step 5 below - never code, and never any other file.
+This skill edits `spec.md`, keeps its own report, and promotes settled changes to `docs/decisions.md` and `docs/contracts.md` per step 5 below - never code, and never any other file.
 
 `scope`'s own phase-5 reviewer hunts while the spec is still being drafted, from the spec file alone.
 This skill is the standalone deeper pass: fresh agents with repo access, adversarial verification, and automatic refinement - worth running when the change is large or risky, or when build will run in a different session.
@@ -24,6 +24,7 @@ First run `python3 {scope-review-skill-root}/../../scripts/skill-metrics.py star
 - Run `python3 {scope-skill-root}/scripts/lint-spec.py .dev/{plan-name}/spec.md` once. If it reports anything, stop and recommend finishing the `scope` run: refinement here presumes a mechanically settled spec, and repairing an unfinished draft is `scope`'s job, not this loop's.
 - Read the target repo's `docs/decisions.md`, `docs/contracts.md`, and `docs/dependencies.md` where they exist; their entries are premises the lenses cite.
 - `spec-review_N.md` files present -> unresolved escalations from the highest-numbered one become verification items for round 1, and new reports continue the numbering.
+- Open this run's `spec-review_N.md` now - the next free index, or the one a dead run left `IN PROGRESS` - in the shape of step 7 with `Verdict: IN PROGRESS`, and write it as the run goes per [../../references/plan-layout.md](../../references/plan-layout.md): a round's counts and each refinement when its refine agent returns, each escalation when it is answered or deferred, each promotion when it lands.
 
 ## 2. The review-refine loop
 
@@ -95,14 +96,15 @@ python3 {ship-skill-root}/scripts/aggregate-findings.py plan {batch-1 results}
 python3 {ship-skill-root}/scripts/aggregate-findings.py aggregate {batch-1 results} {batch-2 results} --expected {lenses}
 ```
 
-## 7. Write the report
+## 7. The report
 
-Write `.dev/{plan-name}/spec-review_N.md` at the next free index, one per run, covering all rounds:
+`.dev/{plan-name}/spec-review_N.md` sits at the next free index, one per run, covering all rounds.
+It has been filling since step 1, so by the wrap-up only its verdict is left to set:
 
 ```markdown
 # Spec review N - {plan-name} - {date}
 
-Verdict: APPROVED | APPROVED WITH DEFERRALS
+Verdict: IN PROGRESS | APPROVED | APPROVED WITH DEFERRALS
 Rounds: {R} - {finding counts per round}
 
 ## Refinements applied

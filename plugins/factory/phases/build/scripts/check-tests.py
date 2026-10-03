@@ -51,15 +51,22 @@ def spec_scenarios(spec: Path, problem) -> dict[int, int]:
     return counts
 
 
-def note_entries(notes: Path) -> dict[int, list[str]]:
-    """Tests named per change set, from implementation-notes.md."""
+def note_entries(notes: Path) -> tuple[dict[int, list[str]], list[str]]:
+    """Tests named per change set, and those a fixup entry names, from implementation-notes.md.
+
+    Any other ## heading ends a change set's entry, so a fixup's tests never
+    count toward the scenarios of the change set above it.
+    """
     entries: dict[int, list[str]] = {}
-    current = None
+    fixups: list[str] = []
+    current: list[str] | None = None
     for line in notes.read_text(encoding="utf-8").splitlines():
         entry = NOTE_ENTRY.match(line)
         if entry:
-            current = int(entry.group(1))
-            entries.setdefault(current, [])
+            current = entries.setdefault(int(entry.group(1)), [])
+            continue
+        if HEADING.match(line):
+            current = fixups
             continue
         named = NOTE_TESTS.match(line)
         if not named or current is None:
@@ -67,25 +74,22 @@ def note_entries(notes: Path) -> dict[int, list[str]]:
         value = named.group(1).strip()
         if value.lower().startswith("none"):
             continue
-        entries[current].extend(t.strip() for t in NOTE_SEPARATOR.split(value) if t.strip())
-    return entries
+        current.extend(t.strip() for t in NOTE_SEPARATOR.split(value) if t.strip())
+    return entries, fixups
 
 
-def check_named_test(reference: str, repo_root: Path, change_set: int, problem) -> None:
+def check_named_test(reference: str, repo_root: Path, entry: str, problem) -> None:
     """A named test must be path::name, and that name must be in that file."""
     if "::" not in reference:
-        problem(f"change set {change_set}: '{reference}' is not in path::test name form")
+        problem(f"{entry}: '{reference}' is not in path::test name form")
         return
     path, _, name = reference.partition("::")
     target = repo_root / path.strip()
     if not target.is_file():
-        problem(f"change set {change_set}: {path.strip()} does not exist")
+        problem(f"{entry}: {path.strip()} does not exist")
         return
     if name.strip() not in target.read_text(encoding="utf-8", errors="replace"):
-        problem(
-            f"change set {change_set}: {path.strip()} contains no test "
-            f"named '{name.strip()}'"
-        )
+        problem(f"{entry}: {path.strip()} contains no test named '{name.strip()}'")
 
 
 def main(argv: list[str]) -> int:
@@ -115,7 +119,7 @@ def main(argv: list[str]) -> int:
         problems.append(message)
 
     counts = spec_scenarios(spec, problem)
-    entries = note_entries(notes)
+    entries, fixups = note_entries(notes)
 
     for change_set, scenarios in sorted(counts.items()):
         if change_set not in entries:
@@ -128,10 +132,13 @@ def main(argv: list[str]) -> int:
                 f"{len(named)} test(s) named"
             )
         for reference in named:
-            check_named_test(reference, repo_root, change_set, problem)
+            check_named_test(reference, repo_root, f"change set {change_set}", problem)
 
     for change_set in sorted(set(entries) - set(counts)):
         problem(f"change set {change_set} is in {notes} but not in the spec's change plan")
+
+    for reference in fixups:
+        check_named_test(reference, repo_root, "a fixup entry", problem)
 
     for message in problems:
         print(message)

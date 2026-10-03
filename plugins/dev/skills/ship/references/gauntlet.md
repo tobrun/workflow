@@ -14,6 +14,7 @@ For each tool (the batched five count as one), in order:
 2. Dispatch fixes: one fresh-context agent per independent area, launched in a single message, each given only the violation list for its area, the relevant file paths, and the fix vocabulary below.
 3. Re-run the tool until clean, then run the spec's Validation block (or the repo's test suite) to prove the fixes broke nothing; skip that run when the tool dispatched no fixes.
 4. A violation that resists two fix rounds on the same root cause, or that the change seems to legitimately require, is a human call: stop and present it - it is either a real defect, a threshold worth changing, or a rule the spec should have amended.
+5. When the run keeps a `pr.md` ([pull-request.md](pull-request.md)), write the tool's Quality row - found, fixed, surviving, one row per check for the batched five - and any human call under Open calls before starting the next tool; the wrap-up reads its tallies from there.
 
 ## Exit: refresh the e2e evidence
 

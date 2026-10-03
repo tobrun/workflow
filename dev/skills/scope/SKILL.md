@@ -14,12 +14,16 @@ Before the interview, run `python3 {scope-skill-root}/../../scripts/skill-metric
 
 ## 1. Interview
 
-Interview the user until you understand what they want, one consequential question at a time, using the host's structured user-input tool when available. Then write down what you understood.
+Interview the user until you understand what they want, one consequential question at a time, using the host's structured user-input tool when available.
 Whenever you recommend an option - here, in the decision talk-through, or in follow-up questions - put a confidence score next to it (`Confidence: 70%`) with the one fact that would most change it.
 Score how likely it is the right solution given the evidence, not how strongly you prefer it: a taste call, an unverified premise, or an option chosen without having read the relevant code scores low.
 A recommendation at `Confidence: 75%` or above is not a question: apply it and keep going, and write `auto-applied at Confidence: NN%` into the chosen line's because clause so the ledger shows who decided.
 Ask only below 75%, and, whatever the score, when the recommendation changes what was asked for: a different problem than the request names, a requirement dropped, or a new non-goal.
-At the end of the interview, list every auto-applied recommendation once, in one block, so a single reply can overturn any of them before the spec is written down.
+At the end of the interview, list every auto-applied recommendation once, in one block, so a single reply can overturn any of them before the catalog builds on them.
+
+The spec opens with the interview, not after it: once the first answers say what the change is about, pick a kebab-case `{plan-name}` naming the outcome and create `spec.md` in the plan directory ([../../references/plan-layout.md](../../references/plan-layout.md)) with its title, the date, what you understood, and empty `## Research`, `## Scope`, and `## Change plan` sections.
+From then on the file is the run's working state, written as the run goes per that reference: every answer, auto-applied recommendation, cataloged decision, and resolution reaches it when it happens, so the conversation never holds something the file lacks.
+Rename the directory when the problem climbs to a different outcome.
 
 The request often arrives one level too low: a solution ("add rate limiting with Redis") hides the problem it solves, a symptom hides the cause that picks the fix.
 Climb up before interviewing about the change itself - what led to this, what they observed, what would look different if it worked - then pressure-test the premise: what data shows the problem is real, and does it point where they think? Committing to a fix before the cause means speccing the wrong change well.
@@ -45,8 +49,9 @@ Look at the code, starting from the phase 1 explorers' results - prior art first
 - **Small** - timeout lengths, shapes of data structures.
 
 Pay special attention to edge cases and error handling. How the change gets verified is a decision too: what level to test at, what needs a real dependency versus a fake, what can't be tested and why.
+Each decision enters the research section as an `[open]` entry the moment it is cataloged, and its marks change in the file as the talk-through settles it.
 
-**Blind spot pass** (full-size only): don't grade your own catalog - you'll reread it the way you wrote it. Get a second one from something that hasn't seen your reasoning, reliably a subagent handed only the user's original request and the relevant code - not the conversation, not your catalog.
+**Blind spot pass** (full-size only): don't grade your own catalog - you'll reread it the way you wrote it. Get a second one from something that hasn't seen your reasoning, reliably a subagent handed only the user's original request and the relevant code - not the conversation, not your catalog, and told to stay out of `.dev/`, where that catalog is being written.
 Both of its inputs are settled when the interview ends, so launch it before you start cataloging; it hunts while you do, and the fold-in is the sync point.
 Fold the diff in: what it found and you didn't are blind spots, what you found and it didn't deserves a second look.
 Then tell the user what their framing didn't account for: constraints already in the code, behavior the change would break, second-order work, and what a mature solution handles in this domain that they wouldn't know to ask about.
@@ -56,7 +61,7 @@ Talk through the big and medium decisions with the user, highest-impact first; w
 
 ## 3. Research section
 
-Pick a kebab-case `{plan-name}` naming the outcome and write `spec.md` in the plan directory ([../../references/plan-layout.md](../../references/plan-layout.md)), dated under its title, in three sections: `## Research`, `## Scope`, `## Change plan`.
+`spec.md`, open since the interview, holds three sections under its dated title: `## Research`, `## Scope`, `## Change plan`.
 Research comes first, one entry per decision, ordered by impact.
 Every decision gets a stable ID: `D-` plus a short kebab slug (`D-file-storage`); keep a slug once assigned.
 

@@ -331,6 +331,20 @@ D-change-set-brief: What does a change-set agent read before it starts? (2026-10
   ✗ the whole spec and the notes - every agent pays for every other change set's plan
   ✗ a summary the orchestrator writes per agent - output tokens are the slow ones, and a paraphrase can be wrong
 
+## Plan files
+
+D-written-as-the-run-goes: When does a skill write its file under `.dev/{plan-name}/`? (2026-10-02, user feedback)
+  ✓ as the run goes: the file is created as soon as the run has something true to put in it, and each later fact reaches it when it is established - `scope` opens `spec.md` during the interview and catalogs decisions into it as `[open]` entries, `scope-review` opens `spec-review_N.md` before round 1, `build` adds a run entry and fixup entries to the notes, `ship` opens `review_N.md` when the panel is selected and `pr.md` before the first check; the skills wrote at the end of a stage, and continuously updated files were asked for (user, 2026-10-02); the rule lives once in `plan-layout.md` and each skill names its moments ⚠ a spec, a report, or a PR body can now be found half-written: `Verdict: IN PROGRESS`, a `lint-spec.py` that is not clean, and a failing `pr-evidence.py check` mark those, and no other skill builds on one
+  ✗ keep writing when the stage closes - a two-hour run holds its result only in the conversation, so a dead or compacted session loses it, nobody can follow the run from its files, and the file is a recollection instead of a record
+  ⊘ a checkpoint command that fails when a file did not change between two phases - not doing, against P-deterministic-guards-over-prose: the late write was what the skill text itself ordered (`scope` phase 3, `scope-review` step 7, `ship` phase 2 step 6), so moving the instruction removes the cause; reopen if runs under the new text still write at the end of a stage
+D-ship-record-in-pr-body: Where does ship record its gauntlet results while it runs? (2026-10-02, follows D-written-as-the-run-goes)
+  ✓ in `pr.md`, opened before the first check by a run that will reach phase 3 - its Quality table and Open calls already are that record, so the file fills check by check instead of being composed in phase 3; a part not reached yet is absent, never a placeholder ⚠ a gauntlet-only, review-only, or no-PR run still keeps its tallies only in the conversation
+  ✗ `pr.md` in every mode - a partial run would overwrite the record of the body an open PR was proposed with
+  ✗ a new gauntlet log file - a second artifact and a second reader for what the PR body already holds; reconsider if partial runs need a durable record
+D-notes-fixup-entry: How do the notes record code changed outside a change set's own loop? (2026-10-02, follows D-written-as-the-run-goes)
+  ✓ a `## Fixup:` entry written with the fix, naming what found it, and `check-tests.py` ends a change set's entry at any other `##` heading - builds already wrote such entries unasked ("Orchestrator fixup after wave 9" in the contexia github-sync-teams notes, read 2026-10-02), and a fixup's `Tests added:` line counted toward the scenarios of the change set above it (reproduced by a unit test, 2026-10-02); fixup tests are still checked to exist
+  ✗ a Deviations line on the nearest change set - that change set is committed and its entry says what its agent did
+
 ## Bootstrap plugin
 
 D-bootstrap-plugin: Where does the skill that writes a repository's AGENTS.md live? (2026-09-25, user request)

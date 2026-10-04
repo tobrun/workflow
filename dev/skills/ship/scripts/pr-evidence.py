@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Turn e2e evidence into a PR-ready Evidence section, publish its images, and gate the body.
 
-    pr-evidence.py extract <e2e-report.html> --out <dir> [--branch pr-evidence]
+    pr-evidence.py extract <e2e-report.html> --out <dir> [--scenario ID ...] [--branch pr-evidence]
                            [--url-template URL]
     pr-evidence.py publish <dir> [--branch pr-evidence] [--remote origin]
     pr-evidence.py check <pr-body.md> [--kind frontend|non-frontend]
@@ -181,6 +181,13 @@ def extract(args: argparse.Namespace) -> None:
     plan = data.get("planName") or slug(data.get("title", ""), "plan")
     scenarios = data.get("scenarios", []) or []
     summary = data.get("summary") or {}
+    if args.scenario:
+        known = {str(s.get("id")): s for s in scenarios}
+        missing = [wanted for wanted in args.scenario if wanted not in known]
+        if missing:
+            fail(f"no scenario with id {', '.join(missing)}; the report has: {', '.join(known) or 'none'}")
+        scenarios = [known[wanted] for wanted in args.scenario]
+        summary = {"passed": sum(1 for s in scenarios if s.get("status") == "pass"), "total": len(scenarios)}
     out = Path(args.out)
     template = url_template(args) if kind == "frontend" else None
     if kind == "frontend" and template is None:
@@ -290,6 +297,8 @@ def main() -> None:
     ex = sub.add_parser("extract")
     ex.add_argument("report")
     ex.add_argument("--out", required=True)
+    ex.add_argument("--scenario", action="append", default=[],
+                    help="keep only this scenario id, in this order; repeat per scenario (default: all)")
     ex.add_argument("--branch", default="pr-evidence")
     ex.add_argument("--remote", default="origin")
     ex.add_argument("--url-template")

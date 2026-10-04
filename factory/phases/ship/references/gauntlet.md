@@ -12,7 +12,7 @@ For each tool (the batched five count as one), in order:
 
 1. Run it; collect the violations.
 2. Dispatch fixes: one fresh-context agent per independent area, launched in a single message, each given only the violation list for its area, the relevant file paths, and the fix vocabulary below.
-3. Re-run the tool until clean, then run the spec's Validation block (or the repo's test suite) to prove the fixes broke nothing; skip that run when the tool dispatched no fixes.
+3. Re-run the tool until clean, then run the spec's Validation block (or the repo's test suite) at the fixes' impact - `python3 {ship-skill-root}/../../scripts/impact-scope.py --base HEAD`, read per [../../../references/ci-parity.md](../../../references/ci-parity.md) - to prove the fixes broke nothing; skip that run when the tool dispatched no fixes.
 4. A violation that resists two fix rounds on the same root cause, or that the change seems to legitimately require, is recorded as a decision and left in place: it is either a real defect, a threshold worth changing, or a rule the spec should have amended, and the choice made is noted in `auto_decided` with the reason.
 
 ## Exit: refresh the e2e evidence
@@ -25,15 +25,18 @@ Skip it when no tool dispatched fixes (the report is still fresh), when there is
 
 ## Exit: prove CI parity
 
-After the e2e refresh decision, run the required pull-request commands using
+After the e2e refresh decision, run the required pull-request commands at the
+branch's impact using
 [../../../references/ci-parity.md](../../../references/ci-parity.md). This gate
 always runs in the default two-phase flow and gauntlet-only mode, even when no
-fix agent changed code.
+fix agent changed code; a run that opens no PR has no CI to defer to and runs
+the full set.
 
 A red required check is a violation. "Pre-existing" requires merge-base proof,
 recorded as a decision with that proof; it is never a note that permits a
 PR-ready verdict. When a fix changes behavior or test orchestration, re-run
-the affected command and continue until the full CI-parity set is green.
+the affected command and continue until every command the impact owes is
+green; the PR's CI proves the rest.
 
 ## Fix vocabulary
 

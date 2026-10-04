@@ -17,10 +17,10 @@ CONCERNS and PASS skip straight to phase 3; concerns stay in the report and the 
    Each agent gets only its blockers, the relevant file paths, the brief phase 2 built (spec excerpts, contracts, decision rationale), and the fix vocabulary below.
    Agents commit their fix on the work branch in `commit`'s message shape, naming the review index and finding in the Why.
 2. **Re-harden.** Run phase 1's five read-only analyzers over the files the round touched, plus the flakiness check over the tests it added; dispatch fixes and loop per [gauntlet.md](gauntlet.md) as usual.
-   Then run the spec's Validation block (or the repo's test suite) and re-run the `[e2e]` scenarios when the round touched anything an e2e scenario exercises, overwriting the e2e report.
+   Then run the spec's Validation block (or the repo's test suite) at the round's impact per [../../../references/ci-parity.md](../../../references/ci-parity.md) and re-run the `[e2e]` scenarios when the round touched anything an e2e scenario exercises, overwriting the e2e report.
 3. **Re-review.** Run phase 2 again as a re-review: `review_{N+1}.md`, same lenses, previous findings carried as verification items so the panel states whether each blocker is fixed or still open.
    The summary line names the round: `Remediation round {r} of 2`.
-4. **Decide.** PASS or CONCERNS ends the loop and phase 3 opens a ready PR.
+4. **Decide.** PASS or CONCERNS ends the loop and phase 3 opens a PR ready for review once its required checks are green.
    BLOCK after round 1 starts round 2.
    BLOCK after round 2 ends the loop: every surviving blocker is a real blocker.
 

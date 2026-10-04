@@ -6,7 +6,7 @@ Eval definitions for the `dev` plugin's skills: realistic prompts and objective 
 
 - `{skill}.json` - one file per skill: the eval prompt(s), the fixture each expects, and the assertions to grade the output against. Covers all 7 skills: `scope`, `scope-review`, `commit`, `build`, `ship`, `to-pitch`, `to-quiz`.
 - `results.md` - the record of the most recent full run: scores, methodology, and findings.
-- `tests/` - unit tests for the deterministic scripts the skills loop against (`lint-spec.py`, `change-set-brief.py`, `check-tests.py`), run by `scripts/validate.sh` as check D01.
+- `tests/` - unit tests for the deterministic scripts the skills loop against (`lint-spec.py`, `change-set-brief.py`, `check-tests.py`, `impact-scope.py`), run by `scripts/validate.sh` as check D01.
 
 `build` runs in `"functional"` mode (a real fixture, a real subagent run, assertions checked against the actual output).
 `scope`, `scope-review`, `commit`, `ship`, `to-pitch`, and `to-quiz` run in `"comprehension"` mode instead - each depends on either an interactive question loop, a live codebase, or prior artifacts (a finished spec, implementation notes, an e2e report) that are too expensive to stage on every iteration, so these check policy comprehension of the skill text directly.

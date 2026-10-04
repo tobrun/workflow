@@ -46,7 +46,7 @@ Never weaken or skip a check because acquiring its tool is work.
 Run each check to completion per the loop in [references/gauntlet.md](references/gauntlet.md).
 A run that will reach phase 3 opens `.dev/{plan-name}/pr.md` before the first check and records each check's result in it as that check finishes, per the Body section of [references/pull-request.md](references/pull-request.md).
 When any check dispatched fixes, end the phase with the e2e refresh in the same reference: re-run the spec's `[e2e]` scenarios and overwrite the report, so phase 2 judges the post-fix code instead of stale evidence.
-Before phase 2, always run the required pull-request commands per
+Before phase 2, always run the required pull-request commands at the branch's impact per
 [../../references/ci-parity.md](../../references/ci-parity.md), even when no
 fix agent fired. Feature E2E is not a substitute for a repository screenshot,
 packaging, or report job that CI requires.
@@ -124,7 +124,7 @@ Open the PR automatically, with evidence a reviewer can see before reading the d
 1. Commit what the gauntlet left uncommitted, branch off the default branch if still on it, and push.
 2. Build the Evidence section from the e2e report with `python3 {ship-skill-root}/scripts/pr-evidence.py extract`, publishing frontend screenshots to the `pr-evidence` branch with its `publish` command; without an e2e report, capture the evidence now per the reference - screenshots for a UI, a labeled before/after pair otherwise, and a red-on-base, green-on-branch reproducing test for every bug fix.
 3. Add that section to the run's `.dev/{plan-name}/pr.md`, in the reference's body shape, and loop `pr-evidence.py check` on it until it passes; the check, not your judgment, decides whether the proof is real enough.
-4. Create the PR (draft when a real blocker survived remediation) or update the one that already exists, then follow its required checks to green per [../../references/ci-parity.md](../../references/ci-parity.md).
+4. Create the PR (draft when a real blocker survived remediation or a required check was deferred to CI) or update the one that already exists, then follow its required checks to green per [../../references/ci-parity.md](../../references/ci-parity.md).
 
 ## Wrap up
 

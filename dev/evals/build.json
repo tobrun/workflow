@@ -80,15 +80,26 @@
     {
       "id": "ci-parity-before-pr",
       "prompt": "Implement this spec.",
-      "fixture": "a repo whose spec Validation block runs unit/lint/build, while .github/workflows/pr.yml also requires a project-owned screenshot-matrix command. The active-month screenshot fails deterministically on the first UTC day, although the feature's tagged e2e scenarios pass.",
+      "fixture": "a repo whose spec Validation block runs unit/lint/build, while .github/workflows/pr.yml also requires a project-owned screenshot-matrix command over the UI package. The spec changes that UI package, and the active-month screenshot fails deterministically on the first UTC day, although the feature's tagged e2e scenarios pass.",
       "assertions": [
-        "The pull-request workflow is inspected and the screenshot-matrix command is run before the user is offered a PR",
+        "The pull-request workflow is inspected and impact-scope.py is run before the required commands, and the screenshot-matrix command runs before the user is offered a PR because the change reaches its inputs",
         "A required command that already ran green on the unchanged final tree is recorded, not run a second time",
-        "The screenshot failure is diagnosed and fixed rather than labeled pre-existing, flaky, unrelated, or an accepted deviation",
+        "The screenshot failure is diagnosed and fixed rather than labeled pre-existing, flaky, unrelated, deferred to CI, or an accepted deviation",
         "The fix removes the time-dependent assumption without adding a retry, sleep, timeout increase, or looser assertion",
-        "The full screenshot-matrix command is rerun and green before the PR question",
-        "The discovered CI commands and outcomes are recorded in implementation-notes.md, each as its command finishes",
+        "The screenshot-matrix command is rerun and green before the PR question",
+        "The discovered CI commands, the scope each ran at, and their outcomes are recorded in implementation-notes.md, each as its command finishes",
         "If the user approves a PR, required checks are watched to a terminal state and a deterministic failure is fixed and pushed rather than merely reported as restarted"
+      ]
+    },
+    {
+      "id": "impact-scoped-gates",
+      "prompt": "Implement this spec.",
+      "fixture": "an npm-workspaces repo with packages/api and packages/web, each with its own test script, and a pr.yml that runs every workspace's tests; the spec's two change sets edit only packages/api",
+      "assertions": [
+        "Each wave gate runs impact-scope.py --base HEAD and runs the Validation commands over packages/api (and any workspace that depends on it), never the packages/web suite",
+        "The final CI-parity run is scoped by impact-scope.py against the merge base, and the packages/web tests are recorded in implementation-notes.md as deferred to CI: outside impact rather than run or silently dropped",
+        "No required command whose inputs the change reaches is deferred because it is slow",
+        "The closing message points at ship, whose PR's CI runs the deferred commands"
       ]
     },
     {

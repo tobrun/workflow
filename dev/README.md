@@ -32,7 +32,8 @@ Executes a spec's change sets at the layer each `tests:` scenario is tagged with
 Enforces outcomes rather than rituals: every scenario gets a real test at its tagged layer, written with the code and run to green, with no red step.
 Failing-test-first is reserved for bug fixes, where one red run is the proof the issue was actually reproduced.
 Runs independent change sets in parallel as waves of subagents batched by disjoint file lists in spec order, committing each change set and appending to a running `implementation-notes.md` that logs any deviations forced by an edge case.
-Each subagent starts from a brief that `scripts/change-set-brief.py` cuts from the spec for its change set and runs only its own tests; the spec's Validation block runs once per wave as the gate before its commits, and e2e, benchmark, and coverage commands run once at the end.
+Each subagent starts from a brief that `scripts/change-set-brief.py` cuts from the spec for its change set and runs only its own tests; the spec's Validation block runs once per wave as the gate before its commits, scoped by `scripts/impact-scope.py` to the packages the wave reaches, and e2e, benchmark, and coverage commands run once at the end.
+The repository's required pull-request commands run locally only at the branch's impact; what lies outside it is deferred to the pull request's CI, unless a lockfile, root config, toolchain pin, or CI workflow changed, which makes every package impacted.
 Once every change set is committed, drives the real app against a mocked environment, loops until every e2e scenario passes, then renders the e2e report: screenshots per scenario for frontend systems, Test Scenario and Data Model State tables for everything else.
 Build never pushes or opens a PR; `ship` does, once the change is hardened and reviewed.
 
@@ -50,6 +51,7 @@ Claude Code, Codex, and opencode use their native parallel subagent facilities. 
 Renders `review_N.html` alongside the `review_N.md` file for reviewer handoff.
 Phase 3 commits what the gauntlet fixed, pushes, and opens the pull request automatically - a draft when the review verdict is BLOCK - with an Evidence section that shows the change working: screenshots from the e2e run for a system with a frontend, published to a `pr-evidence` branch so they render inline, or labeled before/after state otherwise, and for every bug fix the reproducing test shown red on the merge base and green on the branch.
 A deterministic check (`pr-evidence.py check`) gates the PR body, so a PR cannot open on a placeholder or a data URI, and the phase then follows required checks to green.
+Local gates in every phase run at the change's impact, so the full merge gate is the PR's own CI: a PR carrying a check deferred to CI opens as a draft and is marked ready once its required checks pass, and a run that opens no PR runs the full set locally.
 
 ### commit
 

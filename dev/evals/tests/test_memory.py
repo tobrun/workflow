@@ -60,6 +60,7 @@ class Sandbox:
     """A scratch repo with a transcript where skill-metrics.py will find it."""
 
     def __init__(self, tmp: Path, rows: list[dict] = TRANSCRIPT):
+        tmp = tmp.resolve()  # git reports the real path; macOS temp dirs sit behind a symlink
         self.repo = tmp / f"repo-{os.getpid()}-{id(self)}"
         self.repo.mkdir()
         subprocess.run(["git", "init", "-q"], cwd=self.repo, check=True)

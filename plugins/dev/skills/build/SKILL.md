@@ -44,6 +44,8 @@ Every build run first prints the measured run metrics, pasting the table verbati
 python3 {build-skill-root}/../../scripts/skill-metrics.py end build --count change_sets=N --count scenarios=N --count e2e_passed=N --count e2e_failed=N
 ```
 
+Add any `--friction` lines per [../../references/run-journal.md](../../references/run-journal.md).
+
 Then it ends with the same two lines, in this order - a green run, a blocked gate, and a run with open deviations all get both:
 
 1. `Next step: run ship over this work, pointed at .dev/{plan-name}/implementation-notes.md and the {plan-name}-e2e-report.html.` Recommend it; never launch it yourself.

@@ -135,7 +135,7 @@ Summarize whichever phases ran in one chat message, opening with the measured ru
 python3 {ship-skill-root}/../../scripts/skill-metrics.py end ship --count violations_found=N --count violations_fixed=N --count violations_surviving=N --count findings_verified=N --count findings_refuted=N --count remediation_rounds=N --count blockers_cleared=N --count evidence_items=N
 ```
 
-Pass only counters you tallied from tool output and the aggregate script; the table it prints (time, tokens, agents, tool calls, git delta, trend against earlier runs) is pasted verbatim, never retyped.
+Pass only counters you tallied from tool output and the aggregate script, plus any `--friction` lines per [../../references/run-journal.md](../../references/run-journal.md); the table it prints (time, tokens, agents, tool calls, git delta, trend against earlier runs) is pasted verbatim, never retyped.
 For the gauntlet, per tool: violations found, fixed, and surviving (with the human call each is waiting on); name the tools acquired or built this run and where they live; state the scope honestly - "hardened the diff" is not "hardened the repo".
 For the review: the final verdict and top findings, linking every `review_N.md` this run wrote, the local HTML report, and the published URL when one was requested and created; per remediation round, which blockers cleared and which survived.
 For the pull request: its URL, draft or ready, what the Evidence section shows and where it came from, and the state of its required checks.

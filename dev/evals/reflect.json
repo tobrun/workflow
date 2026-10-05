@@ -1,0 +1,25 @@
+{
+  "skill": "reflect",
+  "mode": "comprehension",
+  "note": "A full run depends on a populated journal of real runs across repositories, which is expensive to stage per iteration; the store's mechanics are covered functionally by tests/test_memory.py, so this eval checks the judgment the scripts cannot enforce: the skill never edits a skill, never hand-edits the store, and keeps narrated friction apart from measured signals.",
+  "evals": [
+    {
+      "id": "reflect-never-adapts-itself",
+      "prompt": "Answer briefly, from the skill text and its references only: (1) A thread has five claims across three repositories and the fix is an obvious one-line change to build's SKILL.md. Does reflect make that change? What does it produce instead, and what is the next step it recommends? (2) `claims.py add` rejects a candidate because its quote is not found at the cited line. Name the two acceptable responses and one that is forbidden. (3) The user says claim c-0007 misread an interview answer. What happens to c-0007, can the same evidence be re-added later, and why?",
+      "assertions": [
+        "Answer 1: no - reflect never edits a skill, reference, or eval; it writes a brief at /tmp/{project-slug}/reflect/brief-{thread}.md with the evidence, the implicated skill lines, a direction preferring a deterministic check over more prose, and an eval case built from the real run, then recommends /dev:scope in the workflow repository followed by build, and /dev:reflect resolve after the fix merges",
+        "Answer 2: fix the candidate's quote, source, or shape against the transcript, or drop the candidate; forbidden: bending the quote toward a claim the evidence does not make, editing the evidence, or writing claims.jsonl by hand",
+        "Answer 3: it is retracted with `claims.py retract c-0007 --reason` carrying the user's words; it stays in claims.jsonl with status retracted and the derived files are rebuilt without it; the same evidence is rejected on re-add so a later consolidation cannot quietly bring it back"
+      ]
+    },
+    {
+      "id": "reflect-evidence-weight",
+      "prompt": "Answer briefly, from the skill text and its references only: (1) Which journal fields are measured and which are narrated, and how does a claim resting only on a narrated line differ? (2) Name three kinds of signal that are not claims. (3) A thread resolved by commit abc1234 gets a new claim from a run a week later. What is its status, and how does the skill rank it against an open thread with the same reach?",
+      "assertions": [
+        "Answer 1: signals (interrupt, denied, tool_error, user_turn), checkers, counts, and signal_counts are measured from the transcript; friction lines are narrated by the skill; a claim resting on a narrated line alone takes salience 1 unless a measured signal in the same run agrees",
+        "Answer 2: any three of - a user_turn answering a question the skill was designed to ask (such as a scope interview answer), a checker that failed and passed on the next run, a denied call reflecting the user's standing policy, anything about the consuming repository's code or people, a guess about why without a quote",
+        "Answer 3: reopened; a reopened thread outranks an open one with the same reach"
+      ]
+    }
+  ]
+}

@@ -580,11 +580,25 @@ check_pi() {
     .name == "@tobrun/dev-workflow" and
     (.version | test("^[0-9]+\\.[0-9]+\\.[0-9]+([+-][0-9A-Za-z.-]+)?$")) and
     (.keywords | index("pi-package")) and
-    .files == ["dev/skills", "dev/references", "README.md"] and
+    .files == ["dev/skills", "dev/references", "dev/scripts", "README.md"] and
     .pi.skills == ["./dev/skills"]
   ' "$package" >/dev/null 2>&1; then
     fail "P01" "$package" "Invalid Pi package manifest"
   fi
+
+  # Skills reach the plugin's shared scripts as {skill-root}/../../scripts/X;
+  # each one must exist and sit under a path the package ships.
+  local script
+  while IFS= read -r script; do
+    if [ ! -f "dev/$script" ]; then
+      fail "P01" "dev/$script" "Referenced by a dev skill but missing"
+    elif ! jq -e --arg path "dev/$script" \
+      'any(.files[]; . as $f | $path | startswith($f + "/"))' \
+      "$package" >/dev/null 2>&1; then
+      fail "P01" "$package" "dev/$script is referenced by a dev skill but not shipped in files"
+    fi
+  done < <(grep -rhoE '\.\./\.\./scripts/[A-Za-z0-9_.-]+' dev/skills dev/references \
+    | sed 's#^\.\./\.\./##' | sort -u)
 
   package_version=$(jq -r '.version // empty' "$package" 2>/dev/null || true)
   plugin_version=$(jq -r '.version // empty' \

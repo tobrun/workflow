@@ -14,6 +14,7 @@
   "files": [
     "dev/skills",
     "dev/references",
+    "dev/scripts",
     "README.md"
   ],
   "pi": {

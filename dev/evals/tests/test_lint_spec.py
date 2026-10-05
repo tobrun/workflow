@@ -74,6 +74,33 @@ class LintSpecEchoTest(unittest.TestCase):
     def test_bare_check_mark_on_a_chosen_decision_passes(self) -> None:
         self.assertEqual(self.echo_errors(self.lint(CHOSEN, "✓")), "")
 
+    def test_open_echo_on_a_chosen_decision_expects_the_chosen_text(self) -> None:
+        result = self.lint(CHOSEN, "open")
+        self.assertIn("does not match its resolution", self.echo_errors(result))
+        self.assertIn("s3 bucket", self.echo_errors(result))
+
+    def test_change_plan_linking_an_open_decision_is_flagged(self) -> None:
+        path = Path(self.tmp.name) / "spec.md"
+        path.write_text(
+            spec(OPEN, "open") + "\n## Change plan\n\n1. Store files\n   a. `src/store.py` - write files - decisions: D-storage (open)\n",
+            encoding="utf-8",
+        )
+        result = subprocess.run([sys.executable, str(SCRIPT), str(path)], capture_output=True, text=True, check=False)
+        self.assertIn("the change plan links D-storage, which is still open or flagged", result.stdout)
+
+    def test_scope_echo_of_an_open_decision_is_not_a_change_plan_link(self) -> None:
+        self.assertNotIn("change plan links", self.lint(OPEN, "open").stdout)
+
+    def test_change_plan_linking_an_open_unflagged_decision_is_flagged(self) -> None:
+        path = Path(self.tmp.name) / "spec.md"
+        open_only = OPEN.replace("  ⚑ ask: expected retention?\n", "")
+        path.write_text(
+            spec(open_only, "open") + "\n## Change plan\n\n1. Store files\n   a. `src/store.py` - write files - decisions: D-storage (open)\n",
+            encoding="utf-8",
+        )
+        result = subprocess.run([sys.executable, str(SCRIPT), str(path)], capture_output=True, text=True, check=False)
+        self.assertIn("the change plan links D-storage", result.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()

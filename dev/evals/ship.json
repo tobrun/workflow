@@ -46,6 +46,15 @@
         "Answer 5: no - a part the run has not reached is absent from the file, never a placeholder or a guess; Evidence is added in phase 3 and the review line when a verdict is set",
         "Answer 6: under Open calls in pr.md, when the round ends - not composed from memory in phase 3"
       ]
+    },
+    {
+      "id": "ship-pr-evidence-scoped",
+      "prompt": "Answer briefly, from the skill text and the references it links only: (1) The e2e report holds twelve scenarios and this branch's diff changes only the coupon form. Which scenarios go into the PR's Evidence, and how does the extract command express that? (2) A picked scenario failed. Is it dropped from the Evidence? (3) The report has no scenario named in --scenario. What happens?",
+      "assertions": [
+        "Answer 1: only the scenarios that exercise what the diff changed (the coupon form's), chosen by reading the branch diff; setup, login, regression, and unrelated scenarios are left out, and the extract gets one --scenario {id} per picked scenario",
+        "Answer 2: no - a picked scenario that failed stays in, marked failed; evidence is never fabricated or tidied",
+        "Answer 3: the extract fails naming the unknown id and the ids the report does have"
+      ]
     }
   ]
 }

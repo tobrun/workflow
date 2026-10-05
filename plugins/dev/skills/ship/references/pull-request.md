@@ -21,11 +21,15 @@ Never force-push, never rebase, and never touch a branch other than the work bra
 The Evidence section is the PR's proof of the feature or fix, captured from a real run, never composed from memory.
 `scripts/pr-evidence.py check` is the gate: loop on its output until it passes before creating or updating the PR.
 
-- **An e2e report exists** (`/tmp/{project-slug}/reports/{plan-name}-e2e-report.html`, refreshed by phase 1 when fixes landed): run `pr-evidence.py extract` on it.
+- **Show what this PR changed, nothing else.**
+  Read the branch diff and pick the scenarios (or, with no e2e report, the screens and states) that exercise the behavior it adds or alters: the spec's `[e2e]` scenarios for this plan's change sets, a bug fix's reproduction.
+  Leave out regression, setup, login, and unrelated scenarios and any step that looks the same before and after the change; a reviewer should see the diff's effect in a few images, not a tour of the app.
+  Keep a failing scenario in only when it is one of the picked ones.
+- **An e2e report exists** (`/tmp/{project-slug}/reports/{plan-name}-e2e-report.html`, refreshed by phase 1 when fixes landed): run `pr-evidence.py extract` on it with one `--scenario {id}` per picked scenario.
   Frontend reports yield one screenshot per meaningful step; `pr-evidence.py publish` pushes the PNGs to the `pr-evidence` branch so they render inline, because data URIs do not render on a PR.
   Non-frontend reports yield labeled Before/After state per step, plus captured output.
 - **No e2e report** (no spec, no e2e suite): capture the evidence in this phase, the same way build would.
-  A system with a UI: launch it in the mocked environment via the `run` skill or the repo's documented command, drive the changed behavior with browser automation, save one screenshot per meaningful step under the evidence directory, then publish them.
+  A system with a UI: launch it in the mocked environment via the `run` skill or the repo's documented command, drive the changed behavior with browser automation, save one screenshot per step that shows the change under the evidence directory, then publish them.
   Anything else: the observable effect before and after, as a labeled pair of fenced blocks - a CLI transcript, an API response, a table row, a rendered file.
 - **A bug fix** always adds the reproducing test as a labeled pair: `**On merge base**` shows it failing in an isolated worktree at `git merge-base HEAD origin/{default}`, `**On this branch**` shows the same test passing.
   Red on base is what proves the bug was real; green on the branch is what proves it is gone.

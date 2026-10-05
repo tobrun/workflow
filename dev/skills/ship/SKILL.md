@@ -123,7 +123,7 @@ Skipped in review-only mode.
 Open the PR automatically, with evidence a reviewer can see before reading the diff, per [references/pull-request.md](references/pull-request.md).
 
 1. Commit what the gauntlet left uncommitted, branch off the default branch if still on it, and push.
-2. Build the Evidence section from the e2e report with `python3 {ship-skill-root}/scripts/pr-evidence.py extract`, publishing frontend screenshots to the `pr-evidence` branch with its `publish` command; without an e2e report, capture the evidence now per the reference - screenshots for a UI, a labeled before/after pair otherwise, and a red-on-base, green-on-branch reproducing test for every bug fix.
+2. Build the Evidence section from the e2e report with `python3 {ship-skill-root}/scripts/pr-evidence.py extract`, passing `--scenario` for only the scenarios that show what this PR's diff changed, publishing frontend screenshots to the `pr-evidence` branch with its `publish` command; without an e2e report, capture the evidence now per the reference - screenshots for a UI, a labeled before/after pair otherwise, and a red-on-base, green-on-branch reproducing test for every bug fix.
 3. Add that section to the run's `.dev/{plan-name}/pr.md`, in the reference's body shape, and loop `pr-evidence.py check` on it until it passes; the check, not your judgment, decides whether the proof is real enough.
 4. Create the PR (draft when a real blocker survived remediation or a required check was deferred to CI) or update the one that already exists, then follow its required checks to green per [../../references/ci-parity.md](../../references/ci-parity.md).
 

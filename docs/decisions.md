@@ -344,6 +344,10 @@ D-ship-record-in-pr-body: Where does ship record its gauntlet results while it r
 D-notes-fixup-entry: How do the notes record code changed outside a change set's own loop? (2026-10-02, follows D-written-as-the-run-goes)
   ✓ a `## Fixup:` entry written with the fix, naming what found it, and `check-tests.py` ends a change set's entry at any other `##` heading - builds already wrote such entries unasked ("Orchestrator fixup after wave 9" in the contexia github-sync-teams notes, read 2026-10-02), and a fixup's `Tests added:` line counted toward the scenarios of the change set above it (reproduced by a unit test, 2026-10-02); fixup tests are still checked to exist
   ✗ a Deviations line on the nearest change set - that change set is committed and its entry says what its agent did
+D-pr-evidence-scoped: Which scenarios does a PR's Evidence show? (2026-10-04, user request)
+  ✓ only the ones that exercise what the branch diff changed, picked in phase 3 and passed to `pr-evidence.py extract --scenario`; an unknown id fails the extract naming the ones the report has - the whole e2e report is a record of the run, and a reviewer wants the diff's effect in a few images ⚠ the pick is a judgment against the diff, and `check` only proves the section holds real images, not that they are the right ones
+  ✗ every scenario in the report - setup, login, and regression screenshots bury the change
+  ✗ a script that maps changed files to scenarios - the spec's scenarios do not name files, so the mapping would be a guess dressed as a check
 
 ## Bootstrap plugin
 

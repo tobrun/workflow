@@ -120,17 +120,20 @@ def check_echoes(
                 problem(number, f"{slug} is echoed but never argued in the research section")
                 continue
             resolution = echo.strip().lower()
+            hint = f"({CHOSEN} <text copied from: {decision.get('choice', '')}>)"
             if decision.get("not_doing"):
                 expected = resolution.startswith(NOT_DOING)
+                hint = f"({NOT_DOING} not doing)"
             elif decision["open"]:
                 expected = resolution == "open"
+                hint = "(open)"
             elif resolution.startswith(CHOSEN):
                 shorthand = resolution[1:].strip()
                 expected = not shorthand or shorthand in decision.get("choice", "")
             else:
                 expected = False
             if not expected:
-                problem(number, f"{slug} echo '({echo})' does not match its resolution")
+                problem(number, f"{slug} echo '({echo})' does not match its resolution; expected {hint}")
             if in_change_plan and (decision["open"] or decision["flagged"]):
                 problem(number, f"the change plan links {slug}, which is still open or flagged")
 

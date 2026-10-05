@@ -83,7 +83,7 @@ D-response-caching: Should responses be cached?
   ⊘ not doing - no measured latency problem ? verify: p95 from prod metrics; reopen if p95 exceeds 500ms
 ```
 
-When a later section references a decision, echo the resolution in parentheses - `D-file-storage (✓ S3)`, `(open)`, `(⊘ not doing)` - so the reader only jumps back for the why.
+When a later section references a decision, echo the resolution in parentheses - `D-file-storage (✓ S3)`, `(open)`, `(⊘ not doing)` - so the reader only jumps back for the why. The lint requires the text after `✓` to be copied from the chosen line before its ` - `, so lead each chosen line with the short label you will echo.
 
 ## 4. Scope section
 

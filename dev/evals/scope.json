@@ -86,6 +86,14 @@
         "Answer 4: it is handed only the original request and the relevant code, and is told to stay out of .dev/, where the catalog is being written",
         "Answer 5: a spec.md that lint-spec.py does not pass, holding everything established before the session died; it is a draft that scope picks up where it stopped, and no other skill builds on it"
       ]
+    },
+    {
+      "id": "scope-echo-matches-chosen",
+      "prompt": "Answer briefly, from the skill text and the references it links only. A decision's chosen line reads `✓ S3 bucket in us-east-1 - durable across redeploys`. (1) Write the echo a later section should use for it. (2) You were about to write `(✓ cloud storage)` instead. Will lint-spec.py accept that, and what does the skill tell you to do when writing the chosen line so the echo passes the first time?",
+      "assertions": [
+        "Answer 1: `D-slug (✓ S3 bucket)` or a shorter prefix such as `(✓ S3)` - text taken from the chosen line before its ` - `, not from the because clause",
+        "Answer 2: no, lint-spec.py rejects it because the echo is not found in the chosen line's text before ` - `; lead the chosen line with the short label that will be echoed, and copy the echo from it"
+      ]
     }
   ]
 }

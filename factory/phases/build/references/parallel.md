@@ -69,12 +69,13 @@ If two change sets in a wave edited the same file anyway, reconcile it yourself 
 
 ## The wave gate
 
-The spec's Validation block is the gate between a wave and its commits, and the only full run a wave gets - a wave of one you implemented yourself included.
+The spec's Validation block is the gate between a wave and its commits, and the only Validation run a wave gets - a wave of one you implemented yourself included.
+Each command runs at the wave's impact, not over the whole repo: `python3 {build-skill-root}/../../scripts/impact-scope.py --base HEAD` scopes it to the wave's uncommitted changes, read per "Scope every local run to the impact" in [../../../references/ci-parity.md](../../../references/ci-parity.md).
 Each of its commands runs once per tree: a green result stands until a file changes, so nothing is re-run "to be sure" before committing, and after a fix the failed command runs first and the rest only once it is green.
 Start commands that share no state together (lint, typecheck, and the unit suite), and write the wave's notes entries while they run.
 
 A command the block marks `(end of build)` is left out of the wave gate, and so are three kinds even when a spec lists one unmarked, because each costs minutes and tells a wave nothing it needs to commit: the e2e suite (the e2e pass runs it), benchmarks, and any analysis that re-runs the suite to measure it - coverage, complexity, mutation.
-Each of those runs once, on the final tree, with the CI-parity gate.
+Each of those runs once, on the final tree, with the CI-parity gate and at its scope.
 
 ## When not to parallelize
 

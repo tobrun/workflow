@@ -381,3 +381,21 @@ D-bootstrap-pi: Does bootstrap ship to Pi? (2026-09-25, user request)
   ⊘ not doing - P01 and D-pi keep the Pi package dev-only; reopen when Pi gains plugin namespaces
 D-bootstrap-dev-reads-agents-md: Do scope and build read AGENTS.md's Commands section? (2026-09-25, user request)
   ⊘ not doing yet - scope's Validation block and build's command discovery still probe manifests every run; reopen once bootstrap has run on real repositories and the Commands section has proven reliable ? verify: a functional run in `bootstrap/evals/results.md`
+
+## Workflow memory
+
+D-memory-store: Where does the record of past runs live? (2026-10-05, user request, modeled on the Muse memory system)
+  ✓ `~/.dev-workflow/memory/` (or `$DEV_MEMORY_DIR`), one store per machine shared by every consuming repository, never committed - a problem only shows as recurring when runs from several repositories meet, and the evidence quotes transcripts of client code (user accepted the recommendation, 2026-10-05) ⚠ runs on another machine never meet these; a person who wants that points `DEV_MEMORY_DIR` at shared storage
+  ✗ per repository under `.dev/` - simpler, but never sees a pattern across repositories, and `.dev/` is not committed anyway
+  ✗ a database with embeddings, as Muse indexes `memory.entries` - the volume is a few runs a day; `grep` over JSONL answers every query the skill asks
+D-memory-capture: How does a run enter the store? (2026-10-05, user request)
+  ✓ automatically, by `skill-metrics.py end`, which every timed skill already calls: the friction signals are measured from the transcript (interrupts, denied and failed tool calls, the user's own turns, checker runs and failures), each with its line, and the skill adds at most three narrated `--friction` lines, kept apart from the measured ones; opt out per repository in `.dev/config.json` or per machine with `DEV_MEMORY_DIR=off` (user accepted, 2026-10-05) ⚠ `user_turn` is noisy in interactive skills, where most turns are answers the skill asked for; extraction sorts that out, the capture does not
+  ✗ opt-in per repository - the friction worth finding is in the runs nobody thought to record
+  ✗ the skill narrates its own retrospective - the model's recollection of a long run is exactly what `skill-metrics.py` exists to replace, per P-deterministic-guards-over-prose
+D-memory-claims: What may the store say about a skill? (2026-10-05, user request)
+  ✓ only cited claims: `claims.py add` accepts a batch only when every quote is found verbatim at the transcript line or journal entry it cites, rejects credential shapes, and rebuilds the per-skill pages and threads from the records so every derived line cites a claim id; a retracted claim stays on record with its reason so the same evidence cannot return, and a resolved thread reopens on a later claim - Muse's source-cited derived memory and its forgetting workflow, enforced by a checker rather than asked for per P-deterministic-guards-over-prose ⚠ a verbatim quote proves the words occurred, not that the claim reads them rightly; the user's retraction is the guard for that
+  ✗ free-text lessons appended to a file - unverifiable, and a wrong lesson has no way out
+D-memory-no-self-edit: May the loop change a skill on its own? (2026-10-05, user request)
+  ✓ never - `reflect` ends at a brief with an eval case from the real run, and the fix goes through `scope` and `build` in this repository like any change; Muse keeps its dream prose out of the prompt (`prompt_tainted: false`), and the factory dream loop that deployed its own winning revisions was removed (D-remove-factory) (user accepted, 2026-10-05) ⚠ the loop is only as frequent as a person runs `/dev:reflect`
+  ✗ open a pull request with the proposed skill edit - a model-authored revision reviewed only as a diff, without the scope step that argues it against alternatives
+  ✗ a nightly scheduled consolidation - a schedule is per host, and consolidation without someone to pick a thread only grows the store

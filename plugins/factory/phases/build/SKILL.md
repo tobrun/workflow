@@ -20,7 +20,7 @@ Read [references/layers.md](references/layers.md), [references/tests.md](referen
 4. Move straight to the next wave. Never stop after one change set or wave to ask about review.
 5. When every change set is committed, loop `python3 {build-skill-root}/scripts/check-tests.py .dev/{plan-name}` until it exits clean: it proves every specced scenario has a test that really exists, rather than one that was reported.
 6. Then run the full e2e pass per "The e2e layer" below over the whole spec, and loop on failures until it is green.
-7. Run the repository's required pull-request commands per [../../references/ci-parity.md](../../references/ci-parity.md), plus every Validation command the wave gates left for the end, starting them in the background as soon as the e2e loop is green and rendering the e2e report while they run - the two share nothing. A known-red CI scenario is not an acceptable deviation.
+7. Run the repository's required pull-request commands, plus every Validation command the wave gates left for the end, at the branch's impact per [../../references/ci-parity.md](../../references/ci-parity.md) - what lies outside it is deferred to the PR's CI, which `ship` follows to green - starting them in the background as soon as the e2e loop is green and rendering the e2e report while they run - the two share nothing. A known-red CI scenario is not an acceptable deviation.
 8. After the e2e report and CI-parity gate, close per "Closing message". Build never pushes or opens a PR; that is `ship`'s phase 3.
 
 ## Jira sync

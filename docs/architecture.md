@@ -1,11 +1,11 @@
 # Architecture
 
 Purpose: this repository is a monorepo of agent skills and the tooling that ships them.
-Three plugins live here: `dev`, the hand-invoked development workflow (scope, scope-review, build, ship, commit, and two presentation skills); `factory`, whose `run` skill orchestrates copies of the same four phases unattended; and `bootstrap`, whose `agents-md` skill writes a consuming repository's root AGENTS.md from the workflow's lessons.
+Three plugins live here: `dev`, the hand-invoked development workflow (scope, scope-review, build, ship, commit, reflect, and two presentation skills); `factory`, whose `run` skill orchestrates copies of the same four phases unattended; and `bootstrap`, whose `agents-md` skill writes a consuming repository's root AGENTS.md from the workflow's lessons.
 A person invokes each `dev` skill by hand; skills never invoke each other, and each one recommends the next step instead - except the factory `run` skill, the one sanctioned invoker, which launches its copied phase skills by path and judges their completion itself.
 The generated Codex distributions under `plugins/` are built from their source plugin and never edited by hand.
 
-Captured: 2026-09-17 (full, scope) - Updated: 2026-09-25 (the bootstrap plugin writes a consuming repository's AGENTS.md)
+Captured: 2026-09-17 (full, scope) - Updated: 2026-10-05 (runs journal their friction; the reflect skill consolidates it into cited claims)
 
 ## Components
 
@@ -13,6 +13,7 @@ Captured: 2026-09-17 (full, scope) - Updated: 2026-09-25 (the bootstrap plugin w
 | --------- | -------------- | -------- | -------- |
 | dev skills | the interactive workflow skills and the references and scripts they share | `dev/skills/`, `dev/references/`, `dev/scripts/` | nothing at runtime; read by Claude, Codex, opencode, and Pi hosts |
 | dev evals | comprehension evals for the skills | `dev/evals/` | nothing at runtime |
+| workflow memory | the run journal `dev/scripts/skill-metrics.py` appends to and the cited claims, threads, and resolutions `dev/scripts/claims.py` keeps from it; local to the machine, shared by every consuming repository, never committed | ~/.dev-workflow/memory/ (outside this repository) | read by the reflect skill |
 | generated plugins | the Codex distributions built from each source plugin, with invocation policy in agents/openai.yaml | `plugins/` | Codex plugin marketplace |
 | repo scripts | validation of the whole repository, the plugin generator, and the Pi transport self-test | `scripts/` | every other component |
 | harden tools | optional local analyses a ship gauntlet can draw on: added lines, coverage-weighted complexity, flaky reruns, mutation | `tools/harden/` | nothing; run by hand against a target repository |
@@ -25,7 +26,12 @@ Captured: 2026-09-17 (full, scope) - Updated: 2026-09-25 (the bootstrap plugin w
 ### A dev skill run
 1. A person invokes `/dev:scope`, `/dev:build`, `/dev:ship`, or `/dev:commit` in Claude Code (or the Codex, opencode, or Pi equivalent).
 2. The skill reads its SKILL.md and references, writes plan files under .dev/{plan-name}/ in the consuming repository, and recommends the next skill; skills never invoke each other.
-3. `dev/scripts/skill-metrics.py` measures each run and appends a row to the consuming repository's .dev/metrics.jsonl.
+3. `dev/scripts/skill-metrics.py` measures each run, appends a row to the consuming repository's .dev/metrics.jsonl, and appends a journal entry of measured friction signals to the workflow memory.
+
+### Learning from runs
+1. A person invokes `/dev:reflect` in any repository; `dev/scripts/claims.py pending` lists the journal entries not yet consolidated.
+2. Read-only subagents propose claims about the skills, each quoting a transcript line or journal entry; `claims.py add` accepts a batch only when every quote is found at its source, then rebuilds the derived per-skill pages and threads.
+3. The person picks a thread; the skill writes a scope brief with an eval case from the real run and never edits a skill. After the fix merges, `/dev:reflect resolve` records the commit, and a later claim in the thread reopens it.
 
 ### Building the Codex distribution
 1. `scripts/build_codex_plugin.py` copies skills/, references/, and `scripts/` of the source plugin (and factory/phases/ for the factory) into plugins/{name}/, strips Claude-only frontmatter, and writes agents/openai.yaml for invocable skills.
@@ -49,6 +55,7 @@ Captured: 2026-09-17 (full, scope) - Updated: 2026-09-25 (the bootstrap plugin w
 | Claude Code, Codex, opencode, Pi | host | the skills | each reads the skills in its own format; the generated tree under `plugins/` serves Codex |
 | git and GitHub | external | the ship skill | branch state and `gh pr` calls made during a ship run |
 | Jira | external HTTP | dev skills | through `acli`, only when .dev/config.json enables it |
+| workflow memory | local store | skill-metrics.py, claims.py | ~/.dev-workflow/memory/ or $DEV_MEMORY_DIR; quotes from transcripts stay on the machine |
 | consuming repository | store | the skills | `.dev/` plan files, `docs/` ledgers, the .factory/ config and injected phase copies, and the root AGENTS.md bootstrap writes |
 
 ## Cross-cutting
@@ -58,4 +65,4 @@ Rules: no em dash anywhere, SKILL.md under roughly 150 lines, every skill `disab
 
 ## Entry points
 
-`scripts/validate.sh`, `scripts/build_codex_plugin.py`, `scripts/test_pi_runner.sh`, `dev/scripts/skill-metrics.py`, `bootstrap/skills/agents-md/scripts/check-agents-md.py`.
+`scripts/validate.sh`, `scripts/build_codex_plugin.py`, `scripts/test_pi_runner.sh`, `dev/scripts/skill-metrics.py`, `dev/scripts/claims.py`, `bootstrap/skills/agents-md/scripts/check-agents-md.py`.

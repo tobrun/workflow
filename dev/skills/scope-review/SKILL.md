@@ -129,7 +129,7 @@ Asked: {the question} - Answered: {the user's decision} -> {what the spec says n
 
 ## Wrap up
 
-Open the chat summary with the table from `python3 {scope-review-skill-root}/../../scripts/skill-metrics.py end scope-review --count findings_verified=N --count findings_refuted=N --count refinements_applied=N --count escalated=N`, pasted verbatim.
+Open the chat summary with the table from `python3 {scope-review-skill-root}/../../scripts/skill-metrics.py end scope-review --count findings_verified=N --count findings_refuted=N --count refinements_applied=N --count escalated=N` plus any `--friction` lines per [../../references/run-journal.md](../../references/run-journal.md), pasted verbatim.
 Then summarize in the same message: the verdict, what was refined and what the user's answers changed (so the loop's edits stay auditable after the fact), what was promoted to `docs/decisions.md` and `docs/contracts.md`, anything deferred with its open question, and a link to the report.
 Recommend next steps, never invoking them:
 

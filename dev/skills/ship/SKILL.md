@@ -47,7 +47,7 @@ Never weaken or skip a check because acquiring its tool is work.
 Run each check to completion per the loop in [references/gauntlet.md](references/gauntlet.md).
 A run that will reach phase 3 opens `.dev/{plan-name}/pr.md` before the first check and records each check's result in it as that check finishes, per the Body section of [references/pull-request.md](references/pull-request.md).
 When any check dispatched fixes, end the phase with the e2e refresh in the same reference: re-run the spec's `[e2e]` scenarios and overwrite the report, so phase 2 judges the post-fix code instead of stale evidence.
-Before phase 2, always run the required pull-request commands per
+Before phase 2, always run the required pull-request commands at the branch's impact per
 [../../references/ci-parity.md](../../references/ci-parity.md), even when no
 fix agent fired. Feature E2E is not a substitute for a repository screenshot,
 packaging, or report job that CI requires.
@@ -125,7 +125,7 @@ Open the PR automatically, with evidence a reviewer can see before reading the d
 1. Commit what the gauntlet left uncommitted, branch off the default branch if still on it, and push.
 2. Build the Evidence section from the e2e report with `python3 {ship-skill-root}/scripts/pr-evidence.py extract`, passing `--scenario` for only the scenarios that show what this PR's diff changed, publishing frontend screenshots to the `pr-evidence` branch with its `publish` command; without an e2e report, capture the evidence now per the reference - screenshots for a UI, a labeled before/after pair otherwise, and a red-on-base, green-on-branch reproducing test for every bug fix.
 3. Add that section to the run's `.dev/{plan-name}/pr.md`, in the reference's body shape, and loop `pr-evidence.py check` on it until it passes; the check, not your judgment, decides whether the proof is real enough.
-4. Create the PR (draft when a real blocker survived remediation) or update the one that already exists, then follow its required checks to green per [../../references/ci-parity.md](../../references/ci-parity.md).
+4. Create the PR (draft when a real blocker survived remediation or a required check was deferred to CI) or update the one that already exists, then follow its required checks to green per [../../references/ci-parity.md](../../references/ci-parity.md).
 
 ## Wrap up
 
@@ -135,7 +135,7 @@ Summarize whichever phases ran in one chat message, opening with the measured ru
 python3 {ship-skill-root}/../../scripts/skill-metrics.py end ship --count violations_found=N --count violations_fixed=N --count violations_surviving=N --count findings_verified=N --count findings_refuted=N --count remediation_rounds=N --count blockers_cleared=N --count evidence_items=N
 ```
 
-Pass only counters you tallied from tool output and the aggregate script; the table it prints (time, tokens, agents, tool calls, git delta, trend against earlier runs) is pasted verbatim, never retyped.
+Pass only counters you tallied from tool output and the aggregate script, plus any `--friction` lines per [../../references/run-journal.md](../../references/run-journal.md); the table it prints (time, tokens, agents, tool calls, git delta, trend against earlier runs) is pasted verbatim, never retyped.
 For the gauntlet, per tool: violations found, fixed, and surviving (with the human call each is waiting on); name the tools acquired or built this run and where they live; state the scope honestly - "hardened the diff" is not "hardened the repo".
 For the review: the final verdict and top findings, linking every `review_N.md` this run wrote, the local HTML report, and the published URL when one was requested and created; per remediation round, which blockers cleared and which survived.
 For the pull request: its URL, draft or ready, what the Evidence section shows and where it came from, and the state of its required checks.

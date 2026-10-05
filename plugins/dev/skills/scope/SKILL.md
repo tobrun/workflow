@@ -148,7 +148,7 @@ Audit the run itself. Three checks, each reported as a typed line - silence read
 - **Sizing** - `held | mis-sized`. Did the small/full call survive? Name the evidence when it didn't.
 - **Catalog gaps** - `none | gap`. What did the reviewer or blind-spot pass find that phase 2 should have caught? A missed *category* is a proposed edit to the phase 2 list - propose it to the user, never apply it silently.
 
-Then print the measured run metrics with `python3 {scope-skill-root}/../../scripts/skill-metrics.py end scope --count decisions=N --count change_sets=N --count scenarios=N`, pasting its table verbatim.
+Then print the measured run metrics with `python3 {scope-skill-root}/../../scripts/skill-metrics.py end scope --count decisions=N --count change_sets=N --count scenarios=N`, plus any `--friction` lines per [../../references/run-journal.md](../../references/run-journal.md), pasting its table verbatim.
 Then recommend next steps, never launching them: `scope-review` first when the change is large or risky or build will run in a different session - it reviews the spec with a fresh-context panel and refines it in place before any code exists - and `build` to implement.
 
 ## Jira sync

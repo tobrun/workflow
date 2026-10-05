@@ -71,6 +71,11 @@ PLUGINS = {
                 "Harden, review, then open a PR with proof",
                 "Use $dev:ship to run the quality gauntlet, the verified review, and open the pull request with evidence for this change.",
             ),
+            "reflect": (
+                "Reflect",
+                "Turn run friction into cited skill fixes",
+                "Use $dev:reflect to consolidate the run journal into cited claims and pick the next skill improvement.",
+            ),
             "to-pitch": (
                 "To Pitch",
                 "Turn finished work into a buy-in document",

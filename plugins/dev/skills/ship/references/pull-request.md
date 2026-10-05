@@ -5,7 +5,7 @@ A PR without evidence asks the reviewer to trust the description; this phase mak
 
 ## When it runs
 
-Phase 3 runs in the default flow, after the review report is written and the remediation loop in [remediation.md](remediation.md) has run its course: PASS and CONCERNS open a PR ready for review, a real blocker - one that survived both remediation rounds - opens a draft PR with the blockers listed first, so the work is preserved and CI runs while the human call is made.
+Phase 3 runs in the default flow, after the review report is written and the remediation loop in [remediation.md](remediation.md) has run its course: PASS and CONCERNS open a PR ready for review - a draft until its required checks are green when a check was deferred to CI, per [../../../references/ci-parity.md](../../../references/ci-parity.md) - a real blocker - one that survived both remediation rounds - opens a draft PR with the blockers listed first, so the work is preserved and CI runs while the human call is made.
 It is skipped in "gauntlet only" and "review only" runs and when the user says "no PR" or "local only"; a review-only run on someone else's PR never pushes anything.
 Never force-push, never rebase, and never touch a branch other than the work branch and the evidence branch.
 
@@ -62,7 +62,7 @@ Plan `.dev/{plan-name}` | Review {N}: {verdict} | Jira {EPIC-KEY when enabled}
 {one row per gauntlet tool}
 
 Review panel: {lenses}; {blockers} blockers, {concerns} concerns ({review_N.md path}).
-CI parity: {each reproducible required command and its result}; remote-only: {checks verified by the PR itself, or "none"}.
+CI parity ({impact verdict and packages}): {each reproducible required command, the scope it ran at, and its result}; deferred to CI: {commands outside the impact, or "none"}; remote-only: {checks verified by the PR itself, or "none"}.
 
 ## Open calls
 
@@ -73,8 +73,8 @@ Title: `{EPIC-KEY} ` prefix when Jira is enabled, then the change in imperative 
 
 ## Create or update
 
-- No PR for the branch: `gh pr create --title ... --body-file .dev/{plan-name}/pr.md` (`--draft` on BLOCK), base = the default branch.
-- A PR already exists (build opened it on request, or a re-review): `gh pr edit --body-file ...`; `gh pr ready` when a BLOCK verdict has cleared, never the reverse.
+- No PR for the branch: `gh pr create --title ... --body-file .dev/{plan-name}/pr.md` (`--draft` on BLOCK or a deferred check), base = the default branch.
+- A PR already exists (build opened it on request, or a re-review): `gh pr edit --body-file ...`; `gh pr ready` once no BLOCK verdict stands and its required checks are green, never the reverse.
 - No `gh` and no equivalent host CLI: push, keep `pr.md`, print the compare URL, and say the PR must be opened by hand.
 
 Then follow the PR's required checks to a terminal state per [../../../references/ci-parity.md](../../../references/ci-parity.md).

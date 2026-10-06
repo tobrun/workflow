@@ -150,7 +150,8 @@ Audit the run itself. Three checks, each reported as a typed line - silence read
 - **Catalog gaps** - `none | gap`. What did the reviewer or blind-spot pass find that phase 2 should have caught? A missed *category* is a proposed edit to the phase 2 list - propose it to the user, never apply it silently.
 
 Then print the measured run metrics with `python3 {scope-skill-root}/../../scripts/skill-metrics.py end scope --count decisions=N --count change_sets=N --count scenarios=N`, plus any `--friction` lines per [../../references/run-journal.md](../../references/run-journal.md), pasting its table verbatim.
-Then recommend next steps, never launching them: `scope-review` first when the change is large or risky or build will run in a different session - it reviews the spec with a fresh-context panel and refines it in place before any code exists - and `build` to implement.
+Then recommend the next step, never launching it: `build`, which implements the spec as written and needs no review first.
+Only when the change is large or complex, add that `scope-review` is worth running before `build` - it reviews the spec with a fresh-context panel and refines it in place before any code exists - and leave that choice to the user.
 
 ## Jira sync
 

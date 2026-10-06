@@ -23,17 +23,9 @@ Read [references/layers.md](references/layers.md), [references/tests.md](referen
 7. Run the repository's required pull-request commands, plus every Validation command the wave gates left for the end, at the branch's impact per [../../references/ci-parity.md](../../references/ci-parity.md) - what lies outside it is deferred to the PR's CI, which `ship` follows to green - starting them in the background as soon as the e2e loop is green and rendering the e2e report while they run - the two share nothing. A known-red CI scenario is not an acceptable deviation.
 8. After the e2e report and CI-parity gate, close per "Closing message". Build never pushes or opens a PR; that is `ship`'s phase 3.
 
-## Jira sync
+## Work branch
 
-Read `.dev/config.json`; when `jira.enabled` is true, follow
-[../../references/jira.md](../../references/jira.md) from before the first `acli` call - it owns the
-command shapes, the transition timing, and the failure protocol. The
-orchestrator alone invokes `acli`; subagent prompts and the `parallel.md`
-contract do not change.
-
-With an absent or disabled config, perform no Jira behavior or mention.
-If still on the default branch, create the work branch before the first commit,
-named per jira.md when Jira is enabled; never push it and never open a PR -
+If still on the default branch, create the work branch `{plan-name}` before the first commit; never push it and never open a PR -
 `ship` pushes and opens the PR with evidence after its gauntlet and review.
 
 ## Closing message

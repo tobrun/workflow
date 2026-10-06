@@ -132,7 +132,7 @@ Once clean it prints the build waves the file lists allow and the files that mak
 ## 7. Visualize
 
 Full-size changes only. Map the settled spec onto `SPEC_DATA` per [references/data-schema.md](references/data-schema.md) and render [templates/spec.html](templates/spec.html) to `/tmp/{project-slug}/reports/{plan-name}-spec.html`, opening and publishing per [../../references/reporting.md](../../references/reporting.md).
-Once the spec is settled, this phase, the phase 8 promotion, and the Jira sync have no ordering between them - overlap them rather than running a march.
+Once the spec is settled, this phase and the phase 8 promotion have no ordering between them - overlap them rather than running a march.
 
 ## 8. Promote to the ledger
 
@@ -152,11 +152,6 @@ Audit the run itself. Three checks, each reported as a typed line - silence read
 Then print the measured run metrics with `python3 {scope-skill-root}/../../scripts/skill-metrics.py end scope --count decisions=N --count change_sets=N --count scenarios=N`, plus any `--friction` lines per [../../references/run-journal.md](../../references/run-journal.md), pasting its table verbatim.
 Then recommend the next step, never launching it: `build`, which implements the spec as written and needs no review first.
 Only when the change is large or complex, add that `scope-review` is worth running before `build` - it reviews the spec with a fresh-context panel and refines it in place before any code exists - and leave that choice to the user.
-
-## Jira sync
-
-Read `.dev/config.json`; when `jira.enabled` is true, follow [../../references/jira.md](../../references/jira.md) from before the first `acli` call - it owns the command shapes, the Initiative/Epic/Task timing, and the failure protocol.
-With an absent or disabled config, no Jira behavior or mention.
 
 ## Starting from review findings
 

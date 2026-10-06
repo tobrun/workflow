@@ -13,7 +13,7 @@ Never force-push, never rebase, and never touch a branch other than the work bra
 
 1. Fixes the gauntlet left uncommitted are committed now, one commit per tool, in `commit`'s `type(scope): subject` plus What/Why shape.
    Name files explicitly; never `git add -A`, never a `Co-Authored-By` line.
-2. On the default branch, create the work branch first: `{plan-name}`, or `{EPIC-KEY}-{plan-name}` when [../../../references/jira.md](../../../references/jira.md) is enabled.
+2. On the default branch, create the work branch first: `{plan-name}`.
 3. `git push -u {remote} {branch}`; a rejected push is reported and stops the phase.
 
 ## Evidence
@@ -43,7 +43,7 @@ Write the body to `.dev/{plan-name}/pr.md` and hand it to the PR tool with `--bo
 ## Summary
 
 {What changed and why, 2-4 sentences from the spec's research and scope sections.}
-Plan `.dev/{plan-name}` | Review {N}: {verdict} | Jira {EPIC-KEY when enabled}
+Plan `.dev/{plan-name}` | Review {N}: {verdict}
 
 ## Evidence
 
@@ -63,7 +63,7 @@ CI parity ({impact verdict and packages}): {each reproducible required command, 
 {Each surviving recorded decision from the gauntlet, each real blocker with its two-round history, and each concern from the review, one line each, or "none".}
 ```
 
-Title: `{EPIC-KEY} ` prefix when Jira is enabled, then the change in imperative mood, under 70 characters.
+Title: the change in imperative mood, under 70 characters.
 
 ## Create or update
 

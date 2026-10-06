@@ -85,41 +85,6 @@ Every run appends a row to `.dev/metrics.jsonl` in the consuming repository, and
 The same call appends an entry to the cross-repository run journal under `~/.dev-workflow/memory/journal/` (or `$DEV_MEMORY_DIR`): the friction signals measured from the transcript (interrupts, denied and failed tool calls, the user's own turns, and how often each deterministic checker ran and failed), each with its transcript line, plus at most three `--friction` lines in which the skill names where the run fought its own instructions.
 That journal is what `reflect` consolidates. It stays on the machine; set `DEV_MEMORY_DIR=off`, or `"memory": {"enabled": false}` in `.dev/config.json`, to keep a repository out of it.
 
-## Jira integration
-
-The spec-driven workflow can mirror its local state to Jira through the
-Atlassian CLI (`acli`). Install and authenticate `acli` before enabling it.
-Create `.dev/config.json` in the consuming repository:
-
-```json
-{
-  "jira": {
-    "enabled": true,
-    "site": "acme.atlassian.net",
-    "project": "PROJ"
-  }
-}
-```
-
-`site` is optional and `project` is required when enabled. An absent config
-file or `jira.enabled: false` keeps the workflow pure-local with no Jira
-calls or questions.
-
-The hierarchy is Initiative > Epic > Task. `scope` asks you to choose
-an existing open Initiative, creates one Epic under it once the change plan is
-final, stores the Epic key in the spec, and creates one Jira Task per change
-set, storing each key under its change set and closing old issues when a
-change set is superseded. `build` moves the Epic to In Progress at start,
-moves each change-set issue through In Progress and Done as the orchestrator
-dispatches and commits it. `ship` then pushes the keyed branch and opens a PR
-whose title starts with the Epic key.
-
-One-time Jira administration is required. Install the GitHub for Jira
-integration, then add an automation rule: "when a linked pull request is
-merged, transition the Epic to Done". The Epic key in the branch name and PR
-title is what lets Jira link the pull request and trigger that rule. The
-skills do not poll for merges.
-
 ## Claude Code installation
 
 ```bash
@@ -152,7 +117,7 @@ done
 ln -sfn ~/ws/workflow/dev/references ~/.config/opencode/references
 ```
 
-The last symlink keeps the shared references (`jira.md`, `decision-ledger.md`, `contracts.md`, `architecture.md`) reachable through the `../../references/` links inside the skills.
+The last symlink keeps the shared references (`decision-ledger.md`, `contracts.md`, `architecture.md`) reachable through the `../../references/` links inside the skills.
 Symlinks mean a `git pull` updates the skills in place; restart opencode afterwards, since skills load at startup.
 
 opencode has no `disable-model-invocation` field (it is ignored harmlessly); skills load through a model-invoked `skill` tool.

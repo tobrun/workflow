@@ -12,7 +12,7 @@ This reference owns the layout, the locating convention, and the diff scope; ski
 | `implementation-notes.md` | `build` (append-only) | `ship`, `to-pitch`, `to-quiz` |
 | `review_N.md` | `ship` (next free index, opened when the panel is selected) | `scope` (remediation), re-reviews |
 | `pr.md` | `ship` (opened at the start of a run that reaches phase 3, overwritten per run) | the PR tool via `--body-file`; re-runs |
-| `.dev/config.json` | the user | any skill with Jira behavior |
+| `.dev/config.json` | the user | `skill-metrics.py` (run journal opt-out, per [run-journal.md](run-journal.md)) |
 
 Each producing skill also renders an HTML companion under `/tmp/{project-slug}/reports/` per [reporting.md](reporting.md), named by that skill.
 One writer per file; every other skill only reads.

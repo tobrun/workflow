@@ -126,7 +126,7 @@ Once clean it prints the build waves the file lists allow and the files that mak
 ## 7. Visualize
 
 Full-size changes only. Map the settled spec onto `SPEC_DATA` per [references/data-schema.md](references/data-schema.md) and render [templates/spec.html](templates/spec.html) to `/tmp/{project-slug}/reports/{plan-name}-spec.html`, opening and publishing per [../../references/reporting.md](../../references/reporting.md).
-Once the spec is settled, this phase, the phase 8 promotion, and the Jira sync have no ordering between them - overlap them rather than running a march.
+Once the spec is settled, this phase and the phase 8 promotion have no ordering between them - overlap them rather than running a march.
 
 ## 8. Promote to the ledger
 
@@ -148,11 +148,6 @@ Then print the measured run metrics with `python3 {scope-skill-root}/../../scrip
 ## Factory context
 
 Read `request.md` in the plan directory as the request; the `run` skill already created the directory and named the plan, so use it rather than naming one. This phase keeps its interview - it is the one interactive phase and is exempt from `check_factory_unattended`'s scan - and still ends with one explicit go question. Read `factory-run.json` and the result envelope in [../../references/factory-run.md](../../references/factory-run.md), then write `.dev/{plan}/results/{phase}-{attempt}.json` as the last action. Never name or launch the next phase.
-
-## Jira sync
-
-Read `.dev/config.json`; when `jira.enabled` is true, follow [../../references/jira.md](../../references/jira.md) from before the first `acli` call - it owns the command shapes, the Initiative/Epic/Task timing, and the failure protocol.
-With an absent or disabled config, no Jira behavior or mention.
 
 ## Starting from review findings
 

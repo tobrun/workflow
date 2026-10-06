@@ -633,7 +633,7 @@ check_pi() {
 #
 # Scoped to factory/phases/* minus the built-in pipeline's interactive phases,
 # plus factory/skills/run (SKILL.md and their references) and
-# factory/references/factory-run.md only - scope keeps its interview, and ci-parity.md, contracts.md, and jira.md keep their dev
+# factory/references/factory-run.md only - scope keeps its interview, and ci-parity.md and contracts.md keep their dev
 # wording because they are dev-shared references whose human-call branches are
 # overridden for a factory run by factory-run.md's unattended policy.
 #

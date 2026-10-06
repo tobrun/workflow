@@ -54,7 +54,6 @@ Captured: 2026-09-17 (full, scope) - Updated: 2026-10-05 (runs journal their fri
 | -------- | ---- | -------- | ----- |
 | Claude Code, Codex, opencode, Pi | host | the skills | each reads the skills in its own format; the generated tree under `plugins/` serves Codex |
 | git and GitHub | external | the ship skill | branch state and `gh pr` calls made during a ship run |
-| Jira | external HTTP | dev skills | through `acli`, only when .dev/config.json enables it |
 | workflow memory | local store | skill-metrics.py, claims.py | ~/.dev-workflow/memory/ or $DEV_MEMORY_DIR; quotes from transcripts stay on the machine |
 | consuming repository | store | the skills | `.dev/` plan files, `docs/` ledgers, the .factory/ config and injected phase copies, and the root AGENTS.md bootstrap writes |
 

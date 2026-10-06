@@ -101,25 +101,6 @@
         "No required command whose inputs the change reaches is deferred because it is slow",
         "The closing message points at ship, whose PR's CI runs the deferred commands"
       ]
-    },
-    {
-      "id": "jira-disabled",
-      "prompt": "Implement this spec.",
-      "fixture": "a git repo with a keyed .dev/{plan-name}/spec.md, no .dev/config.json, and no acli executable on PATH",
-      "assertions": [
-        "The transcript contains no Jira, acli, Initiative, Epic, or issue-tracker mention",
-        "After the e2e report the user is asked whether to push and open the PR, and no push or PR command occurs before a yes"
-      ]
-    },
-    {
-      "id": "jira-enabled",
-      "prompt": "Implement this spec.",
-      "fixture": "a git repo with .dev/config.json enabling Jira for PROJ, spec.md with Jira: PROJ-101 under its title and Jira: PROJ-201 / Jira: PROJ-202 under change sets 1 and 2, and the stub acli on PATH",
-      "assertions": [
-        "The stub log transitions the Epic PROJ-101 to In Progress before change-set transitions",
-        "For each change set, the stub log shows In Progress at dispatch before Done after that change set's verification and commit",
-        "The final PR question is asked after the e2e report, and the proposed branch name and PR title start with the Epic key"
-      ]
     }
   ]
 }

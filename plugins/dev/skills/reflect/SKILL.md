@@ -1,6 +1,6 @@
 ---
 name: reflect
-description: Consolidate the run journal that scope, scope-review, build, and ship write at the end of every run into cited claims about how the skills themselves behaved, rank the recurring friction threads across repositories, and hand off one chosen thread as a scope brief with an eval case from the real run. Use periodically to decide what to improve in the dev workflow next, or with "resolve {thread} {sha}" once a fix for a thread has merged.
+description: Consolidate the run journal that scope, scope-review, build, ship, and their quick variants write at the end of every run into cited claims about how the skills themselves behaved, rank the recurring friction threads across repositories, and hand off one chosen thread as a scope brief with an eval case from the real run. Use periodically to decide what to improve in the dev workflow next, or with "resolve {thread} {sha}" once a fix for a thread has merged.
 ---
 
 # Reflect

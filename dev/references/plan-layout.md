@@ -7,15 +7,15 @@ This reference owns the layout, the locating convention, and the diff scope; ski
 
 | File | Written by | Read by |
 | ---- | ---------- | ------- |
-| `spec.md` | `scope` (from the interview on); `scope-review` (verified refinements only) | everyone downstream |
+| `spec.md` | `scope` (from the interview on); `scope-review` (verified refinements only); `scope-quick` (minimal change sets, appended when a spec exists) | everyone downstream |
 | `spec-review_N.md` | `scope-review` (next free index, opened before round 1) | `scope` (remediation), re-reviews |
 | `implementation-notes.md` | `build` (append-only) | `ship`, `to-pitch`, `to-quiz` |
-| `review_N.md` | `ship` (next free index, opened when the panel is selected) | `scope` (remediation), re-reviews |
-| `pr.md` | `ship` (opened at the start of a run that reaches phase 3, overwritten per run) | the PR tool via `--body-file`; re-runs |
+| `review_N.md` | `ship` (next free index, opened when the panel is selected); `ship-quick` (next free index) | `scope` and `scope-quick` (remediation), re-reviews |
+| `pr.md` | `ship` (opened at the start of a run that reaches phase 3, overwritten per run); `ship-quick` (review line and Open calls only) | the PR tool via `--body-file`; re-runs |
 | `.dev/config.json` | the user | `skill-metrics.py` (run journal opt-out, per [run-journal.md](run-journal.md)) |
 
 Each producing skill also renders an HTML companion under `/tmp/{project-slug}/reports/` per [reporting.md](reporting.md), named by that skill.
-One writer per file; every other skill only reads.
+One writer per file at a time; every other skill only reads.
 
 ## Written as the run goes
 

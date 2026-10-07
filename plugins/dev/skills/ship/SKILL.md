@@ -141,5 +141,5 @@ For the pull request: its URL, draft or ready, what the Evidence section shows a
 Recommend next steps, never invoking them:
 
 - `commit` for the gauntlet's accumulated fixes, only when phase 3 did not run.
-- `scope` on this plan directory when the user accepts findings needing real work - remediation is its job, even when no spec exists.
+- `scope-quick`, then `build`, then `ship-quick` when the user accepts findings that are plain defects; `scope` on this plan directory only when a finding needs a decision or a scope change - both work even when no spec exists.
 - As independent optional next steps rather than a mandatory chain: `to-pitch` when the change needs buy-in from someone who wasn't in this conversation, and `to-quiz` when a reviewer wants a comprehension check before merging.

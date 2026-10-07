@@ -1,0 +1,6 @@
+interface:
+  display_name: "Ship Quick"
+  short_description: "Verify fixes and update the PR, no gauntlet"
+  default_prompt: "Use $dev:ship-quick to verify the fixes with one reviewer, update the pull request, and follow it to green."
+policy:
+  allow_implicit_invocation: false

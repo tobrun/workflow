@@ -1,0 +1,6 @@
+interface:
+  display_name: "Scope Quick"
+  short_description: "Write minimal change sets with no interview"
+  default_prompt: "Use $dev:scope-quick to turn the review findings or this small request into minimal change sets."
+policy:
+  allow_implicit_invocation: false

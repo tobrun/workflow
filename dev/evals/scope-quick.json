@@ -1,0 +1,28 @@
+{
+  "skill": "scope-quick",
+  "mode": "comprehension",
+  "evals": [
+    {
+      "id": "scope-quick-from-review",
+      "prompt": "Answer briefly, from the skill text only. The plan directory holds spec.md with change sets 1 to 4, all built, and review_2.md with two Blockers and three Concerns. The user runs scope-quick with no other request. (1) How many change sets does it write, and how are they numbered? (2) What is each one's test? (3) Does it interview the user, argue decisions, or launch subagents? (4) What does it loop against before finishing? (5) What does it recommend next?",
+      "fixture": "none - the answers come from the skill text",
+      "assertions": [
+        "Answer 1: two, one per Blocker, appended as change sets 5 and 6 with nothing renumbered or rewritten; Concerns are left out unless the user names them",
+        "Answer 2: the review's triggering scenario, on a single tests: line tagged at the lowest layer that proves it",
+        "Answer 3: no to all three; it asks at most one question and only when it cannot proceed",
+        "Answer 4: scope's lint-spec.py against spec.md, until it exits clean",
+        "Answer 5: build, then ship-quick, recommended and never launched"
+      ]
+    },
+    {
+      "id": "scope-quick-escalates",
+      "prompt": "Answer briefly, from the skill text only. (1) A Blocker can only be fixed by reversing a decision the spec recorded. What does scope-quick do? (2) A small request has one obvious implementation. How many D- decisions does the spec record, and which sections must it still have? (3) Name three things scope does that scope-quick skips.",
+      "fixture": "none - the answers come from the skill text",
+      "assertions": [
+        "Answer 1: it stops and recommends scope instead of guessing",
+        "Answer 2: none; the spec still has Research, Scope with a Validation block of the repo's real commands, and a Change Plan",
+        "Answer 3: any three of the interview, the decision catalog and evidence batch, the blind-spot pass, the spec reviewer, the ledger reconcile and promotion, the HTML render, the retrospective"
+      ]
+    }
+  ]
+}

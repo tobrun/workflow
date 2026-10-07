@@ -2,7 +2,7 @@
 
 Development workflow skills for Claude Code, Codex, opencode, and Pi, built around two ideas: layered tests are the enforceable spec for behavior, and every phase produces something a human actually reviews as HTML, not markdown scrolling.
 
-The skills chain loosely rather than as a rigid pipeline: `/scope` interviews for the real problem, argues every design decision against alternatives, and writes a self-contained spec whose change plan carries layer-tagged test scenarios; `/scope-review` is an optional step for a large or complex change, never a gate in front of `build`: it puts the settled spec through a fresh-context, adversarially verified agent panel that checks the plan against the actual repo and refines the spec in place, looping without a human and closing with a short interview for the few findings only the user can decide, so a finished run hands `build` a spec ready to implement; `/build` executes the spec's change sets across unit/integration/e2e, proving every scenario with a real test at its tagged layer, in parallel waves where file lists allow, keeping a running implementation-notes log; `/ship` runs a deterministic quality gauntlet - the repo's own static analysis, security scan, dead code, duplication, dependency rules, coverage-weighted complexity, flakiness, mutation testing - looping fix agents until the checkers pass, then verifies the result with a fan-out review panel that checks spec conformance, e2e coverage, and logged deviations; `/commit` groups pending changes into granular commits with structured what/why messages; `/reflect` consolidates the journal every run leaves into cited claims about the skills themselves and hands the most recurrent one to `scope` as a brief; `/to-pitch` and `/to-quiz` turn finished work into a buy-in doc or a comprehension check.
+The skills chain loosely rather than as a rigid pipeline: `/scope` interviews for the real problem, argues every design decision against alternatives, and writes a self-contained spec whose change plan carries layer-tagged test scenarios; `/scope-review` is an optional step for a large or complex change, never a gate in front of `build`: it puts the settled spec through a fresh-context, adversarially verified agent panel that checks the plan against the actual repo and refines the spec in place, looping without a human and closing with a short interview for the few findings only the user can decide, so a finished run hands `build` a spec ready to implement; `/build` executes the spec's change sets across unit/integration/e2e, proving every scenario with a real test at its tagged layer, in parallel waves where file lists allow, keeping a running implementation-notes log; `/ship` runs a deterministic quality gauntlet - the repo's own static analysis, security scan, dead code, duplication, dependency rules, coverage-weighted complexity, flakiness, mutation testing - looping fix agents until the checkers pass, then verifies the result with a fan-out review panel that checks spec conformance, e2e coverage, and logged deviations; `/scope-quick` and `/ship-quick` are the short loop for a change that is already small - most often the fixes a `ship` review asked for - writing minimal change sets with no interview, and re-shipping with one reviewer instead of the gauntlet and panel; `/commit` groups pending changes into granular commits with structured what/why messages; `/reflect` consolidates the journal every run leaves into cited claims about the skills themselves and hands the most recurrent one to `scope` as a brief; `/to-pitch` and `/to-quiz` turn finished work into a buy-in doc or a comprehension check.
 The durable context is deliberately small: the code, its tests, the active spec under `.dev/{plan-name}/`, and three repo-tracked registries the skills maintain in the consuming project - `docs/decisions.md` (design decisions with their argued alternatives, read only after a review forms its findings), `docs/contracts.md` (boundary guarantees, read as premises before a review walks the diff), and `docs/dependencies.md` (machine-checkable module dependency rules, enforced by `ship`).
 The files under `.dev/{plan-name}/` are written as a run goes, not when a stage closes: the spec opens during the interview, a report opens before its panel returns, the implementation notes gain an entry per change set and per fixup, and the PR body fills check by check, so a run can be followed from its files and a dead session loses only what was in flight.
 Alongside them, `docs/architecture.md` is a plain high-level overview of the system - components, flows, boundaries, entry points - captured in full the first time a skill needs it and finds it absent, then kept current by build and commit whenever the structure changes, with a small checker that catches stale paths and files no component covers.
@@ -18,6 +18,13 @@ Writes a self-contained spec at `.dev/{plan-name}/spec.md` - research decisions,
 A checker (`scripts/lint-spec.py`) enforces the spec's mechanics - unique slugs, argued alternatives, echoes that match their decision, tagged test scenarios, at most 25 scenarios per change set - so the prose stays about judgment.
 On a clean spec it prints the build waves the file lists allow and the shared files that make change sets wait, so the plan is shaped for parallel work before build starts.
 Promotes durable decisions to `docs/decisions.md` and cross-boundary invariants to `docs/contracts.md`, renders an expandable-card spec view, and has a reverse mode that audits the implicit decisions already embedded in existing code.
+
+### scope-quick
+
+The minimal `scope`: turns the Blockers of the latest `ship` review, or a small request, into change sets in `.dev/{plan-name}/spec.md` that `build` can execute straight away.
+It runs no interview, argues no decisions, launches no subagents, and skips the ledger work, the HTML render, and the retrospective; a decision is recorded only where the code offered a real choice.
+Review fixes are appended to the existing change plan with continued numbering, each carrying the review's triggering scenario as its test, and the same `lint-spec.py` loop keeps the result mechanically sound.
+When a finding needs a recorded decision flipped or user-visible scope changed, it stops and points at `scope` instead of guessing.
 
 ### scope-review
 
@@ -54,6 +61,14 @@ Phase 3 commits what the gauntlet fixed, pushes, and opens the pull request auto
 A deterministic check (`pr-evidence.py check`) gates the PR body, so a PR cannot open on a placeholder or a data URI, and the phase then follows required checks to green.
 Local gates in every phase run at the change's impact, so the full merge gate is the PR's own CI: a PR carrying a check deferred to CI opens as a draft and is marked ready once its required checks pass, and a run that opens no PR runs the full set locally.
 
+### ship-quick
+
+The minimal `ship`, for re-shipping after the fixes a review asked for: one validation run at the diff's impact, one read-only reviewer, and a pull request update followed to green.
+The reviewer reports each finding of the previous `review_N.md` as fixed or still open and reads only the diff since that review's recorded head for new blockers; it raises no concerns, nits, or simplifications.
+There is no gauntlet, no lens panel, no remediation loop, and no HTML report: a standing blocker ends the run with a pointer back to `scope-quick`.
+An existing pull request keeps the Evidence and Quality sections the full `ship` run wrote, with only its review line and open calls updated.
+Run the full `ship` for a first ship, or once the change has grown beyond the findings it set out to fix.
+
 ### commit
 
 Groups all pending changes into granular, logically-separate commits - splitting within a file when needed - with structured messages: a `type(scope):` subject, `What:`/`Why:` body, optional `Considered:`/`Constraint:`/`Directive:`/`Symptoms:` sections, and `Severity:`/`Risk:` metadata trailers.
@@ -63,7 +78,7 @@ Pushes by default; say "commit only" to skip the push.
 ### reflect
 
 Turns what past runs measured into evidence about the skills themselves, so the next change to the workflow fixes something that actually recurred.
-Every `scope`, `scope-review`, `build`, and `ship` run appends a journal entry to `~/.dev-workflow/memory/` (see Run metrics below); `reflect` has read-only subagents read the transcript around each measured signal and propose claims such as "build reran the full Validation block after each change set; the user stopped it", each quoting its source.
+Every `scope`, `scope-review`, `build`, and `ship` run, and every run of their quick variants, appends a journal entry to `~/.dev-workflow/memory/` (see Run metrics below); `reflect` has read-only subagents read the transcript around each measured signal and propose claims such as "build reran the full Validation block after each change set; the user stopped it", each quoting its source.
 A checker (`scripts/claims.py add`) accepts a batch only when every quote is found verbatim at the transcript line or journal entry it cites, then rebuilds per-skill pages and a ranked list of threads in which every line cites a claim id.
 The user picks a thread, or retracts a claim that misreads its evidence (a retracted claim stays on record so the same evidence cannot bring it back), and the skill writes a scope brief with an eval case built from the real run.
 It never edits a skill: the fix goes through `scope` and `build` in this repository, and `/dev:reflect resolve {thread} {sha}` records the commit, after which a new claim in that thread reopens it.
@@ -79,7 +94,7 @@ Cannot enforce a merge gate, so it says so plainly and produces an honest pass/f
 
 ## Run metrics
 
-`scope`, `scope-review`, `build`, and `ship` each start by snapshotting the run with `scripts/skill-metrics.py start` and end by printing what it measured: wall time, tokens split between the orchestrator and its subagents, agents dispatched, tool calls, the git delta since the snapshot, and any counters the skill tallied from tool output.
+`scope`, `scope-review`, `build`, `ship`, `scope-quick`, and `ship-quick` each start by snapshotting the run with `scripts/skill-metrics.py start` and end by printing what it measured: wall time, tokens split between the orchestrator and its subagents, agents dispatched, tool calls, the git delta since the snapshot, and any counters the skill tallied from tool output.
 The numbers come from the session transcript under `$CLAUDE_CONFIG_DIR` (default `~/.claude`) and from git, never from the model's recollection.
 Every run appends a row to `.dev/metrics.jsonl` in the consuming repository, and the table compares the run against the median of earlier runs of the same skill, which is where a skill's cost and catch rate become visible over time.
 The same call appends an entry to the cross-repository run journal under `~/.dev-workflow/memory/journal/` (or `$DEV_MEMORY_DIR`): the friction signals measured from the transcript (interrupts, denied and failed tool calls, the user's own turns, and how often each deterministic checker ran and failed), each with its transcript line, plus at most three `--friction` lines in which the skill names where the run fought its own instructions.
@@ -129,9 +144,13 @@ Preserve the explicit-invocation policy with a permission rule in `~/.config/ope
     "skill": {
       "*": "allow",
       "scope": "ask",
+      "scope-quick": "ask",
+      "scope-review": "ask",
       "commit": "ask",
       "build": "ask",
       "ship": "ask",
+      "ship-quick": "ask",
+      "reflect": "ask",
       "to-pitch": "ask",
       "to-quiz": "ask"
     }

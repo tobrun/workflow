@@ -1,11 +1,11 @@
 # Architecture
 
 Purpose: this repository is a monorepo of agent skills and the tooling that ships them.
-Three plugins live here: `dev`, the hand-invoked development workflow (scope, scope-review, build, ship, commit, reflect, and two presentation skills); `factory`, whose `run` skill orchestrates copies of the same four phases unattended; and `bootstrap`, whose `agents-md` skill writes a consuming repository's root AGENTS.md from the workflow's lessons.
+Three plugins live here: `dev`, the hand-invoked development workflow (scope, scope-review, build, ship, the lighter scope-quick and ship-quick, commit, reflect, and two presentation skills); `factory`, whose `run` skill orchestrates copies of the same four phases unattended; and `bootstrap`, whose `agents-md` skill writes a consuming repository's root AGENTS.md from the workflow's lessons.
 A person invokes each `dev` skill by hand; skills never invoke each other, and each one recommends the next step instead - except the factory `run` skill, the one sanctioned invoker, which launches its copied phase skills by path and judges their completion itself.
 The generated Codex distributions under `plugins/` are built from their source plugin and never edited by hand.
 
-Captured: 2026-09-17 (full, scope) - Updated: 2026-10-05 (runs journal their friction; the reflect skill consolidates it into cited claims)
+Captured: 2026-09-17 (full, scope) - Updated: 2026-10-06 (scope-quick and ship-quick, the short loop for small changes and review fixes)
 
 ## Components
 

@@ -1,0 +1,29 @@
+{
+  "skill": "ship-quick",
+  "mode": "comprehension",
+  "evals": [
+    {
+      "id": "ship-quick-after-fixes",
+      "prompt": "Answer briefly, from the skill text only. review_1.md ended in BLOCK with two Blockers and one Concern and records a head commit; build has since committed two fix change sets, and a draft pull request exists. The user runs ship-quick. (1) Which gauntlet tools run? (2) How many review agents launch, and what do they read? (3) What kinds of new finding may the reviewer raise? (4) Both Blockers are fixed and the Concern is still open: what is the verdict and where is it written? (5) What happens to the pull request body?",
+      "fixture": "none - the answers come from the skill text",
+      "assertions": [
+        "Answer 1: none; only the repository's required pull-request commands run, once, at the diff's impact",
+        "Answer 2: one fresh-context read-only agent; it checks each previous Blocker and Concern as fixed or still open and reads the diff since the recorded head",
+        "Answer 3: blockers only, each with a triggering scenario, and each confirmed by the orchestrator reading the code; no concerns, nits, or simplifications",
+        "Answer 4: CONCERNS, in review_2.md at the next free index with Panel: quick and the Previous findings section filled",
+        "Answer 5: pr.md is edited in place - the review line and Open calls - keeping the earlier Evidence and Quality sections, then pr-evidence.py check passes before the body is updated and the checks are followed to green"
+      ]
+    },
+    {
+      "id": "ship-quick-limits",
+      "prompt": "Answer briefly, from the skill text only. (1) The reviewer reports one Blocker still open. Does ship-quick fix it and re-review? What does it do? (2) There is no earlier review_N.md. What does the reviewer read? (3) May it force-push? (4) What must the wrap-up say about what this run did not do, and when does it recommend the full ship?",
+      "fixture": "none - the answers come from the skill text",
+      "assertions": [
+        "Answer 1: no - there is no remediation loop; it writes the BLOCK verdict, stops before the pull request step, and recommends scope-quick, then build, then ship-quick again",
+        "Answer 2: the whole branch diff",
+        "Answer 3: no - never force-push, never rebase",
+        "Answer 4: that the gauntlet and the panel were skipped; ship is recommended when the change has grown beyond the findings it set out to fix"
+      ]
+    }
+  ]
+}

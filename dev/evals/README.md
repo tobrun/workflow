@@ -4,12 +4,12 @@ Status: maintained
 
 Eval definitions for the `dev` plugin's skills: realistic prompts and objective assertions used to check whether a skill change preserved behavior.
 
-- `{skill}.json` - one file per skill: the eval prompt(s), the fixture each expects, and the assertions to grade the output against. Covers all 8 skills: `scope`, `scope-review`, `commit`, `build`, `ship`, `reflect`, `to-pitch`, `to-quiz`.
+- `{skill}.json` - one file per skill: the eval prompt(s), the fixture each expects, and the assertions to grade the output against. Covers all 10 skills: `scope`, `scope-quick`, `scope-review`, `commit`, `build`, `ship`, `ship-quick`, `reflect`, `to-pitch`, `to-quiz`.
 - `results.md` - the record of the most recent full run: scores, methodology, and findings.
 - `tests/` - unit tests for the deterministic scripts the skills loop against (`lint-spec.py`, `change-set-brief.py`, `check-tests.py`, `pr-evidence.py`, `impact-scope.py`, and the memory scripts `skill-metrics.py` and `claims.py`), run by `scripts/validate.sh` as check D01.
 
 `build` runs in `"functional"` mode (a real fixture, a real subagent run, assertions checked against the actual output).
-`scope`, `scope-review`, `commit`, `ship`, `reflect`, `to-pitch`, and `to-quiz` run in `"comprehension"` mode instead - each depends on either an interactive question loop, a live codebase, or prior artifacts (a finished spec, implementation notes, an e2e report) that are too expensive to stage on every iteration, so these check policy comprehension of the skill text directly.
+`scope`, `scope-quick`, `scope-review`, `commit`, `ship`, `ship-quick`, `reflect`, `to-pitch`, and `to-quiz` run in `"comprehension"` mode instead - each depends on either an interactive question loop, a live codebase, or prior artifacts (a finished spec, implementation notes, an e2e report) that are too expensive to stage on every iteration, so these check policy comprehension of the skill text directly.
 
 ## When to run these
 

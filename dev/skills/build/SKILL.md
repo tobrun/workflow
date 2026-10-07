@@ -41,7 +41,7 @@ Add any `--friction` lines per [../../references/run-journal.md](../../reference
 
 Then it ends with the same two lines, in this order - a green run, a blocked gate, and a run with open deviations all get both:
 
-1. `Next step: run ship over this work, pointed at .dev/{plan-name}/implementation-notes.md and the {plan-name}-e2e-report.html.` Recommend it; never launch it yourself.
+1. `Next step: run ship over this work, pointed at .dev/{plan-name}/implementation-notes.md and the {plan-name}-e2e-report.html.` Name `ship-quick` instead of `ship` when this run built change sets that fix an earlier `review_N.md`. Recommend it; never launch it yourself.
 2. Then any question left for the user - a blocked gate, an unresolved deviation.
 
 A blocked gate never replaces line 1.

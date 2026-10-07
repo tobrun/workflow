@@ -61,6 +61,11 @@ PLUGINS = {
                 "Spec a change by arguing its decisions",
                 "Use $dev:scope to spec this change with argued decisions and a change plan.",
             ),
+            "scope-quick": (
+                "Scope Quick",
+                "Write minimal change sets with no interview",
+                "Use $dev:scope-quick to turn the review findings or this small request into minimal change sets.",
+            ),
             "scope-review": (
                 "Scope Review",
                 "Review and auto-refine a settled spec",
@@ -70,6 +75,11 @@ PLUGINS = {
                 "Ship",
                 "Harden, review, then open a PR with proof",
                 "Use $dev:ship to run the quality gauntlet, the verified review, and open the pull request with evidence for this change.",
+            ),
+            "ship-quick": (
+                "Ship Quick",
+                "Verify fixes and update the PR, no gauntlet",
+                "Use $dev:ship-quick to verify the fixes with one reviewer, update the pull request, and follow it to green.",
             ),
             "reflect": (
                 "Reflect",

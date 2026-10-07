@@ -9,7 +9,7 @@ Phase 2 opens it when the panel is selected, holding `Verdict: IN PROGRESS` and 
 
 Verdict: {IN PROGRESS | PASS | CONCERNS | BLOCK}
 Panel: {lenses run}, {failed lenses if any}
-Base: {branch or PR}, {date}
+Base: {branch or PR}, {date}, head {sha of the reviewed commit}
 
 {1-2 sentence summary}
 
@@ -48,4 +48,5 @@ What to fix first and why.
 ```
 
 `scope` reads this file when the user accepts findings that need real work: its Blockers and Concerns open that run's interview, and its Decision reconciliation section is what gets applied to `docs/decisions.md`.
+`scope-quick` reads the same Blockers to write one fix change set each, and `ship-quick` diffs from the `head` on the Base line to review only what changed since.
 Write it for that reader - a finding with no triggering scenario cannot become a decision.

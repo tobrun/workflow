@@ -1,7 +1,7 @@
 {
   "name": "dev",
-  "version": "3.8.0",
-  "description": "Development workflow skills: scope changes with argued decisions, build across unit/integration/e2e with every scenario proven by tests, ship with a deterministic quality gauntlet and an adversarially verified review, create structured commits that feed a decision ledger, and render pitches or comprehension quizzes.",
+  "version": "3.9.0",
+  "description": "Development workflow skills: scope changes with argued decisions, build across unit/integration/e2e with every scenario proven by tests, ship with a deterministic quality gauntlet and an adversarially verified review, take a task to a pull request unattended with yolo, create structured commits that feed a decision ledger, and render pitches or comprehension quizzes.",
   "author": {
     "name": "Tobrun"
   },
@@ -10,7 +10,7 @@
   "interface": {
     "displayName": "Dev Workflow",
     "shortDescription": "Scope, build, and ship tested changes.",
-    "longDescription": "Development workflow skills: scope changes with argued decisions, build across unit/integration/e2e with every scenario proven by tests, ship with a deterministic quality gauntlet and an adversarially verified review, create structured commits that feed a decision ledger, and render pitches or comprehension quizzes.",
+    "longDescription": "Development workflow skills: scope changes with argued decisions, build across unit/integration/e2e with every scenario proven by tests, ship with a deterministic quality gauntlet and an adversarially verified review, take a task to a pull request unattended with yolo, create structured commits that feed a decision ledger, and render pitches or comprehension quizzes.",
     "developerName": "Tobrun",
     "category": "Developer Tools",
     "capabilities": [

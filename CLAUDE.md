@@ -52,7 +52,7 @@ each phase's completion itself. `run` is the plugin's only invocable skill.
 - All changes must pass `scripts/validate.sh` before committing.
 - Every plugin directory name must match its `plugin.json` name and marketplace entry name.
 - Every `SKILL.md` must have YAML frontmatter with `name` and `description`.
-- Every `SKILL.md` must set `disable-model-invocation: true`; all skills in this repo are human-triggered only, and skills recommend the next step instead of invoking each other - except the factory `run` skill, the one sanctioned invoker, which launches its phase bodies (`factory/phases/`, not skills) by path.
+- Every `SKILL.md` must set `disable-model-invocation: true`; all skills in this repo are human-triggered only, and skills recommend the next step instead of invoking each other - except the factory `run` skill, the one sanctioned invoker, which launches its phase bodies (`factory/phases/`, not skills) by path. The dev `yolo` skill reads the sibling scope, build, and ship bodies by path and follows them inline in one session; it launches nothing.
 - Plan files under `.dev/` are never committed.
 - Do not edit `plugins/` directly. Run `python3 scripts/build_codex_plugin.py`
   after changing any source plugin; the generator builds every configured

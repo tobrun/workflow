@@ -81,6 +81,11 @@ PLUGINS = {
                 "Verify fixes and update the PR, no gauntlet",
                 "Use $dev:ship-quick to verify the fixes with one reviewer, update the pull request, and follow it to green.",
             ),
+            "yolo": (
+                "Yolo",
+                "Scope, build, and ship one task with no questions",
+                "Use $dev:yolo to take this task from spec to an open pull request without asking me anything.",
+            ),
             "reflect": (
                 "Reflect",
                 "Turn run friction into cited skill fixes",

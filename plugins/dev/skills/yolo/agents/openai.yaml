@@ -1,0 +1,6 @@
+interface:
+  display_name: "Yolo"
+  short_description: "Scope, build, and ship one task with no questions"
+  default_prompt: "Use $dev:yolo to take this task from spec to an open pull request without asking me anything."
+policy:
+  allow_implicit_invocation: false

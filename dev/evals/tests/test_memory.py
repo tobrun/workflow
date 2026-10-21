@@ -3,7 +3,7 @@ journal entry skill-metrics.py writes at the end of a run, and the claims.py
 store the reflect skill loops against.
 
 Run from the repo root: python3 -m unittest discover -s dev/evals/tests -t .
-Each test builds a scratch git repository, a fake Claude transcript, and a
+Each test builds a scratch git repository, a fake Claude Code transcript, and a
 scratch memory store, and runs the scripts as subprocesses, so it proves the
 CLI contract the skills rely on.
 """
@@ -40,7 +40,9 @@ TRANSCRIPT = [
     line("user", "2026-01-05T09:00:00.000Z", "an earlier conversation the run must ignore"),
     line("user", "2026-01-05T10:00:00.000Z", "<command-name>/dev:build</command-name>"),
     line("user", "2026-01-05T10:00:01.000Z", "Base directory for this skill: /x", isMeta=True),
-    line("assistant", "2026-01-05T10:00:02.000Z", tool_use("t1", "python3 lint-spec.py .dev/x/spec.md")),
+    # The start call has no result yet: it is the command running when `start` looks.
+    line("assistant", "2026-01-05T10:00:02.000Z", tool_use("t0", "python3 /p/scripts/skill-metrics.py start build")),
+    line("assistant", "2026-01-05T10:00:02.600Z", tool_use("t1", "python3 lint-spec.py .dev/x/spec.md")),
     line("user", "2026-01-05T10:00:03.000Z", tool_result("t1", "spec.md:4: missing tests line", True)),
     line("assistant", "2026-01-05T10:00:04.000Z", tool_use("t2", "python3 lint-spec.py .dev/x/spec.md")),
     line("user", "2026-01-05T10:00:05.000Z", tool_result("t2", "clean", False)),
@@ -56,6 +58,15 @@ TRANSCRIPT = [
 ]
 
 
+HARNESS_VARS = ("CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID", "OPENCODE_SESSION_ID", "PI_SESSION_FILE",
+                "PI_SESSION_ID", "CODEX_HOME", "XDG_DATA_HOME")
+
+
+def clean_env() -> dict:
+    """The test process's environment without the harness hosting the test run."""
+    return {k: v for k, v in os.environ.items() if k not in HARNESS_VARS}
+
+
 class Sandbox:
     """A scratch repo with a transcript where skill-metrics.py will find it."""
 
@@ -68,11 +79,12 @@ class Sandbox:
                         "--allow-empty", "-m", "init"], cwd=self.repo, check=True)
         self.config = tmp / "claude"
         slug = re.sub(r"[^A-Za-z0-9]", "-", str(self.repo))
-        self.transcript = self.config / "projects" / slug / "session.jsonl"
+        self.transcript = self.config / "projects" / slug / "session.jsonl"  # the session id is "session"
         self.transcript.parent.mkdir(parents=True)
         self.transcript.write_text("".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
         self.memory = tmp / "memory"
-        self.env = {**os.environ, "CLAUDE_CONFIG_DIR": str(self.config), "DEV_MEMORY_DIR": str(self.memory)}
+        self.env = {**clean_env(), "CLAUDE_CONFIG_DIR": str(self.config), "CLAUDE_CODE_SESSION_ID": "session",
+                    "DEV_MEMORY_DIR": str(self.memory)}
 
     def metrics(self, *args: str) -> subprocess.CompletedProcess:
         return subprocess.run([sys.executable, str(METRICS), *args], cwd=self.repo, env=self.env,
@@ -112,16 +124,16 @@ class JournalTest(unittest.TestCase):
     def test_end_journals_measured_signals_with_their_lines(self):
         entry = self.box.run("the brief left out the Validation block")
         self.assertEqual(entry["skill"], "build")
-        self.assertEqual(entry["id"], "r-20260105T100000-build")
+        self.assertEqual(entry["id"], "r-20260105T100002-build")
         self.assertEqual(entry["counts"], {"change_sets": "2"})
         self.assertEqual(entry["checkers"]["lint-spec.py"]["runs"], 2)
         self.assertEqual(entry["checkers"]["lint-spec.py"]["failed"], 1)
-        self.assertEqual(entry["checkers"]["lint-spec.py"]["first_failure"]["line"], 4)
+        self.assertEqual(entry["checkers"]["lint-spec.py"]["first_failure"]["line"], 5)
         kinds = {s["type"]: s for s in entry["signals"]}
-        self.assertEqual(kinds["denied"]["line"], 8)
-        self.assertEqual(kinds["tool_error"]["line"], 10)
-        self.assertEqual(kinds["interrupt"]["line"], 11)
-        self.assertEqual(kinds["user_turn"]["line"], 12)
+        self.assertEqual(kinds["denied"]["line"], 9)
+        self.assertEqual(kinds["tool_error"]["line"], 11)
+        self.assertEqual(kinds["interrupt"]["line"], 12)
+        self.assertEqual(kinds["user_turn"]["line"], 13)
         self.assertEqual(entry["signal_counts"],
                          {"denied": 1, "tool_error": 1, "interrupt": 1, "user_turn": 1})
         self.assertEqual(entry["friction"], ["the brief left out the Validation block"])
@@ -167,7 +179,7 @@ class ClaimsTest(unittest.TestCase):
         row = {"skill": "build", "thread": "build-validation-reruns", "kind": "friction",
                "claim": "The user had to stop build from rerunning the full Validation block.",
                "quote": "stop rerunning the whole validation block",
-               "source": {"run": self.run_id, "line": 12}, "salience": 2}
+               "source": {"run": self.run_id, "line": 13}, "salience": 2}
         row.update(over)
         return row
 
@@ -189,7 +201,7 @@ class ClaimsTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout)
         [row] = self.stored()
         self.assertEqual(row["id"], "c-0001")
-        self.assertEqual(row["observed_at"], "2026-01-05T10:00:00.000Z")
+        self.assertEqual(row["observed_at"], "2026-01-05T10:00:02.000Z")
         self.assertIn("[c-0001]", (self.box.memory / "skills" / "build.md").read_text())
         self.assertIn("build-validation-reruns", (self.box.memory / "threads.yaml").read_text())
         self.assertEqual(self.box.claims("check").returncode, 0)
@@ -207,7 +219,7 @@ class ClaimsTest(unittest.TestCase):
 
     def test_shape_and_source_errors(self):
         cases = {
-            "source.run 'r-missing' is not in the journal": self.claim(source={"run": "r-missing", "line": 12}),
+            "source.run 'r-missing' is not in the journal": self.claim(source={"run": "r-missing", "line": 13}),
             "kind must be one of": self.claim(kind="vibe"),
             "credential shape": self.claim(claim="Leaked token=abcdefghijklmnop in the run log."),
             "has no readable line": self.claim(source={"run": self.run_id, "line": 999}),
@@ -244,7 +256,7 @@ class ClaimsTest(unittest.TestCase):
         later = [dict(r, timestamp=r["timestamp"].replace("2026-01-05", "2030-01-01")) for r in TRANSCRIPT]
         self.box.transcript.write_text("".join(json.dumps(r) + "\n" for r in TRANSCRIPT + later))
         entry = self.box.run()
-        self.assertEqual(self.add(self.claim(source={"run": entry["id"], "line": len(TRANSCRIPT) + 12})).returncode, 0)
+        self.assertEqual(self.add(self.claim(source={"run": entry["id"], "line": len(TRANSCRIPT) + 13})).returncode, 0)
         top = self.box.claims("top").stdout
         self.assertIn("| build-validation-reruns | build | reopened |", top)
 
@@ -259,7 +271,7 @@ class ClaimsTest(unittest.TestCase):
         self.add(self.claim())
         shown = self.box.claims("show", "c-0001").stdout
         self.assertIn('quote: "stop rerunning the whole validation block"', shown)
-        self.assertIn("context (session.jsonl:12)", shown)
+        self.assertIn("context (session.jsonl:13)", shown)
         out = self.box.repo / "report.html"
         self.assertEqual(self.box.claims("report", str(out)).returncode, 0)
         self.assertIn("build-validation-reruns", out.read_text())

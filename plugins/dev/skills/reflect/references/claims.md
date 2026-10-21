@@ -21,7 +21,8 @@ A retracted claim stays so the same evidence cannot quietly bring it back.
 
 The fields an extracting agent reads:
 
-- `id`, `skill`, `repo`, `started_at`, `transcript`, `anchor_line`.
+- `id`, `skill`, `repo`, `harness` (`claude`, `codex`, `opencode`, or `pi`), `started_at`, `transcript`, `anchor_line`, and `subagent_transcripts`, the subagent session files a source may cite.
+- `unmeasured_signals`: signal types the harness cannot record; their absence from `signals` is not evidence.
 - `signals`: up to 20 per type, each `{type, transcript, line, excerpt}`. Types: `interrupt` (the user stopped the run), `denied` (the user refused a tool call), `tool_error` (a non-checker tool failed), `user_turn` (anything the user typed after invocation).
 - `checkers`: per checker script, `runs`, `failed`, and `first_failure` with its line.
 - `counts`: the skill's own measured counters, `signal_counts`: totals before the cap.

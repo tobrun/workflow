@@ -103,7 +103,9 @@ Cannot enforce a merge gate, so it says so plainly and produces an honest pass/f
 ## Run metrics
 
 `scope`, `scope-review`, `build`, `ship`, `scope-quick`, `ship-quick`, and `yolo` each start by snapshotting the run with `scripts/skill-metrics.py start` and end by printing what it measured: wall time, tokens split between the orchestrator and its subagents, agents dispatched, tool calls, the git delta since the snapshot, and any counters the skill tallied from tool output.
-The numbers come from the session transcript under `$CLAUDE_CONFIG_DIR` (default `~/.claude`) and from git, never from the model's recollection.
+The numbers come from git and from the session store of whichever harness ran the skill, never from the model's recollection.
+Claude Code, Codex, opencode, and Pi each name the running session to the shell tool (`CLAUDE_CODE_SESSION_ID`, `CODEX_THREAD_ID`, `OPENCODE_SESSION_ID`, `PI_SESSION_FILE`), and the script anchors on its own `start` call inside that session, so a nested harness or a phase run inside a subagent is measured where it ran.
+A value a harness does not record prints as `n/a`, never as zero: Pi's review panel runs with `--no-session`, so Pi runs show subagent tokens and agents as `n/a`, and a run outside any of the four shows every session-derived value as `n/a`.
 Every run appends a row to `.dev/metrics.jsonl` in the consuming repository, and the table compares the run against the median of earlier runs of the same skill, which is where a skill's cost and catch rate become visible over time.
 The same call appends an entry to the cross-repository run journal under `~/.dev-workflow/memory/journal/` (or `$DEV_MEMORY_DIR`): the friction signals measured from the transcript (interrupts, denied and failed tool calls, the user's own turns, and how often each deterministic checker ran and failed), each with its transcript line, plus at most three `--friction` lines in which the skill names where the run fought its own instructions.
 That journal is what `reflect` consolidates. It stays on the machine; set `DEV_MEMORY_DIR=off`, or `"memory": {"enabled": false}` in `.dev/config.json`, to keep a repository out of it.

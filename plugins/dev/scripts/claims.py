@@ -137,7 +137,8 @@ def source_text(source: dict, run: dict) -> tuple[str | None, str]:
         return None, "source.line must be a non-negative integer"
     main = Path(run.get("transcript") or "")
     target = Path(source.get("transcript") or main)
-    allowed = target == main or main.with_suffix("") in target.parents
+    listed = {Path(p) for p in run.get("subagent_transcripts") or []}
+    allowed = target == main or target in listed or main.with_suffix("") in target.parents
     if not run.get("transcript") or not allowed:
         return None, f"source.transcript must be the run's transcript or one of its subagents ({main})"
     obj = transcript_line(target, source["line"])

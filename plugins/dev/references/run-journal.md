@@ -1,7 +1,9 @@
 # Run Journal
 
 `skill-metrics.py end` appends one entry per run to the cross-repository journal under `~/.dev-workflow/memory/journal/` (or `$DEV_MEMORY_DIR`), which the `reflect` skill consolidates into cited claims about the skills themselves.
-The script measures the friction signals on its own from the transcript: interrupts, denied and failed tool calls, the user's own turns, and how often each checker ran and failed.
+The script measures the friction signals on its own from the session, in whichever harness ran it: interrupts, denied and failed tool calls, the user's own turns, and how often each checker ran and failed.
+A signal a harness cannot record (Pi has no permission prompts, so no `denied`) is listed in the entry's `unmeasured_signals` instead of counting as none.
+opencode keeps sessions in SQLite, so its run is exported as JSONL under `transcripts/` in the same store, and its signals cite lines of that export.
 
 The one thing it cannot measure is where the run fought the skill's own instructions, so the skill adds that, as up to three `--friction "..."` arguments on the `end` call:
 

@@ -13,7 +13,7 @@ Captured: 2026-09-17 (full, scope) - Updated: 2026-10-09 (yolo, the unattended s
 | --------- | -------------- | -------- | -------- |
 | dev skills | the interactive workflow skills and the references and scripts they share | `dev/skills/`, `dev/references/`, `dev/scripts/` | nothing at runtime; read by Claude, Codex, opencode, and Pi hosts |
 | dev evals | comprehension evals for the skills | `dev/evals/` | nothing at runtime |
-| workflow memory | the run journal `dev/scripts/skill-metrics.py` appends to and the cited claims, threads, and resolutions `dev/scripts/claims.py` keeps from it; local to the machine, shared by every consuming repository, never committed | ~/.dev-workflow/memory/ (outside this repository) | read by the reflect skill |
+| workflow memory | the run journal `dev/scripts/skill-metrics.py` appends to (with opencode runs exported as JSONL beside it) and the cited claims, threads, and resolutions `dev/scripts/claims.py` keeps from it; local to the machine, shared by every consuming repository, never committed | ~/.dev-workflow/memory/ (outside this repository) | read by the reflect skill |
 | generated plugins | the Codex distributions built from each source plugin, with invocation policy in agents/openai.yaml | `plugins/` | Codex plugin marketplace |
 | repo scripts | validation of the whole repository, the plugin generator, and the Pi transport self-test | `scripts/` | every other component |
 | harden tools | optional local analyses a ship gauntlet can draw on: added lines, coverage-weighted complexity, flaky reruns, mutation | `tools/harden/` | nothing; run by hand against a target repository |
@@ -54,6 +54,7 @@ Captured: 2026-09-17 (full, scope) - Updated: 2026-10-09 (yolo, the unattended s
 | -------- | ---- | -------- | ----- |
 | Claude Code, Codex, opencode, Pi | host | the skills | each reads the skills in its own format; the generated tree under `plugins/` serves Codex |
 | git and GitHub | external | the ship skill | branch state and `gh pr` calls made during a ship run |
+| Claude Code, Codex, opencode, Pi session stores | local store | skill-metrics.py | read only, through the session variable each harness sets |
 | workflow memory | local store | skill-metrics.py, claims.py | ~/.dev-workflow/memory/ or $DEV_MEMORY_DIR; quotes from transcripts stay on the machine |
 | consuming repository | store | the skills | `.dev/` plan files, `docs/` ledgers, the .factory/ config and injected phase copies, and the root AGENTS.md bootstrap writes |
 

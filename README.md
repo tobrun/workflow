@@ -11,20 +11,23 @@
 ```bash
 /plugin marketplace add tobrun/workflow
 /plugin install dev@nurbot
+/plugin install factory@nurbot
 /plugin install bootstrap@nurbot
 ```
 
-Invoke skills as `/scope`, `/build`, and so on, or namespaced as `/dev:scope`; bootstrap's skill is `/bootstrap:agents-md`.
+Invoke skills as `/scope`, `/build`, and so on, or namespaced as `/dev:scope`; factory's skill is `/factory:run` and bootstrap's is `/bootstrap:agents-md`.
 
 ## Codex
 
 ```bash
 codex plugin marketplace add tobrun/workflow
 codex plugin add dev@nurbot
+codex plugin add factory@nurbot
 codex plugin add bootstrap@nurbot
 ```
 
-Invoke skills as `$dev:scope`, `$dev:build`, `$bootstrap:agents-md`, and so on.
+Invoke skills as `$dev:scope`, `$dev:build`, `$factory:run`, `$bootstrap:agents-md`, and so on.
+factory needs `agents.max_depth` of at least 2; see [factory/README.md](factory/README.md#install).
 The distribution is explicit-invocation only.
 The checked-in Codex packages under `plugins/` are generated from each source plugin:
 
@@ -34,16 +37,17 @@ python3 scripts/build_codex_plugin.py
 
 ## opencode
 
-opencode reads the Claude-format source skills directly; symlink them into its
-global skill directory:
+opencode reads the Claude-format source skills directly.
+Clone the repository anywhere and, from its root, symlink the skills into opencode's global skill directory:
 
 ```bash
-git clone https://github.com/tobrun/workflow ~/ws/workflow
+git clone https://github.com/tobrun/workflow
+cd workflow
 mkdir -p ~/.config/opencode/skills
-for skill in ~/ws/workflow/dev/skills/*/; do
-  ln -sfn "$skill" ~/.config/opencode/skills/"$(basename "$skill")"
+for skill in "$PWD"/dev/skills/*/; do
+  ln -sfn "${skill%/}" ~/.config/opencode/skills/"$(basename "$skill")"
 done
-ln -sfn ~/ws/workflow/dev/references ~/.config/opencode/references
+ln -sfn "$PWD/dev/references" ~/.config/opencode/references
 ```
 
 Ask the agent for a skill by name, for example "run the scope skill".

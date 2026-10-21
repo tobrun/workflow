@@ -4,8 +4,8 @@ An orchestrator skill that drives a pipeline of typed phases on the current chec
 
 ## Install
 
-- **Claude Code**: `/plugin marketplace add tobrun/workflow` then `/plugin install factory@nurbot`, or locally `/plugin marketplace add ~/ws/workflow` then `/plugin install factory@nurbot`.
-- **Codex**: `codex plugin marketplace add .` then `codex plugin add factory@nurbot`; set `agents.max_depth` to at least 2, since scope-review's and ship's own panels run one level inside the phase subagent.
+- **Claude Code**: `/plugin marketplace add tobrun/workflow` then `/plugin install factory@nurbot`, or from a local clone `/plugin marketplace add /path/to/workflow` then `/plugin install factory@nurbot`.
+- **Codex**: `codex plugin marketplace add tobrun/workflow` (or a local clone path) then `codex plugin add factory@nurbot`; set `agents.max_depth` to at least 2, since scope-review's and ship's own panels run one level inside the phase subagent.
 
 ## The run flow
 

@@ -129,19 +129,21 @@ Invoke skills as `$dev:scope`, `$dev:build`, and so on.
 ## opencode installation
 
 opencode reads Claude-format `SKILL.md` files natively, so no generated distribution is needed.
-Clone this repository and symlink the source skills into opencode's global skill directory:
+Clone this repository anywhere and, from its root, symlink the source skills into opencode's global skill directory:
 
 ```bash
-git clone https://github.com/tobrun/workflow ~/ws/workflow
+git clone https://github.com/tobrun/workflow
+cd workflow
 mkdir -p ~/.config/opencode/skills
-for skill in ~/ws/workflow/dev/skills/*/; do
-  ln -sfn "$skill" ~/.config/opencode/skills/"$(basename "$skill")"
+for skill in "$PWD"/dev/skills/*/; do
+  ln -sfn "${skill%/}" ~/.config/opencode/skills/"$(basename "$skill")"
 done
-ln -sfn ~/ws/workflow/dev/references ~/.config/opencode/references
+ln -sfn "$PWD/dev/references" ~/.config/opencode/references
 ```
 
 The last symlink keeps the shared references (`decision-ledger.md`, `contracts.md`, `architecture.md`) reachable through the `../../references/` links inside the skills.
 Symlinks mean a `git pull` updates the skills in place; restart opencode afterwards, since skills load at startup.
+The symlinks point at the clone, so keep it in place; if you move it, rerun the commands from the new location.
 
 opencode has no `disable-model-invocation` field (it is ignored harmlessly); skills load through a model-invoked `skill` tool.
 Preserve the explicit-invocation policy with a permission rule in `~/.config/opencode/opencode.json`:

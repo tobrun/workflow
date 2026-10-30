@@ -32,7 +32,7 @@ Both phases share one scope.
 ## Phase 1: the gauntlet
 
 Eight checks, cheapest first - the five read-only analyzers scan as one parallel batch, the three test-contending ones run sequentially, per the loop reference; [references/tools.md](references/tools.md) owns their definitions and the acquisition ladder.
-Never weaken or skip a check because acquiring its tool is work.
+Never weaken or skip a check because acquiring its tool is work. The mutation check is optional only as specified by the configuration below.
 
 1. **Project static analysis** - every linter, type checker, and format checker the repo already configures, run over the in-scope files.
 2. **Security scan** - secrets, vulnerable dependencies, and static security rules; a found secret escalates immediately, it is never quiet fix-agent work.
@@ -41,7 +41,9 @@ Never weaken or skip a check because acquiring its tool is work.
 5. **Dependency rules** against `docs/dependencies.md` ([../../references/dependency-rules.md](../../references/dependency-rules.md) owns the checker semantics; absent file: skip with a clear note, never invent rules).
 6. **Coverage-weighted complexity** per in-scope function.
 7. **Flakiness** - the tests the diff added or touched, repeated and shuffled until trusted.
-8. **Mutation testing** over the in-scope source - scored and reported in the wrap-up, never a reason on its own to block shipping (see gauntlet.md's "Mutation testing is reported, not a threshold").
+8. **Mutation testing** over the in-scope source, unless disabled in `.dev/config.yaml` - scored and reported in the wrap-up, never a reason on its own to block shipping (see gauntlet.md's "Mutation testing is reported, not a threshold").
+
+Before phase 1, read `.dev/config.yaml` at the target repository root as YAML. The top-level `mutation_testing` key is a boolean: absent file or absent key means `true`; `true` runs the check; `false` skips it, including tool acquisition, mutant generation and survivor fixes. Empty YAML is an empty mapping. A malformed file, non-mapping root, or non-boolean value is an error: stop phase 1 and report the path and problem; do not silently skip or assume a value. Ignore unrelated keys. Resolve this once for the whole ship run. When skipped, report `mutation testing: skipped (disabled in .dev/config.yaml)` in the wrap-up and the PR Quality row, without counts; do not claim it passed. The other checks and CI parity still run.
 
 Run each check to completion per the loop in [references/gauntlet.md](references/gauntlet.md).
 A run that will reach phase 3 opens `.dev/{plan-name}/pr.md` before the first check and records each check's result in it as that check finishes, per the Body section of [references/pull-request.md](references/pull-request.md).

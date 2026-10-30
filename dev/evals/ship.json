@@ -55,6 +55,16 @@
         "Answer 2: no - a picked scenario that failed stays in, marked failed; evidence is never fabricated or tidied",
         "Answer 3: the extract fails naming the unknown id and the ids the report does have"
       ]
+    },
+    {
+      "id": "mutation-config",
+      "prompt": "From ship and its references: What happens when .dev/config.yaml is absent, empty, sets mutation_testing to true, sets it to false, or sets it to the string \"false\"? What does the PR Quality row say when disabled? Do the other checks and CI parity still run?",
+      "assertions": [
+        "Missing file, empty mapping, or missing key defaults to enabled; boolean true runs mutation testing",
+        "Boolean false skips mutation tool acquisition, mutant generation, and survivor fixes; report it as skipped due to .dev/config.yaml without counts, not passed",
+        "Malformed YAML, a non-mapping root, or a non-boolean value stops phase 1 with the path and error",
+        "All other checks and CI parity still run when mutation testing is disabled"
+      ]
     }
   ]
 }

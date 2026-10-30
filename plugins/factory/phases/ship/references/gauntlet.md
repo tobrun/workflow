@@ -8,7 +8,7 @@ The check definitions and their acquisition ladder live in [tools.md](tools.md);
 The five read-only analyzers - static analysis, security, dead code, duplication, dependency rules - scan as one parallel batch: their initial runs mutate nothing, so collect all five violation lists concurrently, dispatch fix agents grouped by independent area across the combined lists, and re-run all five together until clean.
 The expensive three - complexity x coverage, flakiness, mutation - stay sequential, cheapest first: they contend for the test runner, and each one's input shifts with every fix the previous one landed.
 
-For each tool (the batched five count as one), in order:
+For each enabled tool (the batched five count as one), in order; skip mutation entirely when disabled by `.dev/config.yaml` as specified in ship:
 
 1. Run it; collect the violations.
 2. Dispatch fixes: one fresh-context agent per independent area, launched in a single message, each given only the violation list for its area, the relevant file paths, and the fix vocabulary below.
@@ -61,5 +61,5 @@ Never adjust a threshold silently to make a run pass.
 
 ## Mutation testing is reported, not a threshold
 
-The other seven checks above judge whether this run may ship; mutation testing does not, and it is the one check with no default threshold at all. A codebase's baseline kill rate depends on how much test coverage the diff's area already had going in, which this run did not choose - failing the run over that inherited debt would make ordinary changes to weakly-tested code unshippable regardless of what the diff itself does.
+When enabled, the other seven checks above judge whether this run may ship; mutation testing does not, and it is the one check with no default threshold at all. A codebase's baseline kill rate depends on how much test coverage the diff's area already had going in, which this run did not choose - failing the run over that inherited debt would make ordinary changes to weakly-tested code unshippable regardless of what the diff itself does.
 Fix agents still chase survivors under the loop above and the fix vocabulary's "kill a mutant" entry, and equivalent mutants still get marked and left, exactly as before. When a survivor resists two fix rounds (item 4 of the loop), record it and move on rather than escalating it as a blocker. The ship report's counts - killed, survived, uncovered, with the reason recorded against each stubborn survivor - are the evidence a person reads; there is no score below which the run fails.

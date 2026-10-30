@@ -56,7 +56,7 @@ Each change set, whether you run it yourself or a subagent runs it, follows the 
 
 ## Rules of the loop
 
-- **No red step.** A test is written with its slice and run to green: never run a test just to watch it fail, and never break working code to prove that it can. What keeps a test able to fail is an expected value the code did not produce, per [references/tests.md](references/tests.md); `ship`'s mutation run reports the ones that still cannot. A bug fix is the one exception: a defect change set starts with a test that reproduces the reported issue, run once before the fix - that failure is the proof it was actually reproduced - only then fix, and watch that same test go green.
+- **No red step.** A test is written with its slice and run to green: never run a test just to watch it fail, and never break working code to prove that it can. What keeps a test able to fail is an expected value the code did not produce, per [references/tests.md](references/tests.md); `ship`'s mutation run, when enabled, reports the ones that still cannot. A bug fix is the one exception: a defect change set starts with a test that reproduces the reported issue, run once before the fix - that failure is the proof it was actually reproduced - only then fix, and watch that same test go green.
 - **One slice at a time.** One seam, one behavior, one test, one minimal implementation per cycle.
 - **Refactoring is not part of the loop.** It belongs to `ship`'s review phase.
 - **Keep going.** A red test, a failing e2e scenario, or an edge case that contradicts the spec is work to do, not a reason to hand back. Fix it, log the deviation, continue. Stop early only when a blocking question makes further work unsafe or wasted.

@@ -53,7 +53,7 @@ Plan `.dev/{plan-name}` | Review {N}: {verdict}
 
 | Check | Found | Fixed | Surviving |
 | ----- | ----- | ----- | --------- |
-{one row per gauntlet tool}
+{one row per gauntlet tool; for disabled mutation testing, write skipped (disabled in .dev/config.yaml), with no counts}
 
 Review panel: {lenses}; {blockers} blockers, {concerns} concerns ({review_N.md path}).
 CI parity ({impact verdict and packages}): {each reproducible required command, the scope it ran at, and its result}; deferred to CI: {commands outside the impact, or "none"}; remote-only: {checks verified by the PR itself, or "none"}.

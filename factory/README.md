@@ -37,3 +37,5 @@ By default nothing of ours is copied into your repository: the default pipeline 
 The copies are ordinary files in your repository, so they enter the run branch's diff: `ship`'s gauntlet and review panel review them as part of the change, and `build`'s commit check sees an inject commit the change plan does not list. Commit them on their own first.
 
 An unedited copy takes a plugin upgrade the next time you run `inject`. An edited copy is refused, naming the file, until you pass `--force`, and a copy you edited counts as foreign in `check`: it then needs `unattended_safe: true` and is never hand-repaired by the orchestrator.
+
+The built-in ship phase also honors the target repository's `.dev/config.yaml`: `mutation_testing: false` skips mutation testing; a missing file or key defaults to enabled. See [dev workflow configuration](../dev/README.md#workflow-configuration) for the shared setting and error behavior. This is separate from the Factory pipeline configuration.

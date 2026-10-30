@@ -25,6 +25,14 @@
         "Answer 4: it stops in preflight and says so, before anything is spent",
         "Answer 5: only the e2e report, because the PR evidence is extracted from it; the spec and review renders are skipped and nothing is published"
       ]
+    },
+    {
+      "id": "yolo-mutation-config",
+      "prompt": "A target repository has .dev/config.yaml with mutation_testing: false. Does yolo run mutation testing in its ship stage, and what is reported?",
+      "assertions": [
+        "YOLO follows ship inline and skips mutation testing including tool acquisition and survivor fixes",
+        "The wrap-up and PR Quality row report it skipped due to the configuration; other checks still run"
+      ]
     }
   ]
 }

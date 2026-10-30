@@ -8,6 +8,7 @@ disable-model-invocation: true
 
 Finish the task the user gave you, ending in a pull request, without asking them anything along the way.
 The stages are the sibling skills' bodies, read by path and followed in this session - never launched as skills: `../scope/SKILL.md`, then `../build/SKILL.md`, then `../ship/SKILL.md`, each with its references and scripts resolved from its own directory.
+Ship honors the target repository's `.dev/config.yaml` mutation setting in this run too, including its default and skip reporting.
 Their quality loops - the argued decisions and spec lint, the per-scenario tests and e2e run, the gauntlet, the verified panel, the remediation rounds, the evidence check - run exactly as written.
 What changes is one thing: wherever a stage would stop for the user, this skill applies the stage's own recommendation, writes down that it did, and keeps going.
 

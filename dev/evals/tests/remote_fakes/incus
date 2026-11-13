@@ -1,0 +1,73 @@
+#!/usr/bin/env python3
+"""Stand-in for `incus` in the remote.py tests: each ws-<name> is a directory.
+
+  incus list --format json
+  incus exec ws-X -- runuser -l agent -c SCRIPT   SCRIPT in bash, HOME = the VM's home
+  incus exec ws-X -- systemd-run [--opts] CMD...  CMD detached, its pid kept per unit
+  incus exec ws-X -- systemctl is-active|stop|reset-failed UNIT
+
+The VM environment is rebuilt from scratch (fakes first on PATH, no login
+shell), so nothing on the developer's own PATH, such as a real `claude`, runs.
+"""
+
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+FAKES = Path(__file__).resolve().parent
+ROOT = Path(os.environ["FAKE_FLEET_ROOT"])
+
+
+def vm_env(vm: Path) -> dict:
+    keep = {k: v for k, v in os.environ.items()
+            if k.startswith(("FAKE_", "GIT_AUTHOR_", "GIT_COMMITTER_"))}
+    path = os.pathsep.join([str(FAKES), str(Path(sys.executable).parent), "/usr/bin", "/bin"])
+    if os.environ.get("FAKE_GITCONFIG"):  # the host's /etc/gitconfig, e.g. the GitHub relay's insteadOf
+        keep["GIT_CONFIG_GLOBAL"] = os.environ["FAKE_GITCONFIG"]
+    return {**keep, "PATH": path, "HOME": str(vm / "home"), "DEV_REMOTE_TMP": str(vm / "tmp"),
+            "FAKE_VM": str(vm), "GIT_CONFIG_NOSYSTEM": "1", "LANG": "C.UTF-8"}
+
+
+def main() -> int:
+    argv = sys.argv[1:]
+    if argv[:1] == ["list"]:
+        rows = [{"name": p.name, "status": (p / "state").read_text().strip() if (p / "state").exists() else "Running"}
+                for p in sorted(ROOT.iterdir()) if p.name.startswith("ws-")]
+        print(json.dumps(rows))
+        return 0
+    if argv[:1] != ["exec"] or argv[2] != "--":
+        print(f"fake incus: unsupported {argv}", file=sys.stderr)
+        return 2
+    vm = ROOT / argv[1]
+    if not vm.is_dir():
+        print(f"Error: Instance not found: {argv[1]}", file=sys.stderr)
+        return 1
+    cmd, env = argv[3:], vm_env(vm)
+    (vm / "home").mkdir(parents=True, exist_ok=True)
+    if cmd[:3] == ["runuser", "-l", "agent"] and cmd[3] == "-c":
+        os.chdir(vm / "home")
+        os.execve("/bin/bash", ["bash", "-c", cmd[4]], env)
+    if cmd[:1] == ["systemd-run"]:
+        rest = cmd[1:]
+        unit = next(a.split("=", 1)[1] for a in rest if a.startswith("--unit="))
+        while rest and rest[0].startswith("--"):
+            rest = rest[1:]
+        if rest[:2] == ["/bin/bash", "-lc"]:
+            rest = ["/bin/bash", "-c", rest[2]]
+        units = vm / "units"
+        units.mkdir(exist_ok=True)
+        log = open(units / f"{unit}.log", "ab")
+        proc = subprocess.Popen(rest, env=env, cwd=vm / "home", start_new_session=True,
+                                stdin=subprocess.DEVNULL, stdout=log, stderr=log)
+        (units / f"{unit}.pid").write_text(str(proc.pid))
+        return 0
+    if cmd[:1] == ["systemctl"]:
+        os.execve(str(FAKES / "systemctl"), ["systemctl", *cmd[1:]], env)
+    print(f"fake incus: unsupported exec {cmd}", file=sys.stderr)
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())

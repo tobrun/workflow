@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Stand-in for `gh` in the remote.py tests.
+#   gh auth status                 signed in when FAKE_GH=signed-in
+#   gh pr create ...               needs --head and GH_REPO, as behind the relay; writes pr.json
+#   gh pr view BRANCH --json ...   the PR the fake claude opened ($FAKE_VM/pr.json); needs
+#                                  GH_REPO or --repo, as behind the fleet's insteadOf relay
+set -Eeuo pipefail
+case "${1:-} ${2:-}" in
+  "auth status") [ "${FAKE_GH:-}" = signed-in ] || { echo "You are not logged into any GitHub hosts." >&2; exit 1; } ;;
+  "pr view") case " $* " in *" --repo "*|*" -R "*) ;; *)
+               # Real gh infers the repository from the remotes, which an insteadOf rewrite hides.
+               [ -n "${GH_REPO:-}" ] || { echo "none of the git remotes configured for this repository point to a known GitHub host" >&2; exit 1; } ;;
+             esac
+             [ -f "${FAKE_VM:?}/pr.json" ] || { echo "no pull requests found for branch \"$3\"" >&2; exit 1; }
+             cat "$FAKE_VM/pr.json" ;;
+  "pr create") case " $* " in *" --head "*|*" -H "*|*" --head="*) ;; *)
+               # Real gh resolves the branch's push remote here, even with GH_REPO set.
+               echo "could not resolve remote \"origin\": none of the git remotes configured for this repository point to a known GitHub host" >&2; exit 1 ;;
+             esac
+             [ -n "${GH_REPO:-}" ] || { echo "none of the git remotes configured for this repository point to a known GitHub host" >&2; exit 1; }
+             printf '{"url": "https://example.test/pr/7", "number": 7, "state": "OPEN", "isDraft": false}' >"${FAKE_VM:?}/pr.json"
+             echo "https://example.test/pr/7" ;;
+  *) echo "fake gh: unsupported $*" >&2; exit 2 ;;
+esac

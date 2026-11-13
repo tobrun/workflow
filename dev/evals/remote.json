@@ -1,0 +1,39 @@
+{
+  "skill": "remote",
+  "mode": "comprehension",
+  "evals": [
+    {
+      "id": "remote-split-and-authority",
+      "prompt": "Answer briefly, from the skill text and its references only. The user says 'run the rate-limit plan on a sandbox'. (1) Which phases run in the sandbox by default, and where do scope and the pull request happen? (2) remote.py dispatch refuses because tracked files have uncommitted changes. What do you do? (3) Does dispatching ship authorize a push and a PR, and who does them? (4) The workspace's gh is signed out. May the sandbox session push the branch or publish evidence images?",
+      "fixture": "none - the answers come from the skill text",
+      "assertions": [
+        "Answer 1: build then ship run in the sandbox; scope stays on this machine; the PR is opened by the sandbox when its git credentials pass dispatch's probe, otherwise from here after collect",
+        "Answer 2: never work around the refusal; committing is a commit request the user has to make, so report it and dispatch again once the work is committed",
+        "Answer 3: yes - dispatching ship is a request to ship, pull-request phase included, as invoking it locally would be; the sandbox publishes when the probe (a dry-run push to origin and gh auth status) passes, and --publish laptop keeps publication here when the user says no PR or local only",
+        "Answer 4: no - the probe fails, so under auto the run is dispatched with publication withheld (the reason is recorded): no push, no PR, no evidence image publishing, no attempt to authenticate gh or git; ship stops at a prepared pr.md with a passing pr-evidence check and the PR is published from here after collect"
+      ]
+    },
+    {
+      "id": "remote-failure-and-collect",
+      "prompt": "Answer briefly, from the skill text and its references only. (1) remote.py status shows a run as lost. What does that mean and what are the options? (2) A run failed on a gateway error halfway through build. Resume or collect? What does resume continue? (3) The user edited spec.md on the laptop while the sandbox also changed it. What does collect do with the two versions? (4) The user committed to the work branch locally while the run worked, and the histories diverged. What does collect do?",
+      "fixture": "none - the answers come from the skill text",
+      "assertions": [
+        "Answer 1: the unit is gone without recording an end (the VM restarted or the runner was killed); read the logs, then resume or collect",
+        "Answer 2: resume - a transient cause is a resume; it continues the recorded session of the phase that ended with its working tree untouched, then runs the remaining phases fresh",
+        "Answer 3: the local spec.md stays and the sandbox's version lands beside it as spec.md.remote; collect reports the conflict and resolving it is the user's call",
+        "Answer 4: it refuses to change the branch - updates are fast-forward only - and leaves the sandbox's commits at refs/dev-remote/{run} for the user to reconcile"
+      ]
+    },
+    {
+      "id": "remote-publication-path",
+      "prompt": "Answer briefly, from the skill text and its references only. A run finished done, collect succeeded, and the user authorized the PR. (1) Where do you work from, and is the user's own checkout switched? (2) What check do you run on pr.md before publishing, and with which repo root? (3) When does the PR open as a draft? (4) A required CI check fails with a large fix needed. What is the path?",
+      "fixture": "none - the answers come from the skill text",
+      "assertions": [
+        "Answer 1: from the worktree collect printed (the existing checkout of the branch, or ~/.dev-workflow/remote/worktrees/{run}/{repo} with .dev/{plan} linked to the canonical plan directory); the user's own checkout is never switched",
+        "Answer 2: pr-evidence.py check on .dev/{plan-name}/pr.md with --require-current and --repo-root set to the worktree; a failure is a refreshed-evidence task",
+        "Answer 3: when the run did not end done, the verdict is not PASS or CONCERNS, pr.md lists open calls, or a check was deferred or remote-only",
+        "Answer 4: a contained fix happens in the worktree; anything larger goes through scope-quick here and a build,ship-quick dispatch"
+      ]
+    }
+  ]
+}

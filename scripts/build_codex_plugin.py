@@ -66,11 +66,6 @@ PLUGINS = {
                 "Harden, review, then open a PR with proof",
                 "Use $dev:ship to run the quality gauntlet, the verified review, and open the pull request with evidence for this change.",
             ),
-            "ship-quick": (
-                "Ship Quick",
-                "Verify fixes and update the PR, no gauntlet",
-                "Use $dev:ship-quick to verify the fixes with one reviewer, update the pull request, and follow it to green.",
-            ),
             "yolo": (
                 "Yolo",
                 "Scope, build, and ship one task with no questions",

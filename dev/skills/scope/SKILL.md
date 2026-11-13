@@ -95,4 +95,4 @@ On the small path, each accepted Blocker becomes one change set, and a Concern o
 Read the code each finding names before writing its change set.
 Append to the existing change plan with continued numbering - never renumber or rewrite what is there - and use the review's triggering scenario as the change set's test.
 Apply the review's Decision reconciliation section to `docs/decisions.md`.
-For these change sets, recommend `build` followed by `ship-quick` rather than `ship`.
+For these change sets, recommend `build` followed by `ship` in quick mode.

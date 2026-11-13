@@ -13,7 +13,7 @@ It owns every transfer, lock, and state change, so never copy code, plans, or re
 [references/protocol.md](references/protocol.md) owns what crosses each boundary, the run states, and the plan merge; [references/unattended.md](references/unattended.md) is the contract every sandbox session runs under.
 
 Follow [../../references/execution.md](../../references/execution.md).
-Dispatching `ship` or `ship-quick` is a request to ship, pull-request phase included, exactly as invoking it here would be; when the user says "no PR", "local only", or "I'll publish", dispatch with `--publish laptop`.
+Dispatching `ship` or `ship-quick` (ship in quick mode) is a request to ship, pull-request phase included, exactly as invoking it here would be; when the user says "no PR", "local only", or "I'll publish", dispatch with `--publish laptop`.
 
 ## Choose the mode
 

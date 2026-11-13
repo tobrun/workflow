@@ -611,7 +611,7 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
     branch = args.branch or (f"dev/{args.plan}" if current == default else current)
     if not git_ok("check-ref-format", "--branch", branch, cwd=root) or branch == default:
         raise Refused(f"cannot run on branch {branch!r}; pass --branch with a work branch name")
-    # An existing work branch is what the sandbox continues (a ship-quick round, a re-run);
+    # An existing work branch is what the sandbox continues (a quick-mode ship round, a re-run);
     # otherwise the branch starts at HEAD. Either way it must be fully committed where it is checked out.
     exists = git_ok("rev-parse", "--verify", "-q", f"refs/heads/{branch}", cwd=root)
     source = f"refs/heads/{branch}" if exists else "HEAD"

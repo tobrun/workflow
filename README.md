@@ -2,7 +2,7 @@
 
 | Plugin | Use When | Tools |
 | ------ | -------- | ----- |
-| [dev](dev/) | A test-focused development workflow for Claude Code, Codex, opencode, and Pi. | `scope`, `commit`, `build`, `ship`, `ship-quick`, `yolo`, `remote` |
+| [dev](dev/) | A test-focused development workflow for Claude Code, Codex, opencode, and Pi. | `scope`, `commit`, `build`, `ship`, `yolo`, `remote` |
 | [bootstrap](bootstrap/) | Prepare any repository for agent work: probe its stack and write its root AGENTS.md from the workflow's SDLC lessons, on Claude Code or Codex. | `agents-md` |
 
 ## Claude Code

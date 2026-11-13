@@ -2,7 +2,7 @@
 
 The shape of `.dev/{plan-name}/review_N.md`, written by phase 2 at the next free index starting at 1.
 Phase 2 opens it when the panel is selected, holding `Verdict: IN PROGRESS` and only the sections it can already fill, and completes it as the aggregator and the reconciliation return.
-`REVIEW_DATA` ([data-schema.md](data-schema.md)) mirrors this file section for section; the aggregator's JSON fills both.
+The aggregator's JSON fills it.
 
 ```markdown
 # Review {N}: {title}
@@ -50,5 +50,5 @@ What to fix first and why.
 ```
 
 `scope` reads this file when the user accepts findings that need real work: its Blockers and Concerns open that run's interview, and its Decision reconciliation section is what gets applied to `docs/decisions.md`.
-`scope`'s small path reads the same Blockers to write one fix change set each, and `ship-quick` diffs from the `head` on the Base line to review only what changed since.
+`scope`'s small path reads the same Blockers to write one fix change set each, and `ship`'s quick mode diffs from the `head` on the Base line to review only what changed since.
 Write it for that reader - a finding with no triggering scenario cannot become a decision.

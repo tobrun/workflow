@@ -1,151 +1,78 @@
 ---
 name: ship
-description: Harden a change with required checks and applicable analyses, verify an independent review, and prepare an authorized PR with current evidence. Use after build or for a requested gauntlet-only, review-only, or local-only pass; incomplete review results never approve the change.
+description: Harden a change with the repository's checks and a gauntlet of analyses, review it with an independent panel whose findings are adversarially verified, and open or update an authorized pull request carrying current evidence. Use after build, for a gauntlet-only, review-only, or local-only pass, or in quick mode to re-check fixes for an earlier review; incomplete review results never approve the change.
 ---
 
 # Ship
 
-Ship a change in three phases: a deterministic gauntlet that fixes mechanics, a review panel that judges meaning, then a pull request that carries proof the change works.
-Prompted quality rules soften into guidelines as a context grows; a checker's exit code does not, and judgment belongs to a verified panel, not to one context.
+Ship a change in three phases: a gauntlet that fixes mechanics, a review panel that judges meaning, then a pull request that carries proof the change works.
 You are the orchestrator for every phase: run tools, dispatch agents, aggregate, report.
 Never weaken a check to make it pass, and never stand in for the panel - your own reading of the code is not a lens.
 
-Invoking this skill is the task - detect the diff yourself and start immediately; do not ask what to ship.
-Follow [../../references/execution.md](../../references/execution.md), resolving allowed branch/base and publication actions before remote-only work.
-First run `python3 {ship-skill-root}/../../scripts/skill-metrics.py start ship` so the wrap-up can measure this run instead of recalling it.
+Invoking this skill is the task: detect the diff yourself and start.
+Follow [../../references/execution.md](../../references/execution.md), resolving the allowed branch, base, and publication actions before remote-only work.
+First run `python3 {ship-skill-root}/../../scripts/skill-metrics.py start ship`.
 
-## Phase selection
+## Modes and scope
 
-Default is phase 1 (gauntlet), phase 2 (review), then phase 3 (pull request): the panel reviews the diff as it stands after the gauntlet's fixes, so its findings are about meaning, not mechanics already settled, and the PR carries both verdicts.
-On request, run a single phase: "gauntlet only" (or "harden only") runs phase 1 alone; "review only" runs phase 2 alone - the right mode when mutating fixes are unwanted, such as on someone else's PR. "No PR" or "local only" runs the default flow without phase 3.
-The phases differ in contract: phase 1 mutates the repo (fix agents edit code, tools get committed, accepted thresholds land in `docs/decisions.md`); phase 2 is strictly read-only and never edits code or the ledger, but a BLOCK verdict hands the diff to the remediation loop below, which mutates like phase 1; phase 3 commits, pushes, and opens or updates the PR, never force-pushing.
+The default runs all three phases. On request: "gauntlet only" runs phase 1, "review only" runs phase 2 without mutating anything (right for someone else's PR), "no PR" or "local only" skips phase 3, and "quick" runs the quick mode below.
 
-## Scope
-
-All three phases share one scope.
-
-- PR number given -> target that PR; else the host's PR tooling, when it has any, for an open PR; else the local branch against the default branch.
-- Gather the diff per the diff-scope rules in [../../references/plan-layout.md](../../references/plan-layout.md): local git only, standard exclusions.
-- Locate the plan directory by the same reference's convention and read its `spec.md`; degrade gracefully without one.
-- Full-repo runs only when the user asks - they are expensive, and the loops are the same.
-- No reviewable files: say so and stop. Size the review to the change: small diffs need only applicable lenses; unusually large diffs need bounded batches and explicit coverage limits.
+- PR number given -> that PR; else an open PR for the branch when the host's PR tooling finds one; else the local branch against the default branch.
+- Gather the diff and locate the plan directory per [../../references/plan-layout.md](../../references/plan-layout.md); read its `spec.md`, and degrade gracefully without one.
+- No reviewable files: say so and stop. A full-repo run happens only when the user asks.
 
 ## Phase 1: the gauntlet
 
-Run every existing required repository check.
-The eight analysis categories below are scoped by applicability in [references/tools.md](references/tools.md); report a supplemental analysis that has no meaningful target as skipped with its reason, never passed.
-Run independent read-only checks concurrently within host capacity, and test-contending checks sequentially. Mutation testing retains the configuration and changed-decision-logic policy below.
+Run every check the repository already requires, then these analyses, each scoped by applicability per [references/tools.md](references/tools.md); a check with nothing meaningful to analyze is reported as skipped with its reason, never as passed:
 
-1. **Project static analysis** - every linter, type checker, and format checker the repo already configures, run over the in-scope files.
-2. **Security scan** - secrets, vulnerable dependencies, and static security rules; a found secret escalates immediately, it is never quiet fix-agent work.
-3. **Dead code** - symbols the diff added that nothing references, and symbols it orphaned by removing their last caller.
+1. **Static analysis** - every linter, type checker, and format checker the repo configures, over the in-scope files.
+2. **Security** - secrets, vulnerable dependencies, static security rules; a found secret escalates at once and is never quiet fix-agent work.
+3. **Dead code** - symbols the diff added that nothing references, and symbols it orphaned.
 4. **Duplication** - token-level clones the diff introduced against the rest of the repo.
-5. **Dependency rules** against `docs/dependencies.md` ([../../references/dependency-rules.md](../../references/dependency-rules.md) owns the checker semantics; absent file: skip with a clear note, never invent rules).
-6. **Coverage-weighted complexity** per in-scope function.
-7. **Flakiness** - the tests the diff added or touched, repeated and shuffled until trusted.
-8. **Mutation testing** incrementally over changed decision-heavy logic (pricing, permissions, validation), skipping glue code and honoring `.dev/config.yaml` - survivors guide contract review and regression tests; counts are reported, never a score gate (see gauntlet.md's "Mutation testing is reported, not a threshold").
+5. **Coverage-weighted complexity** per in-scope function.
+6. **Flakiness** - the tests the diff added or touched, repeated and shuffled until trusted.
+7. **Mutation testing** over changed decision-heavy logic (pricing, permissions, validation), skipping glue code; survivors guide contract review and new tests, and the counts are reported, never a score gate.
 
-Before phase 1, read `.dev/config.yaml` at the target repository root as YAML. The top-level `mutation_testing` key is a boolean: absent file or absent key means `true`; `true` runs the check; `false` skips it, including tool acquisition, mutant generation and survivor fixes. Empty YAML is an empty mapping. A malformed file, non-mapping root, or non-boolean value is an error: stop phase 1 and report the path and problem; do not silently skip or assume a value. Ignore unrelated keys. Resolve this once for the whole ship run. When skipped, report `mutation testing: skipped (disabled in .dev/config.yaml)` in the wrap-up and the PR Quality row, without counts; do not claim it passed. The other checks and CI parity still run.
+Mutation testing runs unless `.dev/config.yaml` at the repository root sets `mutation_testing: false`; an absent file or key means on. A malformed file or a non-boolean value stops phase 1 with the path and the problem. When it is off, report `mutation testing: skipped (disabled in .dev/config.yaml)` without counts.
 
-Run each check to completion per the loop in [references/gauntlet.md](references/gauntlet.md).
-A run that will reach phase 3 opens `.dev/{plan-name}/pr.md` before the first check and records each check's result in it as that check finishes, per the Body section of [references/pull-request.md](references/pull-request.md).
-When any check dispatched fixes, end the phase with the e2e refresh in the same reference: re-run the spec's `[e2e]` scenarios and overwrite the report, so phase 2 judges the post-fix code instead of stale evidence.
-Before phase 2, always run the required pull-request commands at the branch's impact per
-[../../references/ci-parity.md](../../references/ci-parity.md), even when no
-fix agent fired. Feature E2E is not a substitute for a repository screenshot,
-packaging, or report job that CI requires.
+Run each check to completion per [references/gauntlet.md](references/gauntlet.md): fix agents per independent area, re-run until clean, and a violation that survives two rounds on the same root cause becomes a human call.
+A run that will reach phase 3 opens `.dev/{plan-name}/pr.md` before the first check and records each check's result in it as the check finishes, per [references/pull-request.md](references/pull-request.md).
+When any check dispatched fixes, re-run the spec's `[e2e]` scenarios and overwrite the e2e report, so phase 2 judges the code as it now stands.
+Before phase 2, run the repository's required pull-request commands at the branch's impact per [../../references/ci-parity.md](../../references/ci-parity.md), even when no fix agent fired.
 
 ## Phase 2: the review panel
 
-Review the diff with a panel of concern-focused agents, verify every finding against the repo, and write the report as a plan artifact.
+1. **Brief.** Write the diff to a scratch file. Build a short brief from the spec (invariants, error handling, layer-tagged scenarios, decision rationale), `implementation-notes.md`, and the e2e report. Excerpt the `docs/contracts.md` entries whose guarantee or reliance sites the diff touches ([../../references/contracts.md](../../references/contracts.md)); breaking a guarantee others still rely on is a finding. Without a spec, take intent from the PR body and commits.
+2. **Previous reviews.** When `review_N.md` files exist, the highest-numbered one's unresolved findings become verification items, and the new report takes the next index.
+3. **Panel.** Pick the lenses in [references/lenses.md](references/lenses.md) that have surface in this diff - always `simplify`, and `spec-conformance` whenever there is a spec - plus at most one diff-specific custom lens. Tell the user which and why, then open `review_N.md` per [references/report-format.md](references/report-format.md) with `Verdict: IN PROGRESS`.
+4. **Run and verify.** Run all lens agents, then all verifiers, on the transport [references/orchestration.md](references/orchestration.md) selects; without a transport, stop - the panel cannot be replaced by your own reading. Between the batches, number the findings with `python3 {ship-skill-root}/scripts/aggregate-findings.py plan {batch-1 results}`; each verifier's only job is to refute its finding against the repo.
+5. **Aggregate.** Run `python3 {ship-skill-root}/scripts/aggregate-findings.py aggregate {batch-1 results} {batch-2 results} --expected {lenses}`. It drops refuted findings, keeps a BLOCK only when confirmed, merges duplicates, and sets the verdict; a failed or malformed lens makes the review INCOMPLETE, which never approves a change or marks a PR ready. Retry a failed agent once.
+6. **Reconcile.** Classify each finding that collides with `docs/decisions.md` per [../../references/decision-ledger.md](../../references/decision-ledger.md), read-only; ledger writes belong to a later `scope` run. Write the findings, the verdict, and the reconciliation into `review_N.md` as they land.
 
-### 1. Load intent
-
-The review checks the diff against what was specced, not just general quality.
-
-- Write the diff to a scratch file; agents read it from there, not inline.
-- Read the target repo's `docs/contracts.md` first, if it exists ([../../references/contracts.md](../../references/contracts.md)): its boundary guarantees are premises. Excerpt the entries whose guarantee or reliance sites the diff touches into the brief handed to every lens; a diff that breaks a cited guarantee while reliance sites still assume it is finding material.
-- From the spec read in Scope: the scope section for invariants, boundaries, and error handling, the change plan for per-set files and layer-tagged `tests:` scenarios, and the research section for the decision rationale used to judge deviations.
-- Also read `.dev/{plan-name}/implementation-notes.md` if present (deviations logged during implementation) and the latest `/tmp/{project-slug}/reports/{plan-name}-e2e-report.html`'s data block, per the reading rules in [../../references/reporting.md](../../references/reporting.md). Both are additional evidence for the `spec-conformance` and `tests` lenses, not just the diff itself.
-- No spec: derive `{plan-name}` from the branch name and fall back to the PR body and commits for intent.
-- Build a short brief: what the change does, what's on the critical path, what was specced.
-
-### 2. Check for previous reviews
-
-`review_N.md` files present -> this is a re-review: extract unresolved findings from the highest-numbered one as verification items (fixed or not?), and the new report gets the next index.
-
-### 3. Select the panel
-
-Read [references/lenses.md](references/lenses.md); select only lenses with surface in this diff (a docs-only change skips performance).
-Include `spec-conformance` whenever a spec was found, and always include `simplify` - every diff has simplification surface.
-At most one diff-specific custom lens (migrations, concurrency, i18n) when clearly warranted, defined in the same shape as the built-ins.
-Tell the user which lenses you selected and why before launching.
-Then open `.dev/{plan-name}/review_N.md` at the next free index, or the one a dead run left `IN PROGRESS`, in the shape of [references/report-format.md](references/report-format.md), with `Verdict: IN PROGRESS`, the panel, the base, the brief's summary, and on a re-review the previous findings as open verification items; a finding enters it only once verified.
-
-### 4. Run the review panel
-
-Run the two batches - all lens agents first, then all verifiers - on the transport selected by [references/orchestration.md](references/orchestration.md), which owns transport choice, result-file delivery, and the prompt contracts.
-If no transport is available, stop and explain that this panel-based phase cannot preserve its verification contract.
-Between the batches, number the findings the verifiers get:
-
-```bash
-python3 {ship-skill-root}/scripts/aggregate-findings.py plan {batch-1 results}
-```
-
-Every BLOCK and CONCERN it lists is adversarially verified - the verifier's only job is to refute it against the actual repo.
-
-### 5. Aggregate
-
-The same script applies the verdicts, so these rules live in one place instead of softening across a long context:
-
-```bash
-python3 {ship-skill-root}/scripts/aggregate-findings.py aggregate {batch-1 results} {batch-2 results} --expected {lenses you selected}
-```
-
-It drops REFUTED findings, keeps a BLOCK only when CONFIRMED and carries every other surviving finding as a CONCERN, merges duplicates by file:line while crediting each lens that found them, names the lenses that failed or returned nothing parseable, and sets the verdict.
-A failed or malformed lens does not discard useful findings, but the report is INCOMPLETE.
-The aggregator validates enums and finding fields, rejects duplicate/unknown verifier IDs, and exits 1 when completeness is missing.
-Retry a failed agent at most once; after that, report missing assurance. An INCOMPLETE review cannot approve the change or mark a PR ready.
-
-Then, with findings verified, read the target repo's `docs/decisions.md` if it keeps one, and classify each colliding finding per the recommender contract in [../../references/decision-ledger.md](../../references/decision-ledger.md). Read-only - this phase never edits the ledger; classifications land in the report's Decision reconciliation section, and ledger writes belong to the follow-up `scope` run.
-
-### 6. Complete the report
-
-`review_N.md` has been open since step 3: write the aggregated findings and the verdict into it as soon as the script returns them, and the Decision reconciliation section once its classifications are made - written as the run goes per [../../references/plan-layout.md](../../references/plan-layout.md), never composed in one pass at the end.
-
-### 7. Publish the report
-
-Map the report onto `REVIEW_DATA` per [references/data-schema.md](references/data-schema.md) and render [templates/review.html](templates/review.html) to `/tmp/{project-slug}/reports/review_N.html`, opening and publishing per [../../references/reporting.md](../../references/reporting.md) (stable review favicon; title names the plan and review number).
-
-## Blocker remediation
-
-INCOMPLETE is missing assurance, not an autonomous-remediation success; stop the approval path with its missing results reported.
-A BLOCK verdict is work before it is a question: run up to two rounds per [references/remediation.md](references/remediation.md), each a fresh-context fix pass over the confirmed blockers, a re-harden of the touched files, and a re-review at the next index.
-PASS or CONCERNS ends the loop; a blocker still standing after round 2, or one an agent escalated as needing a spec or decision change, is a real blocker and the only kind the wrap-up presents as a human call.
-Skipped in review-only mode.
+On BLOCK, remediate before asking: up to two rounds per [references/remediation.md](references/remediation.md), each a fresh-context fix pass over the confirmed blockers, a re-harden of the touched files, and a re-review at the next index. A blocker standing after round 2, or one that needs a spec or decision change, is a real blocker and goes to the user. Review-only mode skips this.
 
 ## Phase 3: the pull request
 
-Open the PR automatically, with evidence a reviewer can see before reading the diff, per [references/pull-request.md](references/pull-request.md).
+Per [references/pull-request.md](references/pull-request.md):
 
-1. Commit authorized fixes and push only within the execution authority already resolved; preserve the intended PR base, including an explicitly stacked branch. Without publication capability, finish `pr.md` and deliver locally.
-2. Build the Evidence section from the e2e report with `python3 {ship-skill-root}/scripts/pr-evidence.py extract`, passing `--scenario` for only the scenarios that show what this PR's diff changed, publishing frontend screenshots to the `pr-evidence` branch with its `publish` command; without an e2e report, capture the evidence now per the reference - screenshots for a UI, a labeled before/after pair otherwise, and a red-on-base, green-on-branch reproducing test for every bug fix.
-3. Add that section to the run's `.dev/{plan-name}/pr.md`, in the reference's body shape, and loop `pr-evidence.py check --require-current` on it until it passes; the check, not your judgment, decides whether the proof is real enough.
-4. Create the PR (draft when a real blocker survived remediation or a required check was deferred to CI) or update the one that already exists, then follow its required checks to green per [../../references/ci-parity.md](../../references/ci-parity.md).
+1. Commit authorized fixes and push only within the authority already resolved, keeping the intended base. Without publication capability, finish `pr.md` and deliver locally.
+2. Build the Evidence section with `python3 {ship-skill-root}/scripts/pr-evidence.py extract`, passing `--scenario` for only the scenarios that show what this diff changed, and publish frontend screenshots with its `publish` command. Without an e2e report, capture evidence now: screenshots for a UI, a labeled before/after pair otherwise, and a red-on-base, green-on-branch reproducing test for every bug fix.
+3. Loop `pr-evidence.py check --require-current` on `pr.md` until it passes; the check decides whether the proof is real.
+4. Create the PR - a draft when a real blocker survived or a required check was deferred to CI - or update the existing one, then follow its required checks to green per [../../references/ci-parity.md](../../references/ci-parity.md).
+
+## Quick mode
+
+For fixes to an earlier review: one validation run, one reviewer, and a PR update - no gauntlet, no lens panel, no remediation loop.
+
+1. Run the required pull-request commands at the diff's impact; fix what fails until green.
+2. Launch one fresh-context, read-only reviewer with the spec, the highest-numbered finished `review_N.md`, and the diff. It reports each previous Blocker and Concern as fixed or still open with evidence, then reads the diff since the review's recorded `head` (the whole branch when there is no review or no `head`) for new blockers only, each with its triggering scenario. Confirm a new blocker by reading the code before it counts.
+3. Write `review_N.md` at the next index with `Panel: quick`: BLOCK when a blocker stands, CONCERNS when only concerns remain, PASS otherwise, INCOMPLETE when the reviewer's result is missing or malformed. On BLOCK, stop and recommend `scope` on its small path, then `build`, then quick mode again.
+4. Update the PR: refresh evidence only for scenarios whose tested behavior changed, keeping earlier evidence whose source hashes still match, loop `pr-evidence.py check --require-current`, then follow the checks to green and mark the PR ready once they are. Never force-push or rebase.
+
+Say plainly in the wrap-up that quick mode skipped the gauntlet and the panel, and recommend a full `ship` when the change has grown beyond its findings.
 
 ## Wrap up
 
-Summarize whichever phases ran in one chat message, opening with the measured run metrics:
-
-```bash
-python3 {ship-skill-root}/../../scripts/skill-metrics.py end ship --count violations_found=N --count violations_fixed=N --count violations_surviving=N --count findings_verified=N --count findings_refuted=N --count remediation_rounds=N --count blockers_cleared=N --count evidence_items=N
-```
-
-Pass only counters you tallied from tool output and the aggregate script, plus any `--friction` lines per [../../references/run-journal.md](../../references/run-journal.md); the table it prints (time, tokens, agents, tool calls, git delta, trend against earlier runs) is pasted verbatim, never retyped.
-For the gauntlet, per tool: violations found, fixed, and surviving (with the human call each is waiting on); name the tools acquired or built this run and where they live; state the scope honestly - "hardened the diff" is not "hardened the repo".
-For the review: the final verdict and top findings, linking every `review_N.md` this run wrote, the local HTML report, and the published URL when one was requested and created; per remediation round, which blockers cleared and which survived.
-For the pull request: its URL, draft or ready, what the Evidence section shows and where it came from, and the state of its required checks.
-Recommend next steps, never invoking them:
-
-- `commit` for the gauntlet's accumulated fixes, only when phase 3 did not run.
-- `scope` on its small path, then `build`, then `ship-quick` when the user accepts findings that are plain defects; `scope` on this plan directory only when a finding needs a decision or a scope change - both work even when no spec exists.
+Open the summary with `python3 {ship-skill-root}/../../scripts/skill-metrics.py end ship --count violations_found=N --count violations_fixed=N --count violations_surviving=N --count findings_verified=N --count findings_refuted=N --count remediation_rounds=N --count blockers_cleared=N --count evidence_items=N`, counting only from tool output and the aggregator, pasting its table verbatim, plus any `--friction` lines per [../../references/run-journal.md](../../references/run-journal.md).
+Then, for whichever phases ran: per check, violations found, fixed, and surviving with the human call each waits on, and the scope stated honestly ("hardened the diff" is not "hardened the repo"); the verdict and top findings with every `review_N.md` this run wrote and what each remediation round cleared; the PR URL, draft or ready, what its evidence shows, and the state of its checks.
+Recommend next steps, never invoking them: `commit` for the gauntlet's fixes when phase 3 did not run; `scope` on its small path, then `build`, then `ship` in quick mode when the user accepts findings that are plain defects; `scope` on the plan directory when a finding needs a decision or scope change.

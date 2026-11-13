@@ -1,6 +1,6 @@
 # Acquiring the Tools
 
-The gauntlet covers eight analysis categories when they apply.
+The gauntlet covers seven analysis categories when they apply.
 Every existing required repository check remains mandatory; supplementary analysis must have changed-code targets and an actionable defect criterion.
 For absent optional tooling, record applicability and the chosen check before acquisition. No meaningful target means skipped with a reason, never a pass.
 Tool acquisition is implementation work within this task only when needed to validate its promised behavior; do not install a blanket permanent toolchain merely because a tool is absent.
@@ -42,12 +42,7 @@ jscpd or PMD CPD, comparing the in-scope files against the whole repo and report
 The threshold is token-based (default 50) so trivial similarity does not fire; where the line sits is a recorded decision like any other threshold.
 Pre-existing clones between untouched files are noted, not fixed, unless the run is full-repo.
 
-## 5. Dependency checker
-
-Almost always a repo-fitted script: parse the `rules` block of `docs/dependencies.md` (format in [../../../references/dependency-rules.md](../../../references/dependency-rules.md)), glob-match the in-scope files to modules, extract static imports with the language's own tooling (a compiler API, an AST module, or a disciplined grep for import statements), and print each forbidden edge as `file -> file (module -> module)`.
-Ecosystem tools exist for some stacks (dependency-cruiser for JS/TS, import-linter for Python, ArchUnit for JVM); prefer one when the repo already uses it or adoption is one config file that mirrors `docs/dependencies.md` - but `docs/dependencies.md` stays the single source of truth, so generate the tool's config from it rather than maintaining two rule sets.
-
-## 6. Coverage-weighted complexity
+## 5. Coverage-weighted complexity
 
 The score per function combines cyclomatic complexity with test coverage so that only *uncovered* complexity fails: for complexity c and coverage fraction p, use `c*c*(1-p) + c*p`.
 A fully covered function scores its complexity; an uncovered one its complexity squared.
@@ -59,13 +54,13 @@ State whether p measures lines or branches; line coverage does not prove branch/
 
 Scope the report to functions the diff touched; pre-existing offenders elsewhere are noted, not fixed, unless the run is full-repo.
 
-## 7. Flakiness detector
+## 6. Flakiness detector
 
 Almost always a repo-fitted script: run the tests the diff added or touched N times (default 5), shuffling order where the runner supports it (vitest `sequence.shuffle`, pytest-randomly, `go test -shuffle`, JUnit's method orderer).
 Any run disagreeing with any other marks that test flaky - a violation like a failure, because a test that passes inconsistently proves nothing.
 Keep it affordable: only diff-touched tests, reuse build caches between repeats, and run repeats inside one runner invocation where the framework allows.
 
-## 8. Mutation testing
+## 7. Mutation testing
 
 Run a focused mutation pass after the relevant ordinary tests pass. Survivors guide contract review and regression tests; counts are reported, never a score gate, per gauntlet.md's "Mutation testing is reported, not a threshold".
 

@@ -395,10 +395,29 @@ def merge_plan(remote: Path, local: Path, dispatched: dict[str, str]) -> dict:
     return {"updated": updated, "conflicts": conflicts}
 
 
+# tarfile's extraction filters arrived in 3.12 and were backported to 3.10.12 and 3.11.4.
+HAS_DATA_FILTER = hasattr(tarfile, "data_filter")
+
+
 def extract_tar(data: bytes, dest: Path) -> None:
+    """Unpack the sandbox's output, which is untrusted: nothing escapes dest, nothing but data."""
     dest.mkdir(parents=True, exist_ok=True)
     with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as archive:
-        archive.extractall(dest, filter="data")  # sandbox output is untrusted: no escapes, no devices
+        if HAS_DATA_FILTER:
+            archive.extractall(dest, filter="data")
+            return
+        root = dest.resolve()
+        members = archive.getmembers()
+        for member in members:  # every path is checked before anything is written
+            target = (dest / member.name).resolve()
+            if os.path.isabs(member.name) or (target != root and root not in target.parents):
+                raise Refused(f"the sandbox's output holds a path outside its folder: {member.name!r}")
+        for member in members:
+            if not (member.isfile() or member.isdir()):
+                continue  # links, devices, and fifos are not data
+            # As the data filter does: no setuid or setgid bits, and nothing writable by others.
+            member.mode = (member.mode & 0o755) | (0o700 if member.isdir() else 0o600)
+            archive.extract(member, dest)
 
 
 def plugin_tar(stage: tarfile.TarFile, arcroot: str) -> None:

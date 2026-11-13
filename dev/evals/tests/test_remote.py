@@ -115,11 +115,24 @@ class RemoteCycleTest(unittest.TestCase):
 
     def stop_all(self) -> None:
         """No background run outlives its test, whatever the test asserted."""
+        rows = subprocess.run(["ps", "-A", "-o", "pid=", "-o", "ppid="], capture_output=True, text=True).stdout
+        children: dict[int, list[int]] = {}
+        for row in rows.splitlines():
+            parts = row.split()
+            if len(parts) == 2:
+                children.setdefault(int(parts[1]), []).append(int(parts[0]))
         for unit in self.vms.glob("ws-*/units/*.pid"):
             try:
-                os.killpg(int(unit.read_text()), 9)
-            except (ProcessLookupError, PermissionError, ValueError):
-                pass
+                todo = [int(unit.read_text())]
+            except ValueError:
+                continue
+            while todo:  # the whole tree: GNU timeout moves the command it runs out of the group
+                pid = todo.pop()
+                todo.extend(children.get(pid, []))
+                try:
+                    os.kill(pid, 9)
+                except (ProcessLookupError, PermissionError):
+                    pass
 
     # --- helpers -------------------------------------------------------------
 

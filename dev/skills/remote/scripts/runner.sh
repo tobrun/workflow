@@ -10,7 +10,9 @@
 #
 # remote.py pushes this file into ~/.dev-workflow/runs/<id>/ with run.json,
 # contract.md, plan/ and the dev plugin under dev/, and starts `run` as the
-# transient unit dev-run-<id>. status.json is the run's state machine
+# transient unit dev-run-<id>. On a workspace desktop, open_view puts a terminal
+# that follows the run (view.py) in front of anyone watching over VNC.
+# status.json is the run's state machine
 # (starting -> running -> done | failed | stopped); references/protocol.md
 # owns its fields. Only commits leave the workspace, so a phase that ends
 # with a dirty tree leaves its diff beside the logs as uncommitted-<phase>.patch.
@@ -266,6 +268,30 @@ WRAPPER
   export PATH="$RUN_DIR/bin:$PATH"
 }
 
+# open_view - a terminal on the workspace desktop that follows this run through view.py, for an
+# operator watching over VNC. gnome-terminal hands the window to the desktop session's terminal
+# server, so it lives outside this unit: it outlasts the run, showing how it ended, until the
+# next run on this workspace closes it. A viewer already following this run is kept (resume).
+# Best effort: a desktop that cannot show it never fails the run.
+open_view() {
+  [ "$(cfg view)" != False ] || return 0
+  [ -n "${DISPLAY:-}" ] && command -v gnome-terminal >/dev/null 2>&1 || return 0
+  local pid args mine=false
+  for pid in $(pgrep -u "$(id -u)" -f 'skills/remote/scripts/view\.py' 2>/dev/null || true); do
+    args=$(ps -o args= -p "$pid" 2>/dev/null) || continue
+    case "$args " in
+      *" $RUN_DIR "*) mine=true ;;
+      *" $(dirname "$RUN_DIR")/"*) kill "$pid" 2>/dev/null || true ;;  # an earlier run on this workspace
+    esac
+  done
+  $mine && return 0
+  if [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ] && [ -S "/run/user/$(id -u)/bus" ]; then
+    export DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$(id -u)/bus"
+  fi
+  gnome-terminal --maximize --title "dev:remote $RUN_ID" -- \
+    python3 "$RUN_DIR/dev/skills/remote/scripts/view.py" "$RUN_DIR" >>"$LOGS/view.err" 2>&1 || true
+}
+
 setup_env() {
   mkdir -p "$LOGS"
   if [ -r /etc/fleet/computer-use.env ]; then
@@ -288,6 +314,7 @@ setup_env() {
 cmd_run() {
   setup_env
   status starting run="$RUN_ID" home="$HOME" started="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  open_view
   prepare
   local phase
   for phase in $(cfg phases); do
@@ -304,6 +331,7 @@ cmd_resume() {
   [ -n "$failed" ] || { echo "runner: no phase to resume" >&2; exit 1; }
   sid=$(field session "$failed")
   status running resumed="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  open_view
   for phase in $(cfg phases); do
     if [ "$phase" = "$failed" ]; then
       started=true

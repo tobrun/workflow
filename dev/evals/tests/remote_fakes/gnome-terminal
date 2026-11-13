@@ -1,0 +1,39 @@
+#!/usr/bin/env python3
+"""Stand-in for `gnome-terminal` inside a fake VM.
+
+Records each call (argv, DISPLAY, DBUS_SESSION_BUS_ADDRESS) in
+$FAKE_VM/terminal-calls.jsonl, then starts the command after `--` detached,
+as the real terminal server does, so it outlives the runner's unit. Its
+output goes to $FAKE_VM/view-<n>.out and its pid to units/view-<n>.pid, so
+the tests' cleanup stops it with the rest.
+"""
+
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+VM = Path(os.environ["FAKE_VM"])
+
+
+def main() -> int:
+    argv = sys.argv[1:]
+    calls = VM / "terminal-calls.jsonl"
+    n = sum(1 for _ in calls.open()) if calls.exists() else 0
+    with calls.open("a") as handle:
+        handle.write(json.dumps({"argv": argv, "display": os.environ.get("DISPLAY"),
+                                 "dbus": os.environ.get("DBUS_SESSION_BUS_ADDRESS")}) + "\n")
+    if "--" not in argv:
+        return 0
+    command = argv[argv.index("--") + 1:]
+    (VM / "units").mkdir(exist_ok=True)
+    out = open(VM / f"view-{n}.out", "ab")
+    proc = subprocess.Popen(command, start_new_session=True, stdin=subprocess.DEVNULL, stdout=out, stderr=out,
+                            env={**os.environ, "COLUMNS": "100"})
+    (VM / "units" / f"view-{n}.pid").write_text(str(proc.pid))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

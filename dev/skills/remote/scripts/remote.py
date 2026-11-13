@@ -31,6 +31,8 @@ Configuration lives in ~/.dev-workflow/remote.toml (or $DEV_REMOTE_CONFIG):
   model = ""                          # optional --model for the sandbox agent
   publish = "auto"                    # who pushes and opens the PR: auto (the sandbox
                                       # when its credentials pass the probe), sandbox, laptop
+  view = true                         # open a terminal on the sandbox desktop that follows
+                                      # the run live (scripts/view.py), for watching over VNC
 
 Run records and collected artifacts live under ~/.dev-workflow/remote/
 (or $DEV_REMOTE_HOME). Exit status: 0 success, 1 a refused or failed step
@@ -58,6 +60,8 @@ try:
     import tomllib
 except ModuleNotFoundError:  # Python < 3.11
     tomllib = None
+
+from view import render_event  # noqa: E402 - the stream renderer, shared with the sandbox desktop viewer
 
 SKILL_ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_ROOT = SKILL_ROOT.parents[1]
@@ -112,8 +116,11 @@ def load_config() -> dict:
     cfg.setdefault("phase_timeout_hours", 8)
     cfg.setdefault("model", "")
     cfg.setdefault("publish", "auto")
+    cfg.setdefault("view", True)
     if cfg["publish"] not in PUBLISH:
         raise Refused(f"{path}: publish must be one of {', '.join(PUBLISH)}")
+    if not isinstance(cfg["view"], bool):
+        raise Refused(f"{path}: view must be true or false")
     if cfg["transport"] not in ("ssh", "local"):
         raise Refused(f"{path}: transport must be ssh or local")
     if cfg["transport"] == "ssh" and not cfg.get("host"):
@@ -315,40 +322,6 @@ def run_state(host: Host, rec: dict) -> dict:
     status["state"] = state
     status["last_event_age"] = info.get("last_event_age")
     return status
-
-
-# --- stream-json rendering ---------------------------------------------------
-
-def brief(value: object, limit: int = 140) -> str:
-    text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
-    text = " ".join(text.split())
-    return text if len(text) <= limit else text[: limit - 3] + "..."
-
-
-def render_event(line: str) -> list[str]:
-    try:
-        event = json.loads(line)
-    except ValueError:
-        return [brief(line)] if line.strip() else []
-    kind = event.get("type")
-    if kind == "system" and event.get("subtype") == "init":
-        return [f"session {event.get('session_id')} started (model {event.get('model', '?')})"]
-    if kind == "result":
-        return [f"result: {event.get('subtype')} after {event.get('num_turns', '?')} turns, "
-                f"{round((event.get('duration_ms') or 0) / 60000, 1)} min, error={event.get('is_error')}"]
-    out = []
-    content = (event.get("message") or {}).get("content")
-    for block in content if isinstance(content, list) else []:
-        if kind == "assistant" and block.get("type") == "text" and block.get("text", "").strip():
-            out.append("say: " + brief(block["text"]))
-        elif kind == "assistant" and block.get("type") == "tool_use":
-            inp = block.get("input") or {}
-            hint = inp.get("description") or inp.get("command") or inp.get("file_path") or inp.get("pattern") or inp
-            out.append(f"tool: {block.get('name')} {brief(hint, 110)}")
-        elif kind == "user" and block.get("type") == "tool_result" and block.get("is_error"):
-            content = block.get("content")
-            out.append("tool error: " + brief(content if isinstance(content, str) else json.dumps(content), 120))
-    return out
 
 
 # --- journal import ----------------------------------------------------------
@@ -670,7 +643,8 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
         payload = {**{k: rec[k] for k in ("id", "repo", "plan", "branch", "base", "default_branch",
                                           "origin_url", "phases")},
                    "publish": rec["publish"]["mode"], "github_repo": github_repo(origin_url), "model": cfg["model"],
-                   "phase_timeout_seconds": int(float(cfg["phase_timeout_hours"]) * 3600)}
+                   "phase_timeout_seconds": int(float(cfg["phase_timeout_hours"]) * 3600),
+                   "view": cfg["view"]}
         contract = render_contract(rec["publish"]["mode"], {
             "{plugin}": f"{run_dir(rec)}/dev", "{plan}": args.plan, "{branch}": branch, "{default}": default})
         buffer = io.BytesIO()

@@ -12,16 +12,21 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import io
 import os
+import re
 import subprocess
 import sys
 import tempfile
 import time
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
+from unittest import mock
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 SCRIPT = REPO_ROOT / "dev" / "skills" / "remote" / "scripts" / "remote.py"
+VIEW = SCRIPT.with_name("view.py")
 FAKES = Path(__file__).resolve().parent / "remote_fakes"
 
 SPEC = """# Greeting
@@ -51,11 +56,24 @@ IDENTITY = {"GIT_AUTHOR_NAME": "Test", "GIT_AUTHOR_EMAIL": "test@example.com",
             "GIT_COMMITTER_NAME": "Test", "GIT_COMMITTER_EMAIL": "test@example.com"}
 
 
-def load_module():
-    spec = importlib.util.spec_from_file_location("remote", SCRIPT)
+def load_module(path: Path = SCRIPT):
+    if str(path.parent) not in sys.path:
+        sys.path.insert(0, str(path.parent))  # remote.py imports its renderer from view.py beside it
+    spec = importlib.util.spec_from_file_location(path.stem, path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    try:
+        return os.waitpid(pid, os.WNOHANG)[0] == 0
+    except ChildProcessError:
+        return True
 
 
 class RemoteCycleTest(unittest.TestCase):
@@ -126,6 +144,24 @@ class RemoteCycleTest(unittest.TestCase):
 
     def status(self, run: str) -> dict:
         return json.loads(self.remote("status", run, "--json").stdout)[0]
+
+    def terminals(self, ws: str = "ws1") -> list[dict]:
+        path = self.vms / f"ws-{ws}" / "terminal-calls.jsonl"
+        return [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
+
+    def viewer_output(self, n: int, until: str, ws: str = "ws1") -> str:
+        """The n-th desktop viewer's screen, once it shows `until` (it polls once a second)."""
+        path = self.vms / f"ws-{ws}" / f"view-{n}.out"
+        text = ""
+        for _ in range(100):
+            text = re.sub(r"\x1b\[[0-9;]*m|\x1b\][^\x07]*\x07", "", path.read_text()) if path.exists() else ""
+            if until in text:
+                return text
+            time.sleep(0.1)
+        self.fail(f"viewer {n} never showed {until!r}:\n{text}")
+
+    def viewer_pid(self, n: int, ws: str = "ws1") -> int:
+        return int((self.vms / f"ws-{ws}" / "units" / f"view-{n}.pid").read_text())
 
     def calls(self, ws: str = "ws1") -> list[dict]:
         path = self.vms / f"ws-{ws}" / "claude-calls.jsonl"
@@ -256,6 +292,58 @@ class RemoteCycleTest(unittest.TestCase):
         self.assertEqual(text.splitlines(), ["say: Working on ship for greeting", "tool: Bash Show status",
                                              "result: success after 3 turns, 0.0 min, error=False"],
                          "progress ticks never crowd out the session's events")
+
+    def test_desktop_viewer_follows_the_run_until_the_next_run_replaces_it(self) -> None:
+        self.env["FAKE_DISPLAY"] = ":1"
+        first = self.dispatch("--workspace", "ws1", "--phases", "build")["run"]
+        self.assertEqual(self.wait(first), 0)
+        [call] = self.terminals()
+        self.assertEqual(call["display"], ":1")
+        self.assertEqual(call["argv"][:3], ["--maximize", "--title", f"dev:remote {first}"])
+        self.assertEqual(call["argv"][-3:], ["python3", f"{self.vms}/ws-ws1/home/.dev-workflow/runs/{first}/dev/"
+                                             "skills/remote/scripts/view.py",
+                                             f"{self.vms}/ws-ws1/home/.dev-workflow/runs/{first}"])
+        screen = self.viewer_output(0, "━━ done")
+        for shown in (f"run {first}", "━━ phase build", "● Working on build for greeting", "Bash Show status",
+                      "$ git status", "result: success after 3 turns"):
+            self.assertIn(shown, screen)
+        self.assertLess(screen.index("━━ phase build"), screen.index("━━ done"))
+        self.assertTrue(alive(self.viewer_pid(0)), "the window outlasts its run, showing how it ended")
+        self.remote("collect", first)
+        second = self.dispatch("--workspace", "ws1", "--phases", "ship")["run"]
+        self.assertEqual(self.wait(second), 0)
+        self.assertEqual(len(self.terminals()), 2)
+        self.viewer_output(1, "━━ done")
+        self.assertFalse(alive(self.viewer_pid(0)), "the next run on the workspace closes the earlier window")
+        self.assertTrue(alive(self.viewer_pid(1)))
+
+    def test_desktop_viewer_survives_a_resume_and_shows_it(self) -> None:
+        self.env["FAKE_DISPLAY"] = ":1"
+        run = self.dispatch(mode="fail-build-once")["run"]
+        self.assertEqual(self.wait(run), 1)
+        self.viewer_output(0, "━━ failed: build ended with exit 1")
+        self.remote("resume", run, mode="fail-build-once")
+        self.assertEqual(self.wait(run), 0)
+        screen = self.viewer_output(0, "━━ done")
+        self.assertEqual(len(self.terminals()), 1, "resume keeps the window that already follows the run")
+        self.assertLess(screen.index("━━ failed"), screen.index("━━ resumed"))
+        self.assertLess(screen.index("━━ resumed"), screen.index("━━ phase ship"))
+
+    def test_no_desktop_viewer_when_turned_off_or_without_a_display(self) -> None:
+        run = self.dispatch("--phases", "build")["run"]
+        self.assertEqual(self.wait(run), 0)
+        self.assertEqual(self.terminals(), [], "no DISPLAY, no window")
+        self.remote("collect", run)
+        self.env["FAKE_DISPLAY"] = ":1"
+        config = self.t / "remote.toml"
+        config.write_text(config.read_text() + "view = false\n")
+        run = self.dispatch("--phases", "build")["run"]
+        self.assertEqual(self.wait(run), 0)
+        self.assertEqual(self.terminals(), [])
+        config.write_text(config.read_text().replace("view = false", 'view = "yes"'))
+        result = self.remote("status", check=False)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("view must be true or false", result.stderr)
 
     def test_second_run_on_the_same_workspace_starts_from_a_clean_checkout(self) -> None:
         first = self.dispatch("--workspace", "ws1", "--phases", "build", mode="dirty")
@@ -483,14 +571,6 @@ class RemoteUnitTest(unittest.TestCase):
         self.assertEqual(n("git@github.com:Owner/Repo.git"), n("https://github.com/owner/repo"))
         self.assertNotEqual(n("git@github.com:owner/repo.git"), n("git@github.com:owner/other.git"))
 
-    def test_render_event_skips_noise_and_names_tools(self) -> None:
-        r = self.m.render_event
-        self.assertEqual(r(""), [])
-        self.assertEqual(r(json.dumps({"type": "user", "message": {"content": "plain"}})), [])
-        lines = r(json.dumps({"type": "assistant", "message": {"content": [
-            {"type": "tool_use", "name": "Read", "input": {"file_path": "/a/b.py"}}]}}))
-        self.assertEqual(lines, ["tool: Read /a/b.py"])
-
     def test_rewrite_paths_only_touches_prefixed_strings(self) -> None:
         out = self.m.rewrite_paths({"a": "/home/agent/x", "b": ["/home/agentx", 3], "c": {"d": "/home/agent/y"}},
                                    "/home/agent/", "/m/")
@@ -505,6 +585,125 @@ class RemoteUnitTest(unittest.TestCase):
             self.assertEqual(self.m.open_calls(pr), ["- guess at 60%", "- blocker"])
             pr.write_text("## Open calls\n\n- a concern whose line\nwraps twice\nbefore ending\n- second\n")
             self.assertEqual(self.m.open_calls(pr), ["- a concern whose line wraps twice before ending", "- second"])
+
+
+class ViewTest(unittest.TestCase):
+    """view.py: the stream parser behind `logs`, and the desktop terminal that follows a run."""
+
+    def setUp(self) -> None:
+        self.v = load_module(VIEW)
+
+    @staticmethod
+    def line(**event) -> str:
+        return json.dumps(event)
+
+    def assistant(self, *blocks, parent: str | None = None) -> str:
+        return self.line(type="assistant", message={"content": list(blocks)}, parent_tool_use_id=parent)
+
+    def test_parse_names_what_a_person_follows_and_skips_the_rest(self) -> None:
+        parse = self.v.parse
+        self.assertEqual(parse(self.line(type="system", subtype="thinking_tokens", estimated_tokens=50)), [])
+        self.assertEqual(parse(self.line(type="tool_progress", parent_tool_use_id="t1", heartbeat=True)), [])
+        self.assertEqual(parse(self.assistant({"type": "thinking", "thinking": ""})), [])
+        self.assertEqual(parse(self.line(type="system", subtype="task_notification", status="completed")), [])
+        [tool] = parse(self.assistant({"type": "tool_use", "name": "Bash",
+                                       "input": {"command": "pytest -q", "description": "Run tests"}}))
+        self.assertEqual((tool.kind, tool.name, tool.text, tool.detail), ("tool", "Bash", "Run tests", "pytest -q"))
+        [bare] = parse(self.assistant({"type": "tool_use", "name": "Bash", "input": {"command": "ls"}}))
+        self.assertEqual((bare.text, bare.detail), ("ls", ""), "a command without a description is not repeated")
+        [nested] = parse(self.assistant({"type": "text", "text": "subagent says"}, parent="toolu_1"))
+        self.assertTrue(nested.nested)
+        [retry] = parse(self.line(type="system", subtype="api_retry", attempt=2, max_retries=10,
+                                  error_status=None, error="unknown"))
+        self.assertEqual(retry.text, "api retry 2/10: unknown")
+        [result] = parse(self.line(type="result", subtype="success", is_error=True, num_turns=4, duration_ms=60000))
+        self.assertFalse(result.ok, "a success subtype carrying an API error is not a success")
+
+    def test_render_event_keeps_the_logs_format(self) -> None:
+        r = load_module().render_event
+        self.assertEqual(r(""), [])
+        self.assertEqual(r(json.dumps({"type": "user", "message": {"content": "plain"}})), [])
+        self.assertEqual(r(self.assistant({"type": "tool_use", "name": "Read", "input": {"file_path": "/a/b.py"}})),
+                         ["tool: Read /a/b.py"])
+        self.assertEqual(r(self.assistant({"type": "text", "text": "hi"}, parent="t")), ["  say: hi"])
+        self.assertEqual(r(self.line(type="user", message={"content": [
+            {"type": "tool_result", "is_error": True, "content": [{"type": "text", "text": "boom"}]}]})),
+            ["tool error: boom"])
+
+    def run_dir(self) -> Path:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        d = Path(tmp.name)
+        (d / "logs").mkdir()
+        (d / "run.json").write_text(json.dumps({"id": "r1", "repo": "fixture", "plan": "p", "branch": "dev/p",
+                                                "phases": ["build", "ship"], "publish": "laptop"}))
+        return d
+
+    def screen(self, follower, ticks: int = 1) -> str:
+        out = io.StringIO()
+        with redirect_stdout(out):
+            for _ in range(ticks):
+                follower.tick()
+        return re.sub(r"\x1b\[[0-9;]*m|\x1b\][^\x07]*\x07", "", out.getvalue())
+
+    def test_follower_shows_phases_states_and_an_event_still_being_written(self) -> None:
+        d = self.run_dir()
+        status = d / "status.json"
+        status.write_text(json.dumps({"state": "starting"}))
+        follower = self.v.Follower(d)
+        with mock.patch.object(self.v, "unit_active", return_value=True):
+            self.assertIn("━━ starting", self.screen(follower))
+            status.write_text(json.dumps({"state": "running", "phase": "build"}))
+            say = self.assistant({"type": "text", "text": "Building"})
+            (d / "logs" / "build.jsonl").write_text(say + "\n" + say[:20])
+            text = self.screen(follower)
+            self.assertIn("━━ phase build", text)
+            self.assertEqual(text.count("● Building"), 1, "the half-written event waits for its newline")
+            with (d / "logs" / "build.jsonl").open("a") as handle:
+                handle.write(say[20:] + "\n")
+            self.assertEqual(self.screen(follower).count("● Building"), 1)
+            status.write_text(json.dumps({"state": "running", "phase": "build", "gate": {"build": "resume 1"}}))
+            self.assertIn("build gate: resume 1", self.screen(follower))
+            (d / "logs" / "ship.jsonl").write_text(self.assistant({"type": "tool_use", "name": "Bash", "input": {
+                "command": f"cd {Path.home()}/work/fixture; python3 - <<'EOF'\nprint(1)\nEOF"}}) + "\n"
+                + self.assistant({"type": "tool_use", "name": "Bash", "input": {"command": "cd /tmp && ls"}}) + "\n")
+            status.write_text(json.dumps({"state": "done", "phase": ""}))
+            text = self.screen(follower)
+        self.assertIn("━━ phase ship", text)
+        self.assertIn("Bash python3 - <<'EOF'", text)
+        self.assertIn("    print(1)", text, "a heredoc's body follows its first line")
+        self.assertIn("Bash cd /tmp && ls", text, "only a cd into the checkout is dropped")
+        self.assertIn("━━ done", text)
+
+    def test_one_poll_that_sees_several_steps_prints_them_in_order(self) -> None:
+        d = self.run_dir()
+        status = d / "status.json"
+        status.write_text(json.dumps({"state": "failed", "phase": "build", "resumed": ""}))
+        follower = self.v.Follower(d)
+        with mock.patch.object(self.v, "unit_active", return_value=True):
+            self.screen(follower)
+            (d / "logs" / "build.jsonl").write_text(self.assistant({"type": "text", "text": "resumed build"}) + "\n")
+            (d / "logs" / "ship.jsonl").write_text(self.assistant({"type": "text", "text": "shipping"}) + "\n")
+            status.write_text(json.dumps({"state": "done", "resumed": "t1", "gate": {"build": "pass"}}))
+            text = self.screen(follower)
+        marks = ["━━ resumed", "● resumed build", "build gate: pass", "━━ phase ship", "● shipping", "━━ done"]
+        self.assertEqual([text.index(m) for m in marks], sorted(text.index(m) for m in marks), text)
+
+    def test_follower_names_a_runner_that_vanished(self) -> None:
+        d = self.run_dir()
+        (d / "status.json").write_text(json.dumps({"state": "running", "phase": "build"}))
+        follower = self.v.Follower(d)
+        with mock.patch.object(self.v, "unit_active", return_value=False):
+            text = self.screen(follower)
+        self.assertIn("━━ lost", text)
+        with mock.patch.object(self.v, "unit_active", return_value=False):
+            follower.next_unit_check = 0
+            self.assertNotIn("lost", self.screen(follower), "said once")
+        (d / "status.json").write_text(json.dumps({"state": "running", "phase": "build", "resumed": "t2"}))
+        with mock.patch.object(self.v, "unit_active", return_value=True):
+            follower.next_unit_check = 0
+            self.assertIn("━━ resumed", self.screen(follower))
+        self.assertFalse(follower.lost)
 
 
 if __name__ == "__main__":

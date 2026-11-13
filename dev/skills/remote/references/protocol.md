@@ -70,6 +70,13 @@ A workspace whose lock names a run that no record here knows was claimed from an
 Per phase, `status.json` records `session.{phase}` (the Claude Code session id), `exit.{phase}`, `head.{phase}`, `completed.{phase}`, and `dirty.{phase}` when the session left uncommitted work (its diff is saved as `uncommitted-{phase}.patch`).
 Resume continues the recorded session of the phase that ended, with its working tree untouched, then runs the remaining phases fresh.
 
+## Desktop view
+
+When the workspace has a desktop (`DISPLAY` from `/etc/fleet/computer-use.env`) and `gnome-terminal`, the runner opens a maximized terminal titled `dev:remote {run}` running `scripts/view.py` on the run directory.
+It follows `logs/*.jsonl` and `status.json` read-only: what the agent says, its tool calls, errors and retries, phase and gate changes, and how the run ended, with the state and idle time in the window title.
+The terminal belongs to the desktop session, not to `dev-run-{run}`, so it outlasts the run and shows how it ended; the next run on the workspace closes it, and `resume` keeps it.
+It never affects the run: a desktop that cannot show it is skipped, and `view = false` in `remote.toml` turns it off.
+
 ## Phase gates
 
 Nobody watches a sandbox session, so the runner itself re-runs a phase's own completion check before the next phase starts.

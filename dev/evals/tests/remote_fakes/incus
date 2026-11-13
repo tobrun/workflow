@@ -26,6 +26,8 @@ def vm_env(vm: Path) -> dict:
     path = os.pathsep.join([str(FAKES), str(Path(sys.executable).parent), "/usr/bin", "/bin"])
     if os.environ.get("FAKE_GITCONFIG"):  # the host's /etc/gitconfig, e.g. the GitHub relay's insteadOf
         keep["GIT_CONFIG_GLOBAL"] = os.environ["FAKE_GITCONFIG"]
+    if os.environ.get("FAKE_DISPLAY"):  # a desktop session, as /etc/fleet/computer-use.env sets on a workspace
+        keep["DISPLAY"] = os.environ["FAKE_DISPLAY"]
     return {**keep, "PATH": path, "HOME": str(vm / "home"), "DEV_REMOTE_TMP": str(vm / "tmp"),
             "FAKE_VM": str(vm), "GIT_CONFIG_NOSYSTEM": "1", "LANG": "C.UTF-8"}
 

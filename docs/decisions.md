@@ -367,7 +367,7 @@ D-wave-report: How does scope see the parallelism its plan allows? (2026-10-01, 
   ✓ `lint-spec.py` prints, on a clean spec, the build waves the file lists allow and the shared files that make a change set wait - "keep file lists disjoint where possible" was already asked and still produced three change sets queued behind `compose.ts`; printed rather than failed, because a chain is sometimes the honest shape of a change ⚠ file detection is a heuristic over backticked names, and what one change set consumes from another stays build's judgment
   ✗ fail the lint on a chain - no threshold separates a careless chain from a necessary one
   ✗ build overlapping change sets in separate worktrees and merge - spec order is the dependency order, so an overlap usually is a real dependency
-D-change-set-brief: What does a change-set agent read before it starts? (2026-10-01, user feedback on the contexia searchable-kb build)
+D-change-set-brief: What does a change-set agent read before it starts? (2026-10-01, user feedback on the contexia searchable-kb build) superseded by D-simplify-dev (2026-11-13, user)
   ✓ a brief `change-set-brief.py` cuts from the spec: every section but research and the change plan, the decisions its change set links, its own plan, and the notes without their test inventories - 42 KB against 130 KB of spec and notes for change set 5 of the contexia searchable-kb plan (measured 2026-10-01); every line is verbatim, so nothing is paraphrased ⚠ a decision a change set leans on but does not link is left out; the spec's path stays in the prompt for that
   ✗ the whole spec and the notes - every agent pays for every other change set's plan
   ✗ a summary the orchestrator writes per agent - output tokens are the slow ones, and a paraphrase can be wrong
@@ -425,24 +425,56 @@ D-bootstrap-dev-reads-agents-md: Do scope and build read AGENTS.md's Commands se
 
 ## Workflow memory
 
-D-memory-store: Where does the record of past runs live? (2026-10-05, user request, modeled on the Muse memory system)
+D-memory-store: Where does the record of past runs live? (2026-10-05, user request, modeled on the Muse memory system) superseded by D-simplify-memory (2026-11-13, user)
   ✓ `~/.dev-workflow/memory/` (or `$DEV_MEMORY_DIR`), one store per machine shared by every consuming repository, never committed - a problem only shows as recurring when runs from several repositories meet, and the evidence quotes transcripts of client code (user accepted the recommendation, 2026-10-05) ⚠ runs on another machine never meet these; a person who wants that points `DEV_MEMORY_DIR` at shared storage
   ✗ per repository under `.dev/` - simpler, but never sees a pattern across repositories, and `.dev/` is not committed anyway
   ✗ a database with embeddings, as Muse indexes `memory.entries` - the volume is a few runs a day; `grep` over JSONL answers every query the skill asks
-D-memory-capture: How does a run enter the store? (2026-10-05, user request)
+D-memory-capture: How does a run enter the store? (2026-10-05, user request) superseded by D-simplify-memory (2026-11-13, user)
   ✓ automatically, by `skill-metrics.py end`, which every timed skill already calls: the friction signals are measured from the transcript (interrupts, denied and failed tool calls, the user's own turns, checker runs and failures), each with its line, and the skill adds at most three narrated `--friction` lines, kept apart from the measured ones; opt out per repository in `.dev/config.json` or per machine with `DEV_MEMORY_DIR=off` (user accepted, 2026-10-05) ⚠ `user_turn` is noisy in interactive skills, where most turns are answers the skill asked for; extraction sorts that out, the capture does not
   ✗ opt-in per repository - the friction worth finding is in the runs nobody thought to record
   ✗ the skill narrates its own retrospective - the model's recollection of a long run is exactly what `skill-metrics.py` exists to replace, per P-deterministic-guards-over-prose
-D-metrics-harnesses: Where does `skill-metrics.py` read a run from outside Claude Code? (2026-10-21, user request)
+D-metrics-harnesses: Where does `skill-metrics.py` read a run from outside Claude Code? (2026-10-21, user request) superseded by D-simplify-memory (2026-11-13, user)
   ✓ from each harness's own session store, found through the variable it gives its shell tool (`CLAUDE_CODE_SESSION_ID`, `CODEX_THREAD_ID`, `OPENCODE_SESSION_ID`, `PI_SESSION_FILE`) and read into one event shape, anchored on the `start` call that has no result yet - real runs in Codex and opencode printed zero or `n/a` for every transcript value, because the script only parsed Claude transcripts and otherwise fell back to the newest Claude file in the folder; the variables leak into nested harnesses, and a Claude subagent shares its parent's id, so the still-running call, not the variable, decides the session (user accepted the recommendation, 2026-10-21) ⚠ each reader follows an undocumented store format (codex-cli 0.163, opencode 2.0 `session_message`, pi 0.87); a format change shows as `n/a`, not as a wrong number, and the unit fixtures carry each shape
   ✓ `n/a` wherever a harness keeps no record, never zero: Pi's review panel runs with `--no-session`, so Pi subagent tokens and agents are `n/a`, and so is `denied`, which Pi has no prompt for; rows without tokens are left out of the comparison baseline (user, 2026-10-21)
   ✓ opencode's run slice is exported to `transcripts/` in the workflow memory, and the journal lists every subagent file, so `claims.py` can check a quote against a line in any harness
   ✗ keep the newest-file fallback - it reported a different session's numbers, or zeros that read as a measurement
   ✗ save Pi panel sessions to count their tokens - more runner surface for one number on one harness
-D-memory-claims: What may the store say about a skill? (2026-10-05, user request)
+D-memory-claims: What may the store say about a skill? (2026-10-05, user request) superseded by D-simplify-memory (2026-11-13, user)
   ✓ only cited claims: `claims.py add` accepts a batch only when every quote is found verbatim at the transcript line or journal entry it cites, rejects credential shapes, and rebuilds the per-skill pages and threads from the records so every derived line cites a claim id; a retracted claim stays on record with its reason so the same evidence cannot return, and a resolved thread reopens on a later claim - Muse's source-cited derived memory and its forgetting workflow, enforced by a checker rather than asked for per P-deterministic-guards-over-prose ⚠ a verbatim quote proves the words occurred, not that the claim reads them rightly; the user's retraction is the guard for that
   ✗ free-text lessons appended to a file - unverifiable, and a wrong lesson has no way out
-D-memory-no-self-edit: May the loop change a skill on its own? (2026-10-05, user request)
+D-memory-no-self-edit: May the loop change a skill on its own? (2026-10-05, user request) superseded by D-simplify-memory (2026-11-13, user)
   ✓ never - `reflect` ends at a brief with an eval case from the real run, and the fix goes through `scope` and `build` in this repository like any change; Muse keeps its dream prose out of the prompt (`prompt_tainted: false`), and the factory dream loop that deployed its own winning revisions was removed (D-remove-factory) (user accepted, 2026-10-05) ⚠ the loop is only as frequent as a person runs `/dev:reflect`
   ✗ open a pull request with the proposed skill edit - a model-authored revision reviewed only as a diff, without the scope step that argues it against alternatives
   ✗ a nightly scheduled consolidation - a schedule is per host, and consolidation without someone to pick a thread only grows the store
+
+## Simplification
+
+D-simplify-dev: How much of the dev plugin stays? (2026-11-13, user)
+  ✓ six skills - scope absorbs scope-quick as its small path and scope-review as an optional deep review, ship absorbs ship-quick as a re-review mode, and commit, yolo, and remote stay; each kept skill is rewritten around outcomes, without step choreography the model now does on its own (scripted explorer and evidence batches, the blind-spot subagent, the contamination rule and its retrospective, change-set-brief.py) - current models plan, use tools, and follow instructions well enough that this prose costs more than it catches; the guards models still need stay per P-deterministic-guards-over-prose: the spec lint, independent review with adversarial verification, proof that tests ran, and the PR evidence check (user, 2026-11-13) ⚠ a cut that regresses quality shows only in a real run; one task runs before and after the rewrite, measured by skill-metrics.py before it is removed
+  ✗ trim prose and keep all twelve skills - the quick variants and scope-review duplicate their parents, and every extra skill is another body to keep in sync
+  ✗ a full rewrite in one change - a regression could not be traced to the cut that caused it; one step per pull request instead
+
+D-simplify-presentation: Which rendered outputs stay? (2026-11-13, user)
+  ✓ none of the presentation skills or HTML renders: to-pitch, to-quiz, and the spec and review HTML go, and build's e2e report becomes JSON with its screenshots, the shape pr-evidence.py extracts from - they never gated anything, and review_N.md, spec.md, and the PR body already carry the content (user, 2026-11-13)
+  ✗ keep the renders as optional extras - each is a template, a schema reference, and an eval to maintain for a view nobody gates on
+
+D-simplify-memory: Does the workflow keep measuring and consolidating its own runs? (2026-11-13, user)
+  ✓ no - reflect, claims.py, the run journal, and skill-metrics.py are removed, skill-metrics.py last, after it measures the before/after comparison of D-simplify-dev; this supersedes D-memory-store, D-memory-capture, D-metrics-harnesses, D-memory-claims, and D-memory-no-self-edit (user, 2026-11-13) ⚠ friction across repositories is no longer recorded; a recurring problem surfaces only when someone notices it
+  ✗ keep the memory loop - about 1,700 lines of scripts and skill text that every timed skill calls, for a consolidation run that happens only when someone starts it
+
+D-simplify-gauntlet: What does ship's gauntlet keep? (2026-11-13, user)
+  ✓ every analysis category, with mutation testing on by default as D-mutation-focused set it, except the dependency-rules check, which reads docs/dependencies.md that D-simplify-docs stops maintaining (user, 2026-11-13; the dependency-rules exception follows from D-simplify-docs, auto-applied at Confidence: 80%) ⚠ a repository that keeps its own docs/dependencies.md loses the check; its own linters remain
+  ✗ only the checks the repository already configures - drops the dead-code, duplication, complexity, flakiness, and mutation analyses the user wants kept
+
+D-simplify-review: How is ship's review verified? (2026-11-13, user)
+  ✓ a separate batch of adversarial verifiers, unchanged - a finding reaches the report only after an agent that did not raise it fails to refute it (user, 2026-11-13)
+  ✗ one reviewer batch whose blockers the orchestrator confirms by reading the code - fewer agents, but the orchestrator grades findings in a context that has already formed a view of the diff
+
+D-simplify-docs: Which project documents does the workflow maintain? (2026-11-13, user)
+  ✓ docs/decisions.md and docs/contracts.md only - docs/architecture.md upkeep (architecture-check.py, the architecture reference, build's and commit's architecture sync) and docs/dependencies.md upkeep (dependency-rules.md) are removed (user, 2026-11-13) ⚠ components and dependency edges are no longer written down by the workflow; scope discovers them from code
+  ✗ keep all four documents - architecture and dependency maps drift with every change and cost a sync step in build and commit
+
+D-simplify-reverse-mode: Does scope keep its reverse mode and history bootstrap? (2026-11-13, user)
+  ✓ no - auditing the decisions in existing code and seeding a ledger from commit history are cut; scope plans changes, and the ledger grows from the decisions those changes argue (user, 2026-11-13)
+  ✗ keep both - two extra procedures in scope's references for runs that rarely happen
+

@@ -30,7 +30,7 @@ Skills are explicitly invoked and recommend the next step; only `yolo` follows s
 - [CI parity](references/ci-parity.md) keeps every existing required repository check mandatory at the change's impact, with full PR follow-through when publication is authorized.
   Share only when requested; evidence records the actual capture and tested sources.
 
-Scope-review is optional; a settled spec can go directly to build.
+A settled spec goes directly to build; scope offers a deeper verified review for large or risky changes.
 Quick modes retain the same authority and evidence rules while reducing review machinery.
 Supplementary hardening analyses need meaningful changed-code targets, and skips are reported as skips.
 Mutation testing retains the configured, focused survivor-triage policy; a kill-rate score is not a ship gate.

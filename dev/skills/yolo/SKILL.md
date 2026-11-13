@@ -19,7 +19,7 @@ Follow [../../references/execution.md](../../references/execution.md); unattende
 
 1. Run `python3 {yolo-skill-root}/../../scripts/skill-metrics.py start yolo`; the stages' own `start` and `end` calls are skipped, this run measures as one.
 2. Resolve the allowed branch/base, remote, push, PR, and screenshot-hosting actions before execution. Missing publication capability leaves a local deliverable and prepared PR body; it does not block the implementation.
-3. Confirm the host has a subagent tool: the blind-spot pass and the review panel cannot run without one, and a yolo that silently drops them is not a yolo. Without one, stop here and say so; nothing has been spent yet.
+3. Confirm the host has a subagent tool: scope's reviewer, build's parallel change sets, and ship's review panel cannot run without one, and a yolo that silently drops them is not a yolo. Without one, stop here and say so; nothing has been spent yet.
 4. Check the ignore policy in [../../references/plan-layout.md](../../references/plan-layout.md#git-ignore-policy): `.dev/config.yaml` must be trackable and plan and scratch files ignored.
    Repair `.gitignore` when needed, verify both outcomes with `git check-ignore --no-index`, and commit the repair with the first change set.
 

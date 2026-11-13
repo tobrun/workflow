@@ -8,7 +8,11 @@ const REVIEW_DATA = {
   title: "string - Review {N}: {title}",
   planName: "string - the .dev/{plan-name} slug, or empty if no spec was found",
   reviewIndex: 1,
-  verdict: "PASS" | "CONCERNS" | "BLOCK",
+  verdict: "PASS" | "CONCERNS" | "BLOCK" | "INCOMPLETE",
+  complete: true,
+  findingVerdict: "PASS" | "CONCERNS" | "BLOCK",
+  protocolErrors: ["validation error, if any"],
+  unverifiedFindings: ["finding id, if any"],
   panel: ["lens", "..."],       // lenses run
   failedLenses: ["lens", "..."], // omit or [] if none failed
   base: "string - branch or PR reference",
@@ -41,6 +45,7 @@ const REVIEW_DATA = {
 
 ## Filling it in honestly
 
+- INCOMPLETE is missing assurance, even when no confirmed finding remains. Show protocol errors and unverified IDs visibly; never hide them under PASS.
 - This is a direct transcription of `review_N.md` into data, not a separate editorial pass - the two must agree.
 - `blockers`/`concerns` only include findings that survived adversarial verification (CONFIRMED, or PLAUSIBLE demoted to CONCERN) - never a REFUTED finding.
 - `previousFindings` is only non-empty on a re-review; omit the section in the template when empty rather than showing "none."

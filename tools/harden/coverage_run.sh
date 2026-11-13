@@ -11,7 +11,7 @@
 # and still matches the sources.
 #
 # Usage: tools/harden/coverage_run.sh OUT_JSON -- <unittest args>
-#   tools/harden/coverage_run.sh /tmp/coverage.json -- discover -s factory/evals/tests -t .
+#   tools/harden/coverage_run.sh /tmp/coverage.json -- discover -s dev/evals/tests -t .
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 root=$(pwd)
@@ -26,8 +26,8 @@ cat >"$work/coveragerc" <<EOF
 parallel = True
 data_file = $work/.coverage
 source =
-    $root/factory
     $root/dev
+    $root/bootstrap
     $root/scripts
 EOF
 

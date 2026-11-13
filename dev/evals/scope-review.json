@@ -1,37 +1,47 @@
 {
   "skill": "scope-review",
   "mode": "comprehension",
-  "note": "A full run depends on a settled spec and a live repo to judge it against, which is expensive to stage per iteration - this eval checks policy comprehension of the skill text directly, and specifically encodes the write boundary (spec.md only, findings only via verification), the escalation interview, the authority order, and the two-round cap so a future edit can't silently let the loop edit code, apply unverified findings, skip asking the user, or churn forever.",
+  "note": "A full run depends on a settled spec and a live repo to judge it against, which is expensive to stage per iteration - this eval checks policy comprehension of the skill text directly, and specifically encodes the write boundary (one spec writer, verified findings, and authorized ledger promotion), the escalation interview, the authority order, and the two-round cap so a future edit can't silently let the loop edit code, apply unverified findings, skip asking the user, or churn forever.",
   "evals": [
     {
       "id": "scope-review-contract",
-      "prompt": "Answer briefly, from the skill text only: (1) What may scope-review edit, and what must it never touch? (2) Can a finding reach the spec without being verified, and can the orchestrator apply its own opinion as a refinement? (3) What happens when lint-spec.py reports problems before the loop starts? (4) A verified finding shows a change set implements the S3 alternative that its linked decision rejected in favor of local disk - is that refinable, and if so what does the refine agent write?",
+      "prompt": "Answer briefly, from the skill text only: (1) What may scope-review edit, and what must it never touch? (2) Can a finding reach the spec without being verified, and can the orchestrator apply its own opinion as a refinement? (3) What happens when lint-spec.py reports problems before the loop starts? (4) A verified finding shows a change set implements the S3 alternative that its linked decision rejected in favor of local disk - is that refinable, and if so what does the proposal agent return and who writes the spec?",
       "assertions": [
         "Answer 1: it edits spec.md, keeps its own spec-review_N.md report, and promotes settled changes to docs/decisions.md and docs/contracts.md - never code, and never any other file",
         "Answer 2: no - findings reach the spec only through verification (REFUTED findings drop, a BLOCK survives only when CONFIRMED), and the orchestrator's own reading is not a lens",
         "Answer 3: stop and recommend finishing the scope run - refinement presumes a mechanically settled spec, and repairing an unfinished draft is scope's job",
-        "Answer 4: refinable - a settled chosen decision outranks the spec's prose in the authority order, so the change set is rewritten to match the decision (local disk), not the other way around"
+        "Answer 4: refinable - a settled chosen decision outranks the spec's prose in the authority order, so the proposal replaces the change set to match local disk; the agent stays read-only and the orchestrator applies the checked batch through apply-refinements.py"
       ]
     },
     {
       "id": "scope-review-loop-limits",
-      "prompt": "Answer briefly, from the skill text only: (1) How many panel rounds may the loop run, and where do findings still surviving at the cap go? (2) Name three kinds of findings that must never be auto-applied, and what happens to them instead. (3) What is the authority order refine agents resolve conflicts by? (4) What are the two possible exit verdicts, when does each apply, and what makes an escalation defer rather than resolve?",
+      "prompt": "Answer briefly, from the skill text only: (1) How many panel rounds may the loop run, and where do findings still surviving at the cap go? (2) Name three kinds of findings that must never be auto-applied, and what happens to them instead. (3) What is the authority order refine agents resolve conflicts by? (4) What are the possible exit verdicts, when does each apply, and what makes an escalation defer rather than resolve?",
       "assertions": [
         "Answer 1: up to two rounds - a third panel means churn; findings surviving the cap (including one surviving two rounds of refinement) become escalations for the end-of-run interview",
         "Answer 2: any three of: flipping a chosen decision to a rejected alternative, changing user-visible scope or behavior, adding or dropping a dependency, contradicting the user's recorded intent - each is asked to the user as a decision (one at a time, alternatives with tradeoffs) and the answer is applied to the spec before the run finishes",
         "Answer 3: recorded user intent, then the repo's reality, then settled chosen decisions, then the spec's prose - each level beats everything below it",
-        "Answer 4: APPROVED when every finding was refined or answered (build can start directly); APPROVED WITH DEFERRALS when something remains - an escalation defers only when the answer invalidates the premise or opens a genuinely new effort, when there is no interactive channel, or when the user declines to answer"
+        "Answer 4: APPROVED when every finding was refined or answered and review assurance is complete; INCOMPLETE when reviewer or verifier assurance is missing; APPROVED WITH DEFERRALS only for verified separable work with unresolved escalations - an escalation defers only when the answer invalidates the premise or opens a genuinely new effort, when there is no interactive channel, or when the user declines to answer"
       ]
     },
     {
       "id": "scope-review-report-as-the-run-goes",
-      "prompt": "Answer briefly, from the skill text and the references it links only: (1) When is spec-review_N.md created, and what does its Verdict line say then? (2) Round 1's refine agents have just returned with four refinements applied, and round 2's panel is about to start. What does the report hold now? (3) The user answers the first of three escalations. When is that recorded in the report? (4) What is left to write into the report at the wrap-up? (5) A later scope run finds a spec-review_2.md whose verdict is still IN PROGRESS and no scope-review run is going. May it take the report's findings as its opening agenda?",
+      "prompt": "Answer briefly, from the skill text and the references it links only: (1) When is spec-review_N.md created, and what does its Verdict line say then? (2) Round 1's proposal agents have returned and the orchestrator applied four checked refinements, and round 2's panel is about to start. What does the report hold now? (3) The user answers the first of three escalations. When is that recorded in the report? (4) What is left to write into the report at the wrap-up? (5) A later scope run finds a spec-review_2.md whose verdict is still IN PROGRESS and no scope-review run is going. May it take the report's findings as its opening agenda?",
       "assertions": [
         "Answer 1: in step 1, after the lint gate passes and before round 1's panel runs, at the next free index; Verdict: IN PROGRESS",
         "Answer 2: round 1's finding counts and each of the four refinements, written when the refine agents returned - not held back until the end of the run",
         "Answer 3: at once, when it is answered (or deferred) - not after all three escalations are done",
         "Answer 4: only the verdict - everything else has been filling since step 1",
         "Answer 5: no - an unfinished file left by a run that is no longer going is a draft, never a result; scope-review picks it up at the same index and no other skill builds on it"
+      ]
+    },
+    {
+      "id": "single-writer",
+      "mode": "functional",
+      "prompt": "Apply independent spec replacements against one base, then try stale, overlapping, and ambiguous proposals.",
+      "fixture": "python3 -m unittest dev.evals.tests.test_review_protocol.RefinementWriterTest",
+      "assertions": [
+        "Both disjoint replacements survive one write",
+        "Invalid proposals leave the original spec bytes unchanged"
       ]
     }
   ]

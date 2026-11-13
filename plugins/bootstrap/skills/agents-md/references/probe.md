@@ -11,7 +11,10 @@ In a workspace or monorepo, probe the root and every member; a large repository 
 - Remotes, and whether this is a fork (an `upstream` remote, an upstream note in the README).
 - Scope vocabulary: parse `git log --format=%s -400` with `^(\w+)(\(([^)]+)\))?!?:`, split comma-separated scopes, keep those used at least three times (twice in a history under 100 commits), and map each to the folder its commits touch.
   With no conventional history, take the areas commits actually touch: workspace packages, else the source subfolders that change most, never a lone package name or `src`.
-- Whether history already carries `Co-Authored-By` trailers, and whether `.gitignore` covers `.dev/`.
+- Whether history already carries `Co-Authored-By` trailers.
+- Verify `git check-ignore --no-index -q .dev/config.yaml` exits 1, and the same command for `.dev/ignore-policy-probe/spec.md`, `.dev/ignore-policy-probe/results/build-1.json`, `.dev/metrics.jsonl`, and `.dev/config.json` exits 0 for each.
+  These probes need not exist; do not require the `.dev/` directory itself to be ignored.
+  A failure is a `plans` open item; use `git check-ignore --no-index -v` to cite the effective rule without editing it.
 
 ## B. Stack and runners
 

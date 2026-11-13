@@ -1,6 +1,6 @@
 ---
 name: scope-review
-description: Review and auto-refine a settled spec before build starts - a fresh-context agent panel checks the plan against the actual repo for infeasible change sets, missing failure paths, semantic contradictions, and untestable scenarios, then verified findings are applied to spec.md (and, where they touch settled decisions or cross-boundary invariants, to docs/decisions.md and docs/contracts.md) by refine agents and the panel re-runs; findings only the user can decide are asked as questions at the end and their answers applied and promoted the same way, so a finished run hands build a spec - and ledger - ready to implement, with no separate scope pass needed to promote the changes. Use after scope settles a spec and before build implements it.
+description: Independently review a settled spec against the repo, verify findings, and refine it through one writer with authorized ledger updates. Use before implementing a large or risky spec; unresolved scope choices remain user decisions and incomplete review results never approve it.
 disable-model-invocation: true
 ---
 
@@ -17,6 +17,7 @@ This skill edits `spec.md`, keeps its own report, and promotes settled changes t
 This skill is the standalone deeper pass: fresh agents with repo access, adversarial verification, and automatic refinement - worth running when the change is large or risky, or when build will run in a different session.
 
 Invoking this skill is the task - locate the spec yourself and start immediately; do not ask what to review.
+Follow [../../references/execution.md](../../references/execution.md) for durable-write authority and [references/refinement.md](references/refinement.md) for the single spec writer.
 First run `python3 {scope-review-skill-root}/../../scripts/skill-metrics.py start scope-review` so the wrap-up can measure this run.
 
 ## 1. Locate and gate
@@ -36,8 +37,8 @@ A third panel means the refinements are churning, not converging - stop and esca
    From round 2 on, brief the lenses on what round 1 refined: their job is regressions in the refined material and their own unresolved findings, not a fresh full-spectrum hunt - a round that raises no BLOCK is convergence, and its CONCERNs go verified into the report rather than through another refine cycle.
 2. **Aggregate.** Apply verdicts with the script below; REFUTED findings drop, a BLOCK survives only when CONFIRMED.
 3. **Split.** Sort surviving findings into refinable and escalations per the authority rules below.
-4. **Refine.** No refinable findings: exit the loop. Otherwise dispatch fresh-context refine agents - one per independent group of findings, launched in a single message - each given only its findings, the spec path, and the refinement rules below. They edit `spec.md` only.
-5. **Re-gate.** Loop `lint-spec.py` until clean, fixing mechanical fallout with the same refine agents; then start the next round so fresh eyes judge the refined spec.
+4. **Refine.** No refinable findings: exit the loop. Otherwise dispatch read-only proposal agents per independent finding group, within available child capacity, with their findings, the spec path/base hash, and refinement rules. Apply all proposals through the single writer only after checking their authority. They write checked replacement proposals in scratch only; the orchestrator applies them through `apply-refinements.py`. No refine agent edits `spec.md` or a ledger.
+5. **Re-gate.** Loop `lint-spec.py` until clean; the orchestrator applies any mechanical corrections. After the final allowed refinement, verify each changed passage against the repo and re-gate before setting a verdict; never assume an unreviewed last edit converged.
 
 Exit the loop when a panel raises nothing refinable; two rounds of the same finding surviving refinement is itself an escalation.
 Escalations collected across the rounds go to the interview below, not to a handoff.
@@ -51,9 +52,10 @@ Refine agents resolve conflicts by this order - each level beats everything belo
 3. A settled `✓` decision: a change set contradicting its linked decision is rewritten to match the decision, not the other way around.
 4. The spec's prose.
 
+Only CONFIRMED findings may generate replacements; a PLAUSIBLE concern stays reported or escalated until its premise is checked.
 Refinable: false premises about the repo (rewrite the entry against the real code, including the extra work that reveals), change sets contradicting their linked decisions, missing test scenarios for stated invariants and failure paths, untestable scenarios (replace with one provable at that layer), and gaps whose resolution is forced once the repo is consulted.
 Escalations - never auto-applied, queued for the interview instead: anything that would flip a `✓` decision to a rejected alternative, change the user-visible scope or behavior, add or drop a dependency, or contradict the user's recorded intent.
-A refine agent that cannot fix its finding without crossing that line marks it escalated and leaves the spec alone.
+A proposal agent that cannot resolve its finding within authority reports it as escalated and proposes no replacement.
 Refinements follow `scope`'s notation: decision entries keep their slugs and marks, change sets keep their numbering, new scenarios carry layer tags.
 A refinement that adds or rewrites a decision entry, or a cross-boundary invariant, is promoted to the ledger immediately per step 5 - it does not wait for the interview.
 
@@ -70,14 +72,16 @@ Two outcomes defer instead of resolving:
 - An answer that invalidates the change's premise or opens a genuinely new effort - a new sub-effort with its own decision tree - exceeds a Q&A; record it as deferred and name `scope` for that piece.
 - No interactive channel, or the user declines to answer: record the escalation as deferred with the question it still needs.
 
-Verdict: APPROVED when nothing is deferred - every finding was refined or answered; APPROVED WITH DEFERRALS otherwise.
+Verdict: APPROVED only when the panel and verification were complete and nothing is deferred.
+Unresolved work yields APPROVED WITH DEFERRALS only when the deferred work is separable from the rest of the spec and the refinements were verified; missing or malformed reviewer results yield INCOMPLETE, never approval.
 
 ## 5. Promote to the ledger
 
 Every settled decision entry and cross-boundary invariant that this run added or changed in `spec.md` - from refinement or from an answered escalation - gets promoted the same run, so build never has to wait on a separate `scope` pass for it.
 Apply the promotion test in [../../references/decision-ledger.md](../../references/decision-ledger.md): copy qualifying decisions into `docs/decisions.md` verbatim, dated, sourced to this spec, evidence marks included, and promote recurring rationales to `P-` principles under the same bar.
 Promote cross-boundary invariants to `docs/contracts.md` under the same test, phrased for the relying side - same as `scope` phase 8.
-A decision or invariant that fails the promotion test, or a `? verify:` mark still open, stays in `spec.md` only and is not forced into the ledger.
+A decision or invariant failing the promotion test stays in `spec.md`.
+A settled choice with an unverified factual premise retains its `? verify:`; a planned invariant never becomes a verified contract before enforcing code exists.
 
 ## 6. Panel mechanics
 
@@ -90,6 +94,7 @@ Run the batches on the transport selected by [../ship/references/orchestration.m
 - Scratch root: `/tmp/scope-review-{session-id}/round-{R}/`.
 
 If no transport is available, stop and explain that this panel-based skill cannot preserve its verification contract.
+Validate batch-1 output and retry failed lenses at most once. Collect useful findings even when a lens fails, but mark the result INCOMPLETE.
 Between the batches, number the findings the verifiers get, and after batch 2 aggregate:
 
 ```bash
@@ -105,7 +110,7 @@ It has been filling since step 1, so by the wrap-up only its verdict is left to 
 ```markdown
 # Spec review N - {plan-name} - {date}
 
-Verdict: IN PROGRESS | APPROVED | APPROVED WITH DEFERRALS
+Verdict: IN PROGRESS | APPROVED | APPROVED WITH DEFERRALS | INCOMPLETE
 Rounds: {R} - {finding counts per round}
 
 ## Refinements applied

@@ -67,14 +67,15 @@ Keep it under roughly 150 lines; an overview that needs more is describing more 
 python3 {skill-root}/../../scripts/architecture-check.py docs/architecture.md [--touched file ...]
 ```
 
-- Exit 2: the file is missing - the caller runs an initial capture, never a fix agent.
+- Exit 2: the file is missing. Discover the affected area from code; full initial capture is optional work requiring inclusion in the task.
 - Exit 1: violations, one per line - a required section missing, a backticked path that no longer exists, or a `--touched` file no component's path covers (`uncharted`).
-- Exit 0: the overview is current for what was checked.
+- Exit 0: sections and referenced paths passed the structural checks. Responsibilities and flows still need verification against code.
 
 ## Initial capture
 
-When a skill needs the overview and the file is absent, capture the whole system in one pass before continuing - a partial overview that only covers the current change misleads the next reader more than none.
-Dispatch read-only explorers in a single message, one per top-level source area (the directories under the source root, or the packages of a monorepo), each reporting for its area: components with paths and responsibilities, what they call and what calls them, external boundaries they touch, entry points, and the cross-cutting mechanisms they participate in.
+When the user includes initial capture in the task, capture the whole system; otherwise continue from targeted code discovery.
+Never imply a partial change map describes the whole system.
+Dispatch independent read-only explorers within available host capacity, one per top-level source area (the directories under the source root, or the packages of a monorepo), each reporting for its area: components with paths and responsibilities, what they call and what calls them, external boundaries they touch, entry points, and the cross-cutting mechanisms they participate in.
 Merge their results into the notation above, resolving each flow end to end across areas, then loop the checker until it exits 0.
 Write the `Captured` line with the date and the skill, tell the user the overview is new and where it is, and commit it as its own `docs(architecture): capture the system overview` commit.
 Never fabricate a component or flow to make the overview look complete; an area the explorers could not characterize is listed with `unverified` in its responsibility cell, so the next reader knows to look.

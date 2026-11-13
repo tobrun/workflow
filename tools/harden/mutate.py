@@ -4,9 +4,10 @@
     cd pkg && python3 ../tools/harden/mutate.py parser.py parse_header split_body \\
         --tests tests.test_parser.HeaderTests tests.test_parser.BodyTests
 
-The ecosystem frameworks (mutmut, cosmic-ray) mutate whole modules and run one test command per mutant; in this
-repository most modules pair with integration tests that take tens of seconds, so a whole-module run costs hours.
-This mutates only the named functions (the pure logic a branch added) and runs only the unit tests that cover them.
+Select only changed decision-heavy functions and their relevant fast tests; skip forwarding and wiring glue.
+Prefer the ecosystem framework's scoped incremental mode where available. This local helper remains useful
+for explicit function selection in this repository, whose integration tests can take tens of seconds.
+Survivors guide contract review and regression tests; this helper's exit status is advisory, not a ship gate.
 Operators: comparison flips, `and`/`or` swaps, dropped `not`, arithmetic swaps, integer and boolean constant
 changes, and returns replaced by `None`. The file is restored after every mutant, also on interrupt.
 Exit 1 when any mutant survives; survivors print as `file:line operator (function)`.

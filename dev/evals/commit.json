@@ -24,6 +24,16 @@
         "The touched guarantee site gets a typed verdict: holds, broken, or needs-verify, with broken surfacing the relied-on sites as follow-up",
         "Ledger and contract updates are committed as their own docs(decisions)/docs(contracts) commits, not folded into the code commit"
       ]
+    },
+    {
+      "id": "execution-authority",
+      "prompt": "Commit my changes. Another agent has unrelated pending edits. The home instructions require explicit push requests and branch consent. What work is staged, is a push made, and may the skill switch branches?",
+      "fixture": "a scratch repo with task-owned and unrelated pending files; current branch remains unchanged",
+      "assertions": [
+        "Only task-owned changes are explicitly staged",
+        "No push is made from a commit request alone",
+        "No branch change is made without required consent; existing granted authorization is preserved"
+      ]
     }
   ]
 }

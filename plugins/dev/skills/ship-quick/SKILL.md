@@ -9,6 +9,7 @@ Confirm the fixes hold, update the pull request, and follow it to green.
 This is `ship` without the gauntlet, the lens panel and its verifiers, the remediation loop, and the HTML report.
 Invoking this skill is the task: detect the diff yourself and start immediately.
 
+Follow [../../references/execution.md](../../references/execution.md) for branch and publication actions.
 First run `python3 {ship-quick-skill-root}/../../scripts/skill-metrics.py start ship-quick`.
 Locate the plan directory and gather the branch diff per [../../references/plan-layout.md](../../references/plan-layout.md), and find the highest-numbered finished `review_N.md`, if any.
 
@@ -31,14 +32,16 @@ Confirm a new blocker by reading the code yourself before it counts; drop what y
 
 Write `.dev/{plan-name}/review_N.md` at the next free index in the shape of [../ship/references/report-format.md](../ship/references/report-format.md), with `Panel: quick` and the Previous findings section filled.
 The verdict is BLOCK when a blocker stands, CONCERNS when only concerns remain open, and PASS otherwise.
+A missing or malformed reviewer result is INCOMPLETE, not PASS; stop the ready/approval path and report the missing assurance.
 On BLOCK, stop here: report the standing blockers and recommend `scope-quick`, then `build`, then this skill again.
 
 ## 4. Pull request
 
 Follow [../ship/references/pull-request.md](../ship/references/pull-request.md) for the commit and push rules: never force-push, never rebase.
 
-- A pull request exists: edit `.dev/{plan-name}/pr.md` in place - the review line of the Summary and the Open calls - and keep its Evidence and Quality sections as the earlier run wrote them.
-  Loop `python3 {ship-quick-skill-root}/../ship/scripts/pr-evidence.py check .dev/{plan-name}/pr.md` until it passes, then update the body.
+- Before updating a PR, compare the fix diff with the evidence's tested revision and source hashes. Refresh scenarios whose tested behavior changed; retain evidence only where its source hashes still match. Record the new capture revision/command/time.
+- A pull request exists: update the review line and Open calls, retain the earlier Quality history, and update Evidence for changed behavior. Do not relabel old screenshots as a new run.
+  Loop `python3 {ship-quick-skill-root}/../ship/scripts/pr-evidence.py check .dev/{plan-name}/pr.md --require-current` until it passes, then update the body.
 - No pull request yet: create it as that reference describes.
 
 Then follow the required checks to green per "Follow the PR to green" in ci-parity.md, and mark the pull request ready once they are.

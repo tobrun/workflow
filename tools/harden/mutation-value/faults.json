@@ -1,0 +1,22 @@
+{
+  "checkout": [
+    {"id": "thresholds_101", "description": "Both business thresholds shifted to 101", "replacements": [["subtotal >= 100", "subtotal >= 101"]]},
+    {"id": "discount_after_shipping", "description": "Discount floor applied after shipping", "replacements": [["max(0, subtotal - discount) + shipping", "max(0, subtotal - discount + shipping)"]]},
+    {"id": "zero_rejected", "description": "Zero-value orders rejected", "replacements": [["subtotal < 0", "subtotal <= 0"]]},
+    {"id": "discount_stack_overwritten", "description": "Coupon overwrites membership discount", "replacements": [["discount += 10", "discount = 10"]]},
+    {"id": "post_discount_shipping", "description": "Shipping threshold uses discounted subtotal", "replacements": [["if subtotal >= 100:", "if subtotal - discount >= 100:"]]},
+    {"id": "member_discount_10", "description": "Membership discount incorrectly reduced", "replacements": [["discount = 20", "discount = 10"]]},
+    {"id": "shipping_7", "description": "Shipping charged at wrong price", "replacements": [["shipping = 5", "shipping = 7"]]},
+    {"id": "coupon_validation_removed", "description": "Invalid coupons silently accepted", "replacements": [["if coupon not in (\"\", \"SAVE10\"):", "if False:"]]}
+  ],
+  "access": [
+    {"id": "expiry_equality", "description": "Access granted at exact expiry", "replacements": [["expires <= now", "expires < now"]]},
+    {"id": "lock_bypass_admin", "description": "Admins bypass resource locks", "replacements": [["if locked:", "if locked and role != \"admin\":"]]},
+    {"id": "expiry_bypass_editor", "description": "Editors bypass expiry", "replacements": [["if expires <= now:", "if expires <= now and role != \"editor\":"]]},
+    {"id": "owner_any_role", "description": "Any owner can edit", "replacements": [["role == \"editor\" and owner", "owner"]]},
+    {"id": "all_editors", "description": "Nonowner editors can edit", "replacements": [["role == \"editor\" and owner", "role == \"editor\""]]},
+    {"id": "admin_requires_owner", "description": "Admin incorrectly requires ownership", "replacements": [["if role == \"admin\":", "if role == \"admin\" and owner:"]]},
+    {"id": "viewer_edit", "description": "Viewers are granted editor privileges", "replacements": [["role == \"editor\" and owner", "role in (\"editor\", \"viewer\") and owner"]]},
+    {"id": "expiry_clock_skew", "description": "Expiry checked one second too early", "replacements": [["expires <= now", "expires <= now + 1"]]}
+  ]
+}

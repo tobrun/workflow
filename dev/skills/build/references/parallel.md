@@ -17,7 +17,9 @@ Never start work belonging to the next wave while the current wave is in flight.
 
 ## Launching a wave
 
-Launch one `Agent` per change set, **all in a single message** so they run concurrently.
+Launch one independent agent per change set, up to the host's available child capacity.
+Queue the remainder without advancing the wave; all workers must finish before the shared wave gate.
+Never run two writers against the same file, even when their logical tasks differ.
 A wave of one change set needs no subagent: implement it yourself in the main thread.
 
 First write the wave's briefs, one command for the whole wave:
@@ -52,6 +54,7 @@ Output contract (the agent's final message must be exactly one fenced JSON block
   "whatWasDone": "2-4 lines",
   "seamsTested": ["..."],
   "testsAdded": ["path::test name"],
+  "runnerReceipts": ["absolute/path/to/receipt.json"],
   "deviations": ["edge case found -> conservative choice made: what/why"],
   "selfValidation": { "commands": ["..."], "result": "pass | fail", "output": "the tail that matters" },
   "conflicts": ["file another change set owns that this change set needed"]
@@ -62,7 +65,7 @@ Output contract (the agent's final message must be exactly one fenced JSON block
 
 1. Verify rather than trust the reports: run the wave gate below yourself, once per wave - the shared tree already holds the whole wave's changes, so one run covers every change set in it.
 2. Commit each change set's work on the current branch, in number order, one commit per change set. A skipped-ahead change set's commit waits until every earlier change set is committed, so history keeps the spec's order.
-3. Append each change set's entry to `implementation-notes.md` from `whatWasDone`, `seamsTested`, `testsAdded`, and `deviations`. `testsAdded` becomes the entry's `Tests added:` line, which the scenario checker reads.
+3. Append each change set's entry to `implementation-notes.md` from its report. Collect worker receipts and map scenario IDs to runner cases in `test-evidence.json` per [test-evidence.md](test-evidence.md). A notes line alone proves no execution.
 
 A `status: blocked` change set, a failing validation, or a reported conflict is yours to finish in the main thread before the next wave starts - do not carry a red change set forward and do not relaunch the same agent on the same failure more than once.
 If two change sets in a wave edited the same file anyway, reconcile it yourself and log it under Deviations.

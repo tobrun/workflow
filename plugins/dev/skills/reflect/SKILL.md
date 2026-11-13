@@ -1,6 +1,6 @@
 ---
 name: reflect
-description: Consolidate the run journal that scope, scope-review, build, ship, and their quick variants write at the end of every run into cited claims about how the skills themselves behaved, rank the recurring friction threads across repositories, and hand off one chosen thread as a scope brief with an eval case from the real run. Use periodically to decide what to improve in the dev workflow next, or with "resolve {thread} {sha}" once a fix for a thread has merged.
+description: Consolidate the run journal that scope, scope-review, build, ship, their quick variants, and yolo write at the end of every run into cited claims about how the skills themselves behaved, rank the recurring friction threads across repositories, and hand off one chosen thread as a scope brief with an eval case from the real run. Use periodically to decide what to improve in the dev workflow next, or with "resolve {thread} {sha}" once a fix for a thread has merged.
 ---
 
 # Reflect
@@ -24,11 +24,11 @@ A later claim in that thread reopens it, which is how a fix that did not hold sh
 ## 1. Gather
 
 Create `/tmp/{project-slug}/reflect/`, then run `{claims} pending > /tmp/{project-slug}/reflect/pending.json` and `{claims} top --all`.
-With no pending runs, skip to step 4; with no pending runs and no claims at all, say the journal is empty, name the four skills that write it, and stop.
+With no pending runs, skip to step 4; with no pending runs and no claims at all, say the journal is empty, name the skills that write it (scope, scope-quick, scope-review, build, ship, ship-quick, and yolo), and stop.
 
 ## 2. Extract
 
-Launch one read-only subagent per batch of up to five pending runs, all in one message.
+Launch one read-only subagent per batch of up to five pending runs, scheduled within available child capacity.
 Hand each the batch's journal entries, the current thread list from `{claims} top --all`, and [references/claims.md](references/claims.md), and have it write candidate claims, one JSON object per line, to `/tmp/{project-slug}/reflect/candidates-{n}.jsonl`.
 Each agent reads the transcript only around the lines its signals cite, never a whole transcript, and reuses an existing thread slug whenever the claim is the same problem.
 An agent may write zero candidates; a run that went as designed is not friction.
@@ -48,6 +48,9 @@ Then run `{claims} mark` with every pending run id, including runs that produced
 ## 4. Present
 
 Run `{claims} report /tmp/{project-slug}/reports/workflow-memory.html` and open it per [../../references/reporting.md](../../references/reporting.md).
+Before presenting a historical claim as a current defect, compare it with the current skill and available fixing-commit evidence.
+A cited quote establishes what happened then, not that it still happens now; unresolved provenance or a missing transcript remains explicit.
+Do not retract valid history merely because the skill changed. Resolve only with a real fixing SHA and observed regression fixture; without one, record the pending reconciliation in the brief.
 Show `{claims} top`, then `{claims} show {thread}` for the top three open or reopened threads, condensed to each claim and its quote.
 Ask one question with the host's structured user-input tool when available: which thread to pursue now, a claim that misreads its evidence and should be retracted, or none.
 Recommend the thread with the most runs across the most repositories; a reopened thread outranks an open one with the same reach.

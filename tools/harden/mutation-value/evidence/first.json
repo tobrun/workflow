@@ -1,0 +1,386 @@
+{
+  "python": "3.14.7 (main, Aug  5 2026, 10:29:49) [Clang 17.0.0 (clang-1700.6.4.2)]",
+  "platform": "macOS-15.6.1-arm64-arm-64bit-Mach-O",
+  "protocol": "Fresh cache per arm; baseline plus six extra tests per expansion.",
+  "faults_sha256": "5c60fa4265f23464c6e198d1f5cc5edbc1252f4f996b49e830146df3ed0f9763",
+  "results": [
+    {
+      "project": "checkout",
+      "suite": "baseline",
+      "test_count": 5,
+      "ordinary_seconds": [
+        0.09706962499990368,
+        0.09377587500011941,
+        0.09157020900011048
+      ],
+      "ordinary_median_seconds": 0.09377587500011941,
+      "mutation_seconds": 3.1598914170001535,
+      "coverage": {
+        "covered_lines": 14,
+        "num_statements": 14,
+        "percent_covered": 100.0,
+        "percent_covered_display": "100",
+        "missing_lines": 0,
+        "excluded_lines": 0,
+        "num_branches": 10,
+        "num_partial_branches": 0,
+        "covered_branches": 10,
+        "missing_branches": 0
+      },
+      "mutants": {
+        "killed": 15,
+        "survived": 13,
+        "other": 0
+      },
+      "faults": [
+        {
+          "id": "thresholds_101",
+          "detected": false
+        },
+        {
+          "id": "discount_after_shipping",
+          "detected": true
+        },
+        {
+          "id": "zero_rejected",
+          "detected": false
+        },
+        {
+          "id": "discount_stack_overwritten",
+          "detected": false
+        },
+        {
+          "id": "post_discount_shipping",
+          "detected": false
+        },
+        {
+          "id": "member_discount_10",
+          "detected": false
+        },
+        {
+          "id": "shipping_7",
+          "detected": true
+        },
+        {
+          "id": "coupon_validation_removed",
+          "detected": true
+        }
+      ]
+    },
+    {
+      "project": "checkout",
+      "suite": "control",
+      "test_count": 11,
+      "ordinary_seconds": [
+        0.10206733299992266,
+        0.1017120829999385,
+        0.09978750000004766
+      ],
+      "ordinary_median_seconds": 0.1017120829999385,
+      "mutation_seconds": 3.2846048750000136,
+      "coverage": {
+        "covered_lines": 14,
+        "num_statements": 14,
+        "percent_covered": 100.0,
+        "percent_covered_display": "100",
+        "missing_lines": 0,
+        "excluded_lines": 0,
+        "num_branches": 10,
+        "num_partial_branches": 0,
+        "covered_branches": 10,
+        "missing_branches": 0
+      },
+      "mutants": {
+        "killed": 20,
+        "survived": 8,
+        "other": 0
+      },
+      "faults": [
+        {
+          "id": "thresholds_101",
+          "detected": false
+        },
+        {
+          "id": "discount_after_shipping",
+          "detected": true
+        },
+        {
+          "id": "zero_rejected",
+          "detected": false
+        },
+        {
+          "id": "discount_stack_overwritten",
+          "detected": true
+        },
+        {
+          "id": "post_discount_shipping",
+          "detected": false
+        },
+        {
+          "id": "member_discount_10",
+          "detected": true
+        },
+        {
+          "id": "shipping_7",
+          "detected": true
+        },
+        {
+          "id": "coupon_validation_removed",
+          "detected": true
+        }
+      ]
+    },
+    {
+      "project": "access",
+      "suite": "baseline",
+      "test_count": 5,
+      "ordinary_seconds": [
+        0.10020645800000239,
+        0.09436504100017373,
+        0.09326258299984147
+      ],
+      "ordinary_median_seconds": 0.09436504100017373,
+      "mutation_seconds": 1.4643827499999134,
+      "coverage": {
+        "covered_lines": 10,
+        "num_statements": 10,
+        "percent_covered": 100.0,
+        "percent_covered_display": "100",
+        "missing_lines": 0,
+        "excluded_lines": 0,
+        "num_branches": 8,
+        "num_partial_branches": 0,
+        "covered_branches": 8,
+        "missing_branches": 0
+      },
+      "mutants": {
+        "killed": 9,
+        "survived": 2,
+        "other": 0
+      },
+      "faults": [
+        {
+          "id": "expiry_equality",
+          "detected": false
+        },
+        {
+          "id": "lock_bypass_admin",
+          "detected": false
+        },
+        {
+          "id": "expiry_bypass_editor",
+          "detected": false
+        },
+        {
+          "id": "owner_any_role",
+          "detected": false
+        },
+        {
+          "id": "all_editors",
+          "detected": false
+        },
+        {
+          "id": "admin_requires_owner",
+          "detected": true
+        },
+        {
+          "id": "viewer_edit",
+          "detected": false
+        },
+        {
+          "id": "expiry_clock_skew",
+          "detected": false
+        }
+      ]
+    },
+    {
+      "project": "access",
+      "suite": "control",
+      "test_count": 11,
+      "ordinary_seconds": [
+        0.09799995800017314,
+        0.09700887500002864,
+        0.10325925000006464
+      ],
+      "ordinary_median_seconds": 0.09799995800017314,
+      "mutation_seconds": 1.5131018330000643,
+      "coverage": {
+        "covered_lines": 10,
+        "num_statements": 10,
+        "percent_covered": 100.0,
+        "percent_covered_display": "100",
+        "missing_lines": 0,
+        "excluded_lines": 0,
+        "num_branches": 8,
+        "num_partial_branches": 0,
+        "covered_branches": 8,
+        "missing_branches": 0
+      },
+      "mutants": {
+        "killed": 10,
+        "survived": 1,
+        "other": 0
+      },
+      "faults": [
+        {
+          "id": "expiry_equality",
+          "detected": false
+        },
+        {
+          "id": "lock_bypass_admin",
+          "detected": true
+        },
+        {
+          "id": "expiry_bypass_editor",
+          "detected": false
+        },
+        {
+          "id": "owner_any_role",
+          "detected": true
+        },
+        {
+          "id": "all_editors",
+          "detected": true
+        },
+        {
+          "id": "admin_requires_owner",
+          "detected": true
+        },
+        {
+          "id": "viewer_edit",
+          "detected": true
+        },
+        {
+          "id": "expiry_clock_skew",
+          "detected": false
+        }
+      ]
+    },
+    {
+      "project": "checkout",
+      "suite": "guided",
+      "test_count": 11,
+      "ordinary_seconds": [
+        0.10913449999998193,
+        0.10544045799997548,
+        0.09762162499987426
+      ],
+      "ordinary_median_seconds": 0.10544045799997548,
+      "mutation_seconds": 3.3200436249999257,
+      "coverage": {
+        "covered_lines": 14,
+        "num_statements": 14,
+        "percent_covered": 100.0,
+        "percent_covered_display": "100",
+        "missing_lines": 0,
+        "excluded_lines": 0,
+        "num_branches": 10,
+        "num_partial_branches": 0,
+        "covered_branches": 10,
+        "missing_branches": 0
+      },
+      "mutants": {
+        "killed": 26,
+        "survived": 2,
+        "other": 0
+      },
+      "faults": [
+        {
+          "id": "thresholds_101",
+          "detected": true
+        },
+        {
+          "id": "discount_after_shipping",
+          "detected": true
+        },
+        {
+          "id": "zero_rejected",
+          "detected": true
+        },
+        {
+          "id": "discount_stack_overwritten",
+          "detected": true
+        },
+        {
+          "id": "post_discount_shipping",
+          "detected": true
+        },
+        {
+          "id": "member_discount_10",
+          "detected": true
+        },
+        {
+          "id": "shipping_7",
+          "detected": true
+        },
+        {
+          "id": "coupon_validation_removed",
+          "detected": true
+        }
+      ]
+    },
+    {
+      "project": "access",
+      "suite": "guided",
+      "test_count": 11,
+      "ordinary_seconds": [
+        0.09824229100013326,
+        0.09480487499990886,
+        0.09721454100008486
+      ],
+      "ordinary_median_seconds": 0.09721454100008486,
+      "mutation_seconds": 1.5527710420001313,
+      "coverage": {
+        "covered_lines": 10,
+        "num_statements": 10,
+        "percent_covered": 100.0,
+        "percent_covered_display": "100",
+        "missing_lines": 0,
+        "excluded_lines": 0,
+        "num_branches": 8,
+        "num_partial_branches": 0,
+        "covered_branches": 8,
+        "missing_branches": 0
+      },
+      "mutants": {
+        "killed": 11,
+        "survived": 0,
+        "other": 0
+      },
+      "faults": [
+        {
+          "id": "expiry_equality",
+          "detected": true
+        },
+        {
+          "id": "lock_bypass_admin",
+          "detected": true
+        },
+        {
+          "id": "expiry_bypass_editor",
+          "detected": true
+        },
+        {
+          "id": "owner_any_role",
+          "detected": true
+        },
+        {
+          "id": "all_editors",
+          "detected": true
+        },
+        {
+          "id": "admin_requires_owner",
+          "detected": true
+        },
+        {
+          "id": "viewer_edit",
+          "detected": true
+        },
+        {
+          "id": "expiry_clock_skew",
+          "detected": true
+        }
+      ]
+    }
+  ]
+}

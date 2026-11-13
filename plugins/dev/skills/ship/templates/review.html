@@ -41,6 +41,8 @@
   .verdict.pass { background: color-mix(in srgb, var(--good) 16%, var(--surface)); color: var(--good); }
   .verdict.concerns { background: color-mix(in srgb, var(--warning) 20%, var(--surface)); color: color-mix(in srgb, var(--warning) 70%, #3a2a00); }
   .verdict.block { background: color-mix(in srgb, var(--critical) 16%, var(--surface)); color: var(--critical); }
+  .verdict.incomplete { background: color-mix(in srgb, var(--warning) 20%, var(--surface)); color: var(--text); }
+  .assurance { border-left: 4px solid var(--warning); overflow-wrap: anywhere; }
   .meta { font-size: 12.5px; color: var(--muted); margin-top: 10px; }
   .summary { font-size: 15px; color: var(--text-2); margin-top: 12px; max-width: 68ch; }
   section { margin: 30px 0; }
@@ -77,6 +79,11 @@
       <div class="meta" id="r-meta"></div>
       <div class="summary" id="r-summary"></div>
     </header>
+
+    <section id="sec-assurance">
+      <h2 class="section-title">Review incomplete</h2>
+      <div class="card assurance" id="assurance-text"></div>
+    </section>
 
     <section id="sec-conformance">
       <h2 class="section-title">Spec conformance</h2>
@@ -121,6 +128,9 @@ const REVIEW_DATA = {
   planName: "example-plan",
   reviewIndex: 1,
   verdict: "PASS",
+  complete: true,
+  protocolErrors: [],
+  unverifiedFindings: [],
   panel: ["correctness", "tests"],
   failedLenses: [],
   base: "main",
@@ -172,6 +182,22 @@ document.getElementById("r-summary").innerHTML = mdLite(REVIEW_DATA.summary || "
 
 function toggleSection(id, show) { document.getElementById(id).style.display = show ? "" : "none"; }
 
+const protocolErrors = REVIEW_DATA.protocolErrors || [];
+const unverified = REVIEW_DATA.unverifiedFindings || [];
+const incomplete = REVIEW_DATA.verdict === "INCOMPLETE" || REVIEW_DATA.complete === false ||
+  failed.length > 0 || protocolErrors.length > 0 || unverified.length > 0;
+if (incomplete) {
+  verdictEl.textContent = "INCOMPLETE";
+  verdictEl.className = "verdict incomplete";
+}
+toggleSection("sec-assurance", incomplete);
+document.getElementById("assurance-text").textContent = [
+  "This review cannot approve the change. Complete the missing checks before marking it ready.",
+  failed.length ? "Missing lenses: " + failed.join(", ") : "",
+  protocolErrors.length ? "Invalid results: " + protocolErrors.join("; ") : "",
+  unverified.length ? "Unverified findings: " + unverified.join(", ") : ""
+].filter(Boolean).join(" ");
+
 toggleSection("sec-conformance", !!REVIEW_DATA.specConformance);
 document.getElementById("conformance-text").innerHTML = mdLite(REVIEW_DATA.specConformance || "");
 
@@ -189,7 +215,7 @@ function renderFindings(containerId, findings) {
       <div class="head">
         <span class="loc">${escapeHtml(f.file || "")}${f.line ? ":" + f.line : ""}</span>
         <span class="title">${escapeHtml(f.title || "")}</span>
-        <span class="lenses">[${(f.lenses || []).join(", ")}]</span>
+        <span class="lenses">[${escapeHtml((f.lenses || []).join(", "))}]</span>
       </div>
       <div class="detail">${mdLite(f.detail || "")}</div>
     </div>`).join("");

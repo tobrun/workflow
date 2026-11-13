@@ -62,7 +62,7 @@
       "prompt": "Answer briefly, from the skill text only. During the interview you recommend storing the dedup keys in a database table over Redis at Confidence: 82%, and separately recommend a 30-day retention window at Confidence: 55%. Later a finding suggests the real problem is not duplicate deliveries but a missing retry, at Confidence: 90%. (0) Do you ask about the store, and how is that decision recorded? (1) Do you ask about the retention window? (2) Do you ask about the retry finding, and why? (3) When does the user see the recommendations you applied without asking?",
       "assertions": [
         "Answer 0: no question; the table is applied and its chosen line carries `auto-applied at Confidence: 82%` in its because clause",
-        "Answer 1: yes, 55% is below the 75% threshold, so the user is asked",
+        "Answer 1: yes, 55% is below the 65% threshold, so the user is asked",
         "Answer 2: yes, whatever the score, because it changes what was asked for (a different problem than the request names)",
         "Answer 3: once, in one block at the end of the interview, so a single reply can overturn any of them before the catalog builds on them"
       ]
@@ -80,10 +80,20 @@
     },
     {
       "id": "scope-echo-matches-chosen",
-      "prompt": "Answer briefly, from the skill text and the references it links only. A decision's chosen line reads `✓ S3 bucket in us-east-1 - durable across redeploys`. (1) Write the echo a later section should use for it. (2) You were about to write `(✓ cloud storage)` instead. Will lint-spec.py accept that, and what does the skill tell you to do when writing the chosen line so the echo passes the first time?",
+      "prompt": "Answer briefly, from the skill text and the references it links only. A decision's chosen line reads `\u2713 S3 bucket in us-east-1 - durable across redeploys`. (1) Write the echo a later section should use for it. (2) You were about to write `(\u2713 cloud storage)` instead. Will lint-spec.py accept that, and what does the skill tell you to do when writing the chosen line so the echo passes the first time?",
       "assertions": [
-        "Answer 1: `D-slug (✓ S3 bucket)` or a shorter prefix such as `(✓ S3)` - text taken from the chosen line before its ` - `, not from the because clause",
+        "Answer 1: `D-slug (\u2713 S3 bucket)` or a shorter prefix such as `(\u2713 S3)` - text taken from the chosen line before its ` - `, not from the because clause",
         "Answer 2: no, lint-spec.py rejects it because the echo is not found in the chosen line's text before ` - `; lead the chosen line with the short label that will be echoed, and copy the echo from it"
+      ]
+    },
+    {
+      "id": "confidence-boundary",
+      "prompt": "From scope and execution.md: an in-scope reversible recommendation has Confidence: 70%. Apply or ask? What changes when the recommendation drops a requested requirement? Is 70% a measured probability or publication permission?",
+      "fixture": "none - boundary policy question",
+      "assertions": [
+        "Apply the in-scope 70% recommendation under the 65% rule and record it as auto-applied",
+        "Resolve a dropped requirement with the user regardless of confidence",
+        "Confidence expresses judgment, not a measured probability or authorization"
       ]
     }
   ]

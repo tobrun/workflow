@@ -1,16 +1,17 @@
 ---
 name: ship
-description: Run the quality pass that ships a change in three phases - phase 1 is a deterministic harden gauntlet (the repo's own static analysis, security scan, dead code, duplication, dependency rules, coverage-weighted complexity, test flakiness, mutation testing) that loops fresh-context fix agents until every gating check passes - mutation testing is scored and reported, never a shippability gate - phase 2 is a read-only adversarially verified review panel over the post-fix diff, writing .dev/{plan-name}/review_N.md, a BLOCK verdict gets two autonomous fix-and-re-review rounds before it counts as a real blocker, and phase 3 pushes and opens the pull request with visual proof of the change (e2e screenshots for a frontend, before/after state or a red-then-green reproducing test otherwise) gated by a deterministic evidence check. Use after build to finish a change and open its PR, or on request for a single phase such as gauntlet only or review only.
+description: Harden a change with required checks and applicable analyses, verify an independent review, and prepare an authorized PR with current evidence. Use after build or for a requested gauntlet-only, review-only, or local-only pass; incomplete review results never approve the change.
 ---
 
 # Ship
 
 Ship a change in three phases: a deterministic gauntlet that fixes mechanics, a review panel that judges meaning, then a pull request that carries proof the change works.
 Prompted quality rules soften into guidelines as a context grows; a checker's exit code does not, and judgment belongs to a verified panel, not to one context.
-You are the orchestrator for both phases: run tools, dispatch agents, aggregate, report.
+You are the orchestrator for every phase: run tools, dispatch agents, aggregate, report.
 Never weaken a check to make it pass, and never stand in for the panel - your own reading of the code is not a lens.
 
 Invoking this skill is the task - detect the diff yourself and start immediately; do not ask what to ship.
+Follow [../../references/execution.md](../../references/execution.md), resolving allowed branch/base and publication actions before remote-only work.
 First run `python3 {ship-skill-root}/../../scripts/skill-metrics.py start ship` so the wrap-up can measure this run instead of recalling it.
 
 ## Phase selection
@@ -21,18 +22,19 @@ The phases differ in contract: phase 1 mutates the repo (fix agents edit code, t
 
 ## Scope
 
-Both phases share one scope.
+All three phases share one scope.
 
 - PR number given -> target that PR; else the host's PR tooling, when it has any, for an open PR; else the local branch against the default branch.
 - Gather the diff per the diff-scope rules in [../../references/plan-layout.md](../../references/plan-layout.md): local git only, standard exclusions.
 - Locate the plan directory by the same reference's convention and read its `spec.md`; degrade gracefully without one.
 - Full-repo runs only when the user asks - they are expensive, and the loops are the same.
-- No reviewable files: say so and stop. Diff is tiny (1-2 files) or huge (>25k lines): confirm with the user before spending on agents.
+- No reviewable files: say so and stop. Size the review to the change: small diffs need only applicable lenses; unusually large diffs need bounded batches and explicit coverage limits.
 
 ## Phase 1: the gauntlet
 
-Eight checks, cheapest first - the five read-only analyzers scan as one parallel batch, the three test-contending ones run sequentially, per the loop reference; [references/tools.md](references/tools.md) owns their definitions and the acquisition ladder.
-Never weaken or skip a check because acquiring its tool is work. The mutation check is optional only as specified by the configuration below.
+Run every existing required repository check.
+The eight analysis categories below are scoped by applicability in [references/tools.md](references/tools.md); report a supplemental analysis that has no meaningful target as skipped with its reason, never passed.
+Run independent read-only checks concurrently within host capacity, and test-contending checks sequentially. Mutation testing retains the configuration and changed-decision-logic policy below.
 
 1. **Project static analysis** - every linter, type checker, and format checker the repo already configures, run over the in-scope files.
 2. **Security scan** - secrets, vulnerable dependencies, and static security rules; a found secret escalates immediately, it is never quiet fix-agent work.
@@ -41,7 +43,7 @@ Never weaken or skip a check because acquiring its tool is work. The mutation ch
 5. **Dependency rules** against `docs/dependencies.md` ([../../references/dependency-rules.md](../../references/dependency-rules.md) owns the checker semantics; absent file: skip with a clear note, never invent rules).
 6. **Coverage-weighted complexity** per in-scope function.
 7. **Flakiness** - the tests the diff added or touched, repeated and shuffled until trusted.
-8. **Mutation testing** over the in-scope source, unless disabled in `.dev/config.yaml` - scored and reported in the wrap-up, never a reason on its own to block shipping (see gauntlet.md's "Mutation testing is reported, not a threshold").
+8. **Mutation testing** incrementally over changed decision-heavy logic (pricing, permissions, validation), skipping glue code and honoring `.dev/config.yaml` - survivors guide contract review and regression tests; counts are reported, never a score gate (see gauntlet.md's "Mutation testing is reported, not a threshold").
 
 Before phase 1, read `.dev/config.yaml` at the target repository root as YAML. The top-level `mutation_testing` key is a boolean: absent file or absent key means `true`; `true` runs the check; `false` skips it, including tool acquisition, mutant generation and survivor fixes. Empty YAML is an empty mapping. A malformed file, non-mapping root, or non-boolean value is an error: stop phase 1 and report the path and problem; do not silently skip or assume a value. Ignore unrelated keys. Resolve this once for the whole ship run. When skipped, report `mutation testing: skipped (disabled in .dev/config.yaml)` in the wrap-up and the PR Quality row, without counts; do not claim it passed. The other checks and CI parity still run.
 
@@ -101,7 +103,9 @@ python3 {ship-skill-root}/scripts/aggregate-findings.py aggregate {batch-1 resul
 ```
 
 It drops REFUTED findings, keeps a BLOCK only when CONFIRMED and carries every other surviving finding as a CONCERN, merges duplicates by file:line while crediting each lens that found them, names the lenses that failed or returned nothing parseable, and sets the verdict.
-A failed lens doesn't abort the review - the report names it, so the verdict is honestly partial.
+A failed or malformed lens does not discard useful findings, but the report is INCOMPLETE.
+The aggregator validates enums and finding fields, rejects duplicate/unknown verifier IDs, and exits 1 when completeness is missing.
+Retry a failed agent at most once; after that, report missing assurance. An INCOMPLETE review cannot approve the change or mark a PR ready.
 
 Then, with findings verified, read the target repo's `docs/decisions.md` if it keeps one, and classify each colliding finding per the recommender contract in [../../references/decision-ledger.md](../../references/decision-ledger.md). Read-only - this phase never edits the ledger; classifications land in the report's Decision reconciliation section, and ledger writes belong to the follow-up `scope` run.
 
@@ -115,6 +119,7 @@ Map the report onto `REVIEW_DATA` per [references/data-schema.md](references/dat
 
 ## Blocker remediation
 
+INCOMPLETE is missing assurance, not an autonomous-remediation success; stop the approval path with its missing results reported.
 A BLOCK verdict is work before it is a question: run up to two rounds per [references/remediation.md](references/remediation.md), each a fresh-context fix pass over the confirmed blockers, a re-harden of the touched files, and a re-review at the next index.
 PASS or CONCERNS ends the loop; a blocker still standing after round 2, or one an agent escalated as needing a spec or decision change, is a real blocker and the only kind the wrap-up presents as a human call.
 Skipped in review-only mode.
@@ -123,9 +128,9 @@ Skipped in review-only mode.
 
 Open the PR automatically, with evidence a reviewer can see before reading the diff, per [references/pull-request.md](references/pull-request.md).
 
-1. Commit what the gauntlet left uncommitted, branch off the default branch if still on it, and push.
+1. Commit authorized fixes and push only within the execution authority already resolved; preserve the intended PR base, including an explicitly stacked branch. Without publication capability, finish `pr.md` and deliver locally.
 2. Build the Evidence section from the e2e report with `python3 {ship-skill-root}/scripts/pr-evidence.py extract`, passing `--scenario` for only the scenarios that show what this PR's diff changed, publishing frontend screenshots to the `pr-evidence` branch with its `publish` command; without an e2e report, capture the evidence now per the reference - screenshots for a UI, a labeled before/after pair otherwise, and a red-on-base, green-on-branch reproducing test for every bug fix.
-3. Add that section to the run's `.dev/{plan-name}/pr.md`, in the reference's body shape, and loop `pr-evidence.py check` on it until it passes; the check, not your judgment, decides whether the proof is real enough.
+3. Add that section to the run's `.dev/{plan-name}/pr.md`, in the reference's body shape, and loop `pr-evidence.py check --require-current` on it until it passes; the check, not your judgment, decides whether the proof is real enough.
 4. Create the PR (draft when a real blocker survived remediation or a required check was deferred to CI) or update the one that already exists, then follow its required checks to green per [../../references/ci-parity.md](../../references/ci-parity.md).
 
 ## Wrap up

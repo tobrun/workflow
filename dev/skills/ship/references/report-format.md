@@ -7,8 +7,10 @@ Phase 2 opens it when the panel is selected, holding `Verdict: IN PROGRESS` and 
 ```markdown
 # Review {N}: {title}
 
-Verdict: {IN PROGRESS | PASS | CONCERNS | BLOCK}
+Verdict: {IN PROGRESS | PASS | CONCERNS | BLOCK | INCOMPLETE}
 Panel: {lenses run}, {failed lenses if any}
+Completeness: {complete | incomplete; missing lenses, invalid results, unverified finding IDs}
+Finding verdict: {PASS | CONCERNS | BLOCK, independently of completeness}
 Base: {branch or PR}, {date}, head {sha of the reviewed commit}
 
 {1-2 sentence summary}

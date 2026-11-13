@@ -233,7 +233,7 @@ class TestNameWithCommaTest(PlanCase):
             encoding="utf-8",
         )
         self.write_notes(f"## Change set 1: Change set 1\n- Tests added: {tests_added}\n")
-        return run(CHECK, str(self.plan), "--repo-root", str(repo))
+        return run(CHECK, str(self.plan), "--repo-root", str(repo), "--inventory-only")
 
     def test_test_name_holding_a_comma_is_one_test(self) -> None:
         result = self.check(
@@ -263,7 +263,7 @@ class RunAndFixupEntryTest(PlanCase):
             f"{self.RUN}## Change set 1: Change set 1\n- Tests added: {entry}\n\n"
             f"## Fixup: the built CLI printed no newline\n- Found by: e2e scenario 3\n- Tests added: {fixup}\n"
         )
-        return run(CHECK, str(self.plan), "--repo-root", str(repo))
+        return run(CHECK, str(self.plan), "--repo-root", str(repo), "--inventory-only")
 
     def test_run_entry_and_fixup_entry_leave_a_complete_change_set_clean(self) -> None:
         result = self.check(
@@ -292,19 +292,6 @@ class RunAndFixupEntryTest(PlanCase):
         out = run(BRIEF, str(self.plan), "2").stdout
         self.assertIn("### Fixup: the built CLI printed no newline", out)
         self.assertIn("- What was done: print one", out)
-
-
-class FactoryCopiesTest(unittest.TestCase):
-    """The factory build and scope phases ship the same scripts."""
-
-    def test_factory_copies_match_dev(self) -> None:
-        for dev, factory in (
-            (LINT, REPO_ROOT / "factory" / "phases" / "scope" / "scripts" / LINT.name),
-            (BRIEF, REPO_ROOT / "factory" / "phases" / "build" / "scripts" / BRIEF.name),
-            (CHECK, REPO_ROOT / "factory" / "phases" / "build" / "scripts" / CHECK.name),
-        ):
-            with self.subTest(script=dev.name):
-                self.assertEqual(dev.read_bytes(), factory.read_bytes())
 
 
 if __name__ == "__main__":

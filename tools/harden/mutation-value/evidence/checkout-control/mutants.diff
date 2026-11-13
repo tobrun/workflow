@@ -1,0 +1,110 @@
+To apply a mutant on disk:
+    mutmut apply <id>
+
+To show a mutant:
+    mutmut show <id>
+
+
+Survived 🙁 (8)
+
+---- app.py (8) ----
+
+# mutant 1
+--- app.py
++++ app.py
+@@ -1,5 +1,5 @@
+ def total(subtotal, member, coupon):
+-    if subtotal < 0:
++    if subtotal <= 0:
+         raise ValueError("negative subtotal")
+     if coupon not in ("", "SAVE10"):
+         raise ValueError("unknown coupon")
+
+# mutant 2
+--- app.py
++++ app.py
+@@ -1,5 +1,5 @@
+ def total(subtotal, member, coupon):
+-    if subtotal < 0:
++    if subtotal < 1:
+         raise ValueError("negative subtotal")
+     if coupon not in ("", "SAVE10"):
+         raise ValueError("unknown coupon")
+
+# mutant 3
+--- app.py
++++ app.py
+@@ -1,6 +1,6 @@
+ def total(subtotal, member, coupon):
+     if subtotal < 0:
+-        raise ValueError("negative subtotal")
++        raise ValueError("XXnegative subtotalXX")
+     if coupon not in ("", "SAVE10"):
+         raise ValueError("unknown coupon")
+     discount = 0
+
+# mutant 7
+--- app.py
++++ app.py
+@@ -2,7 +2,7 @@
+     if subtotal < 0:
+         raise ValueError("negative subtotal")
+     if coupon not in ("", "SAVE10"):
+-        raise ValueError("unknown coupon")
++        raise ValueError("XXunknown couponXX")
+     discount = 0
+     if member and subtotal >= 100:
+         discount = 20
+
+# mutant 10
+--- app.py
++++ app.py
+@@ -4,7 +4,7 @@
+     if coupon not in ("", "SAVE10"):
+         raise ValueError("unknown coupon")
+     discount = 0
+-    if member and subtotal >= 100:
++    if member and subtotal > 100:
+         discount = 20
+     if coupon == "SAVE10":
+         discount += 10
+
+# mutant 11
+--- app.py
++++ app.py
+@@ -4,7 +4,7 @@
+     if coupon not in ("", "SAVE10"):
+         raise ValueError("unknown coupon")
+     discount = 0
+-    if member and subtotal >= 100:
++    if member and subtotal >= 101:
+         discount = 20
+     if coupon == "SAVE10":
+         discount += 10
+
+# mutant 22
+--- app.py
++++ app.py
+@@ -9,7 +9,7 @@
+     if coupon == "SAVE10":
+         discount += 10
+     shipping = 5
+-    if subtotal >= 100:
++    if subtotal > 100:
+         shipping = 0
+     return max(0, subtotal - discount) + shipping
+ 
+
+# mutant 23
+--- app.py
++++ app.py
+@@ -9,7 +9,7 @@
+     if coupon == "SAVE10":
+         discount += 10
+     shipping = 5
+-    if subtotal >= 100:
++    if subtotal >= 101:
+         shipping = 0
+     return max(0, subtotal - discount) + shipping
+ 
+

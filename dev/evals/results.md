@@ -3,7 +3,7 @@
 Status: no full run recorded for the current skill set; two partial runs below.
 
 The last recorded run (2026-07-24) covered the pre-pivot five-skill chain and was invalidated by the pivot to the scope pipeline; its scores were removed rather than left to invite false confidence.
-Run the harness below against the current 6 skills (`scope`, `commit`, `build`, `ship`, `to-pitch`, `to-quiz`) and replace this file with the dated results.
+The current catalog has 11 skills. Retain dated historical runs and add new records rather than presenting the old six-skill subset as current coverage.
 
 ## Partial run, 2026-10-01: build `parallel-wave`, before and after the build-speed change
 
@@ -76,3 +76,36 @@ Findings:
 3. Spawn one subagent per (skill, version) pointed at the respective `SKILL.md` text (via `git show <commit>:path` for old, the live file for new) plus the eval prompt.
 4. Grade each output against that eval's `assertions`.
 5. Record a scores table (skill, eval, old, new) and note any regression before merging the change under test.
+
+## Cleanup verification, 2026-10-31
+
+The baseline is the source snapshot taken before this cleanup, preserved at `/tmp/skills-cleanup-baseline`.
+These checks deliberately change incorrect baseline successes into failures.
+
+| Same fixture | Baseline | Revised |
+| --- | --- | --- |
+| Empty review panel with required lenses | PASS, exit 0 | INCOMPLETE, exit 1 |
+| Unknown finding severity | PASS, exit 0 | INCOMPLETE, exit 1 |
+| Test title present only in a comment | Clean, exit 0 | Missing runner evidence, exit 1 |
+
+New deterministic tests cover review result validation, atomic spec refinement, runner receipts and stale sources, and PR evidence parsing and freshness.
+An independent agent per version built the same two-file cart CLI in isolated repositories using the corresponding build skill.
+The primary agent reran both suites and CLI commands, and checked the revised scenario evidence.
+
+| Forward build observation | Baseline | Revised |
+| --- | --- | --- |
+| Actual CLI total | 10 | 10 |
+| Passing tests, including CLI subprocess | 3 | 3 |
+| Strict scenario execution receipts | Not required by baseline | All three mappings verified |
+| Local commits | 2, including architecture capture | 1 feature commit |
+
+This is one functional task per version, not an all-skill benchmark.
+Neither run pushed, published, changed branches, or wrote global memory.
+Timing and token figures are not compared because host and harness costs are not normalized.
+Scenario receipt validation binds execution and source freshness; assertion semantics still require review.
+The revised incomplete-review template was checked in Chrome at a 500px viewport in both themes, with no horizontal overflow and an INCOMPLETE badge despite stale PASS input.
+
+Final repository validation passed with 105 dev helper tests and 63 bootstrap tests.
+Generated Codex packages were rebuilt and their consistency checks passed.
+Ruff passed for the four changed protocol scripts and three associated test modules.
+Logs are retained locally at `/tmp/skills-cleanup-final-checks` and `/tmp/skills-cleanup-final-validation.log`.

@@ -1,0 +1,36 @@
+To apply a mutant on disk:
+    mutmut apply <id>
+
+To show a mutant:
+    mutmut show <id>
+
+
+Survived 🙁 (2)
+
+---- app.py (2) ----
+
+# mutant 3
+--- app.py
++++ app.py
+@@ -1,6 +1,6 @@
+ def total(subtotal, member, coupon):
+     if subtotal < 0:
+-        raise ValueError("negative subtotal")
++        raise ValueError("XXnegative subtotalXX")
+     if coupon not in ("", "SAVE10"):
+         raise ValueError("unknown coupon")
+     discount = 0
+
+# mutant 7
+--- app.py
++++ app.py
+@@ -2,7 +2,7 @@
+     if subtotal < 0:
+         raise ValueError("negative subtotal")
+     if coupon not in ("", "SAVE10"):
+-        raise ValueError("unknown coupon")
++        raise ValueError("XXunknown couponXX")
+     discount = 0
+     if member and subtotal >= 100:
+         discount = 20
+

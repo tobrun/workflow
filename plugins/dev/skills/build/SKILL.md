@@ -10,6 +10,8 @@ Execute every change set of a spec, proving each `tests:` scenario with a real t
 Input: `.dev/{plan-name}/spec.md` (from `scope`), located per [../../references/plan-layout.md](../../references/plan-layout.md).
 If there is no `spec.md` or its change plan is empty, ask the user to run `scope` first; without one there are no layer-tagged scenarios to implement against.
 
+Follow [../../references/execution.md](../../references/execution.md) for git and documentation actions.
+Read [references/test-evidence.md](references/test-evidence.md) for runner receipts and scenario mapping.
 Read [references/layers.md](references/layers.md), [references/tests.md](references/tests.md), and [references/mocking.md](references/mocking.md) before implementing anything yourself; [references/parallel.md](references/parallel.md) points subagents at them.
 
 ## Workflow
@@ -18,14 +20,16 @@ Read [references/layers.md](references/layers.md), [references/tests.md](referen
 2. Build waves by disjoint batching per [references/parallel.md](references/parallel.md): sequential in spec order by default, batched only when file lists are disjoint and nothing a wave-mate or earlier unfinished change set introduces is consumed. Every change set in the plan is in scope, not just the first. Append the run entry to `implementation-notes.md` before the first wave launches.
 3. For each wave, run its change sets in parallel per the same reference, pass its wave gate once, then commit each finished change set on the current branch and append its entry to `implementation-notes.md`. A change set that adds, removes, moves, or rewires a component, flow, or boundary updates `docs/architecture.md` in the same commit and passes `architecture-check.py` first, per [../../references/architecture.md](../../references/architecture.md).
 4. Move straight to the next wave. Never stop after one change set or wave to ask about review.
-5. When every change set is committed, loop `python3 {build-skill-root}/scripts/check-tests.py .dev/{plan-name}` until it exits clean: it proves every specced scenario has a test that really exists, rather than one that was reported.
-6. Then run the full e2e pass per "The e2e layer" below over the whole spec, and loop on failures until it is green.
+5. Keep `test-evidence.json` as scenarios are implemented, capturing runner receipts for each wave. These bind passing results to the tested sources; assertions and actual layer suitability still need review.
+6. Run the full e2e pass below over the whole spec, capture its runner receipts, then loop `python3 {build-skill-root}/scripts/check-tests.py .dev/{plan-name}` until every scenario is mapped to current passing execution. `--inventory-only` is not this gate.
 7. Run the repository's required pull-request commands, plus every Validation command the wave gates left for the end, at the branch's impact per [../../references/ci-parity.md](../../references/ci-parity.md) - what lies outside it is deferred to the PR's CI, which `ship` follows to green - starting them in the background as soon as the e2e loop is green and rendering the e2e report while they run - the two share nothing. A known-red CI scenario is not an acceptable deviation.
 8. After the e2e report and CI-parity gate, close per "Closing message". Build never pushes or opens a PR; that is `ship`'s phase 3.
 
 ## Work branch
 
-If still on the default branch, create the work branch `{plan-name}` before the first commit; never push it and never open a PR -
+Use the authorized current branch and intended base.
+If a new work branch is permitted, create `{plan-name}` before the first commit; when branch consent is required, prepare the changes and obtain it before switching.
+Never push it or open a PR -
 `ship` pushes and opens the PR with evidence after its gauntlet and review.
 
 ## Closing message
@@ -63,15 +67,16 @@ Each change set, whether you run it yourself or a subagent runs it, follows the 
 
 ## The e2e layer
 
-E2E scenarios are proven by running the actual application against the **fully mocked environment** defined in [references/mocking.md](references/mocking.md#the-e2e-environment). Run this once per spec, after all change sets are committed, covering every `[e2e]` scenario across change sets.
+E2E scenarios are proven by running the actual application against the **deterministic boundary environment** defined in [references/mocking.md](references/mocking.md#the-e2e-environment). Run this once per spec, after all change sets are committed, covering every `[e2e]` scenario across change sets.
 
-1. **Launch the app.** Invoke an installed `run` skill with the mocked environment configured when the host supports direct skill invocation. Otherwise inspect the repository's documented commands and start the app directly. Ask the user only when no safe launch command can be determined.
+1. **Launch the app.** Inspect the repository's documented commands and start the app directly with its deterministic test environment configured. Ask the user only when no safe launch command can be determined.
 2. **Drive it and capture evidence**, per scenario:
    - `kind: "frontend"` - use available browser automation (the host browser integration or Playwright) to exercise the scenario, one screenshot per meaningful step, embedded as a base64 data URI.
    - `kind: "non-frontend"` - capture the entity's real before/after state from the run's own output or fixtures.
 3. **Never fabricate a screenshot or a data-model-state entry.** Both come from this actual run.
 4. **Loop until green.** A failed scenario is a bug: diagnose it, fix the code, add a test at the cheapest layer that can catch it - the failed scenario is already the reproduction - then re-run and re-capture that scenario. Never flip a status to pass without a fresh capture. If a scenario fails three times on the same root cause, write what you found into Deviations and ask the user before continuing.
-5. Map the results onto `E2E_DATA` per [references/e2e-report.md](references/e2e-report.md) and render `templates/e2e-report.html` to `/tmp/{project-slug}/reports/{plan-name}-e2e-report.html`, opening and publishing per [../../references/reporting.md](../../references/reporting.md).
+5. Record the tested revision, covered source hashes, launch/test command, and capture time with the report per [references/e2e-report.md](references/e2e-report.md).
+6. Map the results onto `E2E_DATA` per [references/e2e-report.md](references/e2e-report.md) and render `templates/e2e-report.html` to `/tmp/{project-slug}/reports/{plan-name}-e2e-report.html`, opening and publishing per [../../references/reporting.md](../../references/reporting.md).
 
 ## Implementation notes
 

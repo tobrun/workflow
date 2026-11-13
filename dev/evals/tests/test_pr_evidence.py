@@ -6,6 +6,7 @@ Run from the repo root: python3 -m unittest discover -s dev/evals/tests -t .
 from __future__ import annotations
 
 import json
+import hashlib
 import subprocess
 import sys
 import tempfile
@@ -64,6 +65,65 @@ class ScenarioSelectionTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("no scenario with id nope", result.stderr)
         self.assertIn("login, coupon, regress", result.stderr)
+
+
+class EvidenceGateTest(unittest.TestCase):
+    def setUp(self) -> None:
+        scratch = tempfile.TemporaryDirectory()
+        self.addCleanup(scratch.cleanup)
+        self.root = Path(scratch.name)
+        self.source = self.root / "app.py"
+        self.source.write_text("def total():\n    return 6\n")
+        self.body = self.root / "pr.md"
+
+    def check(self, body: str, current: bool = False) -> subprocess.CompletedProcess[str]:
+        self.body.write_text(body)
+        args = [sys.executable, str(SCRIPT), "check", str(self.body)]
+        if current:
+            args += ["--require-current", "--repo-root", str(self.root)]
+        return subprocess.run(args, capture_output=True, text=True)
+
+    def provenance(self) -> str:
+        return "<!-- dev-evidence: " + json.dumps({
+            "revision": "actual-feature-revision",
+            "command": ["python3", "tests.py"],
+            "sources": {"app.py": hashlib.sha256(self.source.read_bytes()).hexdigest()},
+        }) + " -->\n"
+
+    def test_captured_heading_is_not_a_section_delimiter(self) -> None:
+        result = self.check(
+            "## Evidence\n**Before**\n```text\n## State\npending\n```\n"
+            "**After**\n```text\n## State\naccepted\n```\n## Quality\nRequired checks passed.\n"
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_empty_or_unclosed_blocks_do_not_count_as_proof(self) -> None:
+        for body in [
+            "## Evidence\n**Before**\n```\n```\n**After**\n```\n```\n",
+            "## Evidence\n**Before**\n```\npending\n```\n**After**\n```\naccepted\n",
+        ]:
+            with self.subTest(body=body):
+                self.assertNotEqual(self.check(body).returncode, 0)
+
+    def test_known_bad_feature_revision_is_a_valid_labeled_pair(self) -> None:
+        result = self.check(
+            "## Evidence\n**On known-bad revision** a1\n```\nAssertionError: 3 != 6\n```\n"
+            "**On corrected revision** b2\n```\n1 test passed\n```\n"
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_missing_provenance_cannot_pass_current_evidence_gate(self) -> None:
+        result = self.check("## Evidence\n![Actual UI](https://example.invalid/capture.png)\n", current=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("provenance", result.stderr)
+
+    def test_source_change_invalidates_old_evidence(self) -> None:
+        body = "## Evidence\n" + self.provenance() + "![Actual UI](https://example.invalid/capture.png)\n"
+        self.assertEqual(self.check(body, current=True).returncode, 0)
+        self.source.write_text("def total():\n    return 3\n")
+        result = self.check(body, current=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("stale for app.py", result.stderr)
 
 
 if __name__ == "__main__":

@@ -40,15 +40,89 @@ def read_results(directory: Path) -> tuple[dict[str, object], list[str]]:
     """Every parseable result file by agent name, plus the names that failed."""
     parsed: dict[str, object] = {}
     unreadable: list[str] = []
+    if not directory.is_dir():
+        return {}, [f"{directory}: missing results directory"]
     for path in sorted(directory.iterdir()):
         if not path.is_file() or path.suffix not in RESULT_SUFFIXES:
             continue
         payload = load_json(path)
-        if payload is None:
+        if path.stem in parsed:
+            parsed.pop(path.stem)
+            unreadable.append(f"{path.stem}: duplicate result files")
+        elif payload is None:
             unreadable.append(path.stem)
         else:
             parsed[path.stem] = payload
     return parsed, unreadable
+
+
+def valid_lenses(directory: Path) -> tuple[dict[str, dict], list[str]]:
+    """A parseable JSON value is not necessarily a completed lens report."""
+    results, errors = read_results(directory)
+    valid = {}
+    for lens, payload in results.items():
+        problem = None
+        if not isinstance(payload, dict):
+            problem = "report must be an object"
+        elif payload.get("verdict") not in ("PASS", "CONCERNS", "BLOCK"):
+            problem = "invalid or missing verdict"
+        elif not isinstance(payload.get("findings"), list):
+            problem = "findings must be an array"
+        elif not isinstance(payload.get("good", []), list) or any(
+            not isinstance(note, str) for note in payload.get("good", [])
+        ):
+            problem = "good must be an array of strings"
+        else:
+            for finding in payload["findings"]:
+                if not isinstance(finding, dict):
+                    problem = "finding must be an object"
+                elif finding.get("severity") not in ("BLOCK", "CONCERN", "NIT"):
+                    problem = "invalid or missing severity"
+                elif any(not isinstance(finding.get(key), str) or not finding[key].strip()
+                         for key in ("file", "title", "detail")):
+                    problem = "finding needs file, title, and detail"
+                elif type(finding.get("line")) is not int or finding["line"] < 1:
+                    problem = "finding line must be a positive integer"
+                elif finding["severity"] == "BLOCK" and (
+                    not isinstance(finding.get("scenario"), str) or not finding["scenario"].strip()
+                ):
+                    problem = "BLOCK needs a triggering scenario"
+                if problem:
+                    break
+        if problem:
+            errors.append(f"{lens}: {problem}")
+        else:
+            severities = {finding["severity"] for finding in payload["findings"]}
+            actual = "BLOCK" if "BLOCK" in severities else "CONCERNS" if "CONCERN" in severities else "PASS"
+            if payload["verdict"] != actual:
+                errors.append(f"{lens}: verdict disagrees with findings")
+            else:
+                valid[lens] = payload
+    return valid, errors
+
+
+def valid_verdicts(directory: Path, expected: set[str]) -> tuple[dict[str, dict], list[str]]:
+    results, errors = read_results(directory)
+    verdicts = {}
+    duplicates = set()
+    for agent, payload in results.items():
+        entries = payload if isinstance(payload, list) else [payload]
+        for entry in entries:
+            if not isinstance(entry, dict) or not isinstance(entry.get("id"), str) or entry["id"] not in expected:
+                errors.append(f"{agent}: invalid or unknown finding id")
+                continue
+            finding_id = entry["id"]
+            if finding_id in verdicts or finding_id in duplicates:
+                errors.append(f"{agent}: duplicate verdict for {finding_id}")
+                duplicates.add(finding_id)
+                verdicts.pop(finding_id, None)
+            elif entry.get("status") not in ("CONFIRMED", "PLAUSIBLE", "REFUTED") or (
+                not isinstance(entry.get("reason"), str) or not entry["reason"].strip()
+            ):
+                errors.append(f"{agent}: {finding_id} needs a valid status and reason")
+            else:
+                verdicts[finding_id] = entry
+    return verdicts, errors
 
 
 def collect_findings(lens_results: dict[str, object]) -> list[dict]:
@@ -96,7 +170,7 @@ def merge(findings: list[dict]) -> list[dict]:
 
 
 def cmd_plan(lens_dir: Path) -> int:
-    lens_results, unreadable = read_results(lens_dir)
+    lens_results, unreadable = valid_lenses(lens_dir)
     findings = numbered(collect_findings(lens_results))
     print(json.dumps(findings, indent=2, ensure_ascii=False))
     print(
@@ -104,20 +178,15 @@ def cmd_plan(lens_dir: Path) -> int:
         + (f"; unparseable: {', '.join(unreadable)}" if unreadable else ""),
         file=sys.stderr,
     )
-    return 0
+    return 1 if unreadable else 0
 
 
 def cmd_aggregate(lens_dir: Path, verifier_dir: Path, expected: list[str]) -> int:
-    lens_results, unreadable = read_results(lens_dir)
+    lens_results, unreadable = valid_lenses(lens_dir)
     all_findings = collect_findings(lens_results)
     to_verify = numbered(all_findings)
 
-    verdicts: dict[str, dict] = {}
-    verifier_results, verifier_unreadable = read_results(verifier_dir)
-    for payload in verifier_results.values():
-        for entry in payload if isinstance(payload, list) else [payload]:
-            if isinstance(entry, dict) and entry.get("id"):
-                verdicts[entry["id"]] = entry
+    verdicts, verifier_unreadable = valid_verdicts(verifier_dir, {f["id"] for f in to_verify})
 
     blockers, concerns = [], []
     for finding in to_verify:
@@ -136,10 +205,21 @@ def cmd_aggregate(lens_dir: Path, verifier_dir: Path, expected: list[str]) -> in
             concerns.append(finding)
 
     nits = [f for f in all_findings if str(f.get("severity", "")).upper() == "NIT"]
-    failed = sorted(set(expected) - set(lens_results)) + unreadable
+    failed = sorted(set(expected) - set(lens_results))
+    unverified = [f["id"] for f in to_verify if f["id"] not in verdicts]
+    protocol_errors = unreadable + verifier_unreadable
+    if not expected:
+        protocol_errors.append("expected lens set is required to establish completeness")
+    elif set(lens_results) - set(expected):
+        protocol_errors.append("unexpected lenses: " + ", ".join(sorted(set(lens_results) - set(expected))))
+    complete = not (failed or unverified or protocol_errors)
 
     report = {
-        "verdict": "BLOCK" if blockers else "CONCERNS" if concerns else "PASS",
+        "verdict": ("BLOCK" if blockers else "CONCERNS" if concerns else "PASS") if complete else "INCOMPLETE",
+        "findingVerdict": "BLOCK" if blockers else "CONCERNS" if concerns else "PASS",
+        "complete": complete,
+        "protocolErrors": protocol_errors,
+        "unverifiedFindings": unverified,
         "panel": sorted(lens_results),
         "failedLenses": failed,
         "blockers": merge(blockers),
@@ -150,7 +230,6 @@ def cmd_aggregate(lens_dir: Path, verifier_dir: Path, expected: list[str]) -> in
     }
     print(json.dumps(report, indent=2, ensure_ascii=False))
 
-    unverified = [f["id"] for f in to_verify if f["id"] not in verdicts]
     notes = []
     if failed:
         notes.append(f"failed lenses: {', '.join(failed)}")
@@ -160,7 +239,7 @@ def cmd_aggregate(lens_dir: Path, verifier_dir: Path, expected: list[str]) -> in
         notes.append(f"unparseable verifier files: {', '.join(verifier_unreadable)}")
     if notes:
         print("\n" + "; ".join(notes), file=sys.stderr)
-    return 0
+    return 0 if complete else 1
 
 
 def main(argv: list[str]) -> int:

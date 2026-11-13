@@ -7,8 +7,7 @@ Repo-fitted pieces the `ship` gauntlet reuses on every run; the analyzers themse
 - `complexity_coverage.py RADON_JSON COVERAGE_JSON [--prefix pkg/]` - coverage-weighted complexity (complexity squared scaled down by line coverage) for functions the branch added; the line is 10 per D-complexity-threshold in `docs/decisions.md`.
 - `coverage_run.sh OUT_JSON -- <unittest args>` - coverage for a suite whose subject scripts run as subprocesses; a plain `coverage run` traces only the parent, so a script the tests invoke through `subprocess.run` reads 0% and its complexity score collapses to complexity squared.
 - `flaky.py --runs 5 MODULE ...` - runs unittest modules repeatedly in shuffled order and names any test whose outcome disagrees between runs.
-- `mutate.py FILE FUNC ... --tests MODULE ...` - function-scoped mutation testing: mutates named functions one change at a time and runs their fast tests.
-- `vulture_whitelist.py` - the committed list of names a framework calls rather than repository code, such as `BaseHTTPRequestHandler` overrides; vulture reads it as an ordinary input file, so pass it alongside the scoped files and record deliberate API surface there instead of adding per-line ignores.
+- `mutate.py FILE FUNC ... --tests MODULE ...` - mutates explicitly selected changed decision-heavy functions one change at a time and runs their relevant fast tests. Skip forwarding/wiring glue. Prefer scoped incremental Stryker, PIT, or mutmut runs where available; survivors guide contract review and regression tests, and this helper's nonzero survivor exit is advisory rather than a ship gate.
 
 The gauntlet, from the repository root:
 
@@ -17,7 +16,7 @@ files=$(tools/harden/scope.sh --python)
 uvx ruff check --output-format concise $files | python3 tools/harden/added_lines.py          # static analysis
 uvx semgrep scan --config p/python --metrics off --quiet $files                              # static security rules
 uvx detect-secrets scan $(tools/harden/scope.sh)                                             # secrets
-uvx vulture --min-confidence 60 $files tools/harden/vulture_whitelist.py |
+uvx vulture --min-confidence 60 $files |
   python3 tools/harden/added_lines.py                                                        # dead code
 npx --yes jscpd@4 --min-tokens 50 --format python scripts                                   # clones
 ```
@@ -26,8 +25,8 @@ Coverage-weighted complexity joins a radon report to a coverage report, so it
 needs the suite run first:
 
 ```bash
-tools/harden/coverage_run.sh /tmp/coverage.json -- discover -s factory/evals/tests -t .
-uvx radon cc -j factory scripts > /tmp/radon.json
+tools/harden/coverage_run.sh /tmp/coverage.json -- discover -s dev/evals/tests -t .
+uvx radon cc -j dev bootstrap scripts > /tmp/radon.json
 python3 tools/harden/complexity_coverage.py /tmp/radon.json /tmp/coverage.json --threshold 10
 ```
 

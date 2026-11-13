@@ -13,9 +13,28 @@ This reference owns the layout, the locating convention, and the diff scope; ski
 | `review_N.md` | `ship` (next free index, opened when the panel is selected); `ship-quick` (next free index) | `scope` and `scope-quick` (remediation), re-reviews |
 | `pr.md` | `ship` (opened at the start of a run that reaches phase 3, overwritten per run); `ship-quick` (review line and Open calls only) | the PR tool via `--body-file`; re-runs |
 | `.dev/config.json` | the user | `skill-metrics.py` (run journal opt-out, per [run-journal.md](run-journal.md)) |
+| `.dev/config.yaml` | the user (repo-tracked settings) | `ship`, including YOLO (mutation testing) |
 
 Each producing skill also renders an HTML companion under `/tmp/{project-slug}/reports/` per [reporting.md](reporting.md), named by that skill.
 One writer per file at a time; every other skill only reads.
+A `remote` run writes these same files in a sandbox copy of the plan directory; its collect step merges them home and never overwrites a file edited here meanwhile.
+
+## Git ignore policy
+
+Track `.dev/config.yaml` as shared repository configuration; ignore all other `.dev/` contents, including plans, results, metrics, and the local `.dev/config.json`.
+Use this block in the repository root `.gitignore`:
+
+```gitignore
+/.dev/*
+!/.dev/config.yaml
+```
+
+When repairing an existing policy, replace every blanket `.dev/` or `/.dev/` entry with this block, remove duplicate blanket entries, and preserve unrelated rules.
+An exception alone cannot re-include a file when its parent directory is excluded.
+Verify the effective policy with `git check-ignore --no-index -q .dev/config.yaml` (exit 1), and with `.dev/ignore-policy-probe/spec.md`, `.dev/ignore-policy-probe/results/build-1.json`, `.dev/metrics.jsonl`, and `.dev/config.json` (each exit 0); these probes need not exist.
+Use `--no-index` so an already tracked config cannot hide a broken rule.
+If a probe fails, use `git check-ignore --no-index -v` to locate the effective rule, including global excludes and `.git/info/exclude`, and repair repository rules until the checks pass.
+Do not untrack previously committed artifacts automatically; report them for cleanup.
 
 ## Written as the run goes
 

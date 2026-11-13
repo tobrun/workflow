@@ -26,7 +26,7 @@
         "Answer 1: no, ship is human-triggered only; it must never be launched automatically",
         "Answer 2: CONCERN (PLAUSIBLE demotes a BLOCK to CONCERN; only REFUTED gets dropped)",
         "Answer 3: no, the orchestrator does not review the code itself; the panel of subagents does",
-        "Answer 4: no, a failed lens does not abort the review; it is noted so the verdict is honestly partial",
+        "Answer 4: useful findings are retained, but a missing or invalid lens makes the verdict INCOMPLETE; it cannot approve the change",
         "Answer 5: no; new user-facing behavior without a passing e2e-report scenario is a finding (BLOCK for a missing/failing e2e scenario per spec-conformance) even though a unit test exists",
         "Answer 6: check whether the conservative choice logged under the deviation still satisfies the spec's scope and decisions; an unresolved deviation that changes promised user-facing behavior is at least a CONCERN",
         "Answer 7: a review_N.html rendered via the same schema/template pattern used elsewhere and reported as a local path; it is published only when the user requests a link and the host has a publisher",
@@ -60,10 +60,32 @@
       "id": "mutation-config",
       "prompt": "From ship and its references: What happens when .dev/config.yaml is absent, empty, sets mutation_testing to true, sets it to false, or sets it to the string \"false\"? What does the PR Quality row say when disabled? Do the other checks and CI parity still run?",
       "assertions": [
-        "Missing file, empty mapping, or missing key defaults to enabled; boolean true runs mutation testing",
+        "Missing file, empty mapping, or missing key defaults to enabled; boolean true runs mutation testing on qualifying changed decision-heavy logic",
         "Boolean false skips mutation tool acquisition, mutant generation, and survivor fixes; report it as skipped due to .dev/config.yaml without counts, not passed",
         "Malformed YAML, a non-mapping root, or a non-boolean value stops phase 1 with the path and error",
         "All other checks and CI parity still run when mutation testing is disabled"
+      ]
+    },
+    {
+      "id": "mutation-focused-incremental",
+      "prompt": "From ship and its references: (1) Mutation testing is enabled and the diff only wires dependencies and forwards API calls. What runs and what is reported? (2) One changed file mixes a pricing threshold calculation with unrelated glue. What is mutated, and does enabling incremental history alone sufficiently scope the run? (3) A survivor shifts the pricing threshold, another changes unpromised exception wording, and a third is provably equivalent. Which get tests, and what nearby cases should be reviewed? (4) All generated mutants are killed. Does that replace policy/boundary review or gate shipping? (5) Tests change after triage. What is rerun, which tests are eligible, and what does the Quality report record?",
+      "assertions": [
+        "Answer 1: no mutation tool acquisition or execution; report skipped (no changed decision-heavy logic), without counts; other checks continue",
+        "Answer 2: select changed decision-heavy logic using changed-line, function, class, or file selectors at the narrowest supported granularity, excluding glue where supported; combine explicit targets with incremental history, which alone can seed a whole-repo run or report unrelated cached results",
+        "Answer 3: test the promised threshold behavior and review exact boundaries and rule combinations; record unpromised wording as out of contract and the equivalent mutant with reasoning, without writing score-only tests",
+        "Answer 4: no; a perfect score does not replace boundary/policy review and mutation scores never gate shipping",
+        "Answer 5: refresh affected mutant results after relevant test changes using covering tests including unchanged tests; report selected scope, command, runtime, killed/survived/uncovered counts, useful regression tests, and survivor dispositions"
+      ]
+    },
+    {
+      "id": "review-result-protocol",
+      "mode": "functional",
+      "prompt": "Run the review completeness fixtures. An empty expected panel, unknown severity, missing verifier, and duplicate verdict must not approve a change. A complete empty finding set may pass.",
+      "fixture": "python3 -m unittest dev.evals.tests.test_review_protocol.ReviewProtocolTest",
+      "assertions": [
+        "Incomplete output has exit 1 and verdict INCOMPLETE with retained useful findings",
+        "Exact valid result enums and finding fields are required",
+        "Complete results with no surviving findings produce PASS"
       ]
     }
   ]

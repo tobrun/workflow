@@ -28,7 +28,7 @@
         "implementation-notes.md opens with a Build run entry naming the Validation commands and the waves, written before change set 1 is implemented, and change set 1's entry is in the file before change set 2's work starts",
         "After both change sets are done, the user is asked to run ship rather than a review panel or gauntlet being launched automatically",
         "Each implementation-notes.md entry carries a Tests added: line naming real path::test name references",
-        "scripts/check-tests.py is run against the plan directory and looped on until it exits clean, before the e2e pass"
+        "scripts/check-tests.py is run against the plan directory and looped on until it exits clean, after the e2e pass, with runner receipts for all layers"
       ]
     },
     {
@@ -36,7 +36,7 @@
       "prompt": "Implement this spec.",
       "fixture": "a git repo with .dev/{plan-name}/spec.md whose change plan has change sets 1 and 2 with disjoint file lists introducing nothing the other consumes, and change set 3 touching files from both; scenarios tagged [unit] and [integration]",
       "assertions": [
-        "Change sets 1 and 2 are launched as subagents in a single message so they run concurrently",
+        "Change sets 1 and 2 run as independent subagents within host capacity; all wave workers complete before its validation gate",
         "Change set 3 is not started until change sets 1 and 2 are both committed",
         "The subagents do not commit, stage, or otherwise touch git state - the orchestrator makes the commits",
         "The subagents do not write to implementation-notes.md themselves; the orchestrator appends each entry",
@@ -100,6 +100,17 @@
         "The final CI-parity run is scoped by impact-scope.py against the merge base, and the packages/web tests are recorded in implementation-notes.md as deferred to CI: outside impact rather than run or silently dropped",
         "No required command whose inputs the change reaches is deferred because it is slow",
         "The closing message points at ship, whose PR's CI runs the deferred commands"
+      ]
+    },
+    {
+      "id": "runner-scenario-evidence",
+      "mode": "functional",
+      "prompt": "Run a real unittest fixture, capture its JUnit report, and map the spec scenario. Try stale, skipped, failed, wrong-layer, duplicated, and comment-only evidence.",
+      "fixture": "python3 -m unittest dev.evals.tests.test_scenario_evidence",
+      "assertions": [
+        "Only current passing runner cases satisfy the default gate",
+        "Inventory-only explicitly does not verify execution or layers",
+        "The semantic suitability of assertions and layer claims remains a review obligation"
       ]
     }
   ]

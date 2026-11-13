@@ -415,6 +415,16 @@ class RemoteCycleTest(unittest.TestCase):
         self.git(self.repo, "commit", "-q", "-am", "drop ignore")
         result = self.remote("dispatch", "--plan", "greeting", check=False)
         self.assertIn("not git-ignored", result.stderr)
+        self.assertIn("dispatch sends the plan directory to the sandbox with the run", result.stderr)
+        self.assertIn("add `/.dev/*` and `!/.dev/config.yaml` to .gitignore", result.stderr)
+
+    def test_refuses_a_committed_plan_and_says_how_to_untrack_it(self) -> None:
+        self.git(self.repo, "add", "-f", ".dev/greeting/spec.md")
+        self.git(self.repo, "commit", "-q", "-m", "commit the plan")
+        result = self.remote("dispatch", "--plan", "greeting", check=False)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn(".dev/greeting is committed", result.stderr)
+        self.assertIn("git rm -r --cached .dev/greeting", result.stderr)
 
     def test_refuses_an_unsettled_spec(self) -> None:
         (self.repo / ".dev" / "greeting" / "spec.md").write_text(SPEC.replace("(✓ plain text)", "(✓ cloud)"))

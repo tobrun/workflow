@@ -675,6 +675,15 @@ class RemoteUnitTest(unittest.TestCase):
         self.assertEqual(n("git@github.com:Owner/Repo.git"), n("https://github.com/owner/repo"))
         self.assertNotEqual(n("git@github.com:owner/repo.git"), n("git@github.com:owner/other.git"))
 
+    def test_flat_toml_reads_the_config_without_a_toml_library(self) -> None:
+        text = ('# remote\nhost = "user@fleet#1"  # the host\nworkspaces = ["ws1", "ws2"]\n'
+                "phase_timeout_hours = 8.5\nview = false\nmodel = 'a # b'\n")
+        self.assertEqual(self.m.parse_flat_toml(text), {"host": "user@fleet#1", "workspaces": ["ws1", "ws2"],
+                                                        "phase_timeout_hours": 8.5, "view": False, "model": "a # b"})
+        for bad in ("[table]\n", "when = 2026-11-13\n"):
+            with self.assertRaises(ValueError):
+                self.m.parse_flat_toml(bad)
+
     def test_open_calls_reads_none_as_empty(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             pr = Path(tmp) / "pr.md"

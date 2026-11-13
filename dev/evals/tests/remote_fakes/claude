@@ -57,7 +57,7 @@ def record_transcript(phase: str, session: str) -> None:
     transcript = transcript_path(session)
     transcript.parent.mkdir(parents=True, exist_ok=True)
     with transcript.open("a") as handle:
-        handle.write(json.dumps({"type": "user", "message": f"ran {phase}"}) + "\n")
+        handle.write(json.dumps({"type": "user", "message": f"ran {phase}", "cwd": os.getcwd()}) + "\n")
     subagent = transcript.with_suffix("") / "subagents" / "agent-1.jsonl"
     subagent.parent.mkdir(parents=True, exist_ok=True)
     subagent.write_text(json.dumps({"type": "user", "message": f"{phase} subagent"}) + "\n")

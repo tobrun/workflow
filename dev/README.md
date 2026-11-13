@@ -68,6 +68,7 @@ For sandbox publication, the host also allocates git credentials: as the agent u
 A fine-grained token scoped to the fleet's repositories with contents and pull-request write is the narrowest credential that does; how it reaches the workspace (a token file, a credential helper, a relay that adds it on the wire) is the host's choice.
 The sandbox agent runs on whatever model the fleet's gateway serves, so a remote run's quality follows that model, not this machine's.
 `python3 dev/skills/remote/scripts/remote.py doctor` checks the setup; `status`, `logs --follow`, `stop`, `resume`, and `release` work from any terminal, without a session.
+`local` brings a run home and prints the command that continues it on this machine, the same session included, for work a sandbox cannot finish.
 `resume` starts a new round of any run that is not running, collected or not: it continues a phase's own session or starts a phase fresh (`--continue` or `--from`), with an optional `--prompt`, in place or restored from this machine's branch and plan files.
 
 ## Claude Code installation

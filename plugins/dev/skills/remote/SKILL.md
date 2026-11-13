@@ -24,6 +24,7 @@ Dispatching `ship` or `ship-quick` (ship in quick mode) is a request to ship, pu
 | "status", "how is it going", "logs" | Follow |
 | "collect", "bring it back", a finished run | Collect and publish |
 | "resume", "continue", "rerun ship", "restart from build", more work on a run, collected or not | Resume |
+| "continue here", "finish it locally", "bring it to this machine" | Continue here |
 | "stop", "release" | the matching command on the named run |
 
 ## Dispatch
@@ -64,6 +65,14 @@ Any run that is not running resumes, collected or not; each resume is a new roun
 An uncollected run resumes in place, working tree intact; a collected or released run is restored from this machine's branch and plan files, on its workspace when free, otherwise another.
 A refusal names its fix (`stop` a live run, `--from` when a session has no transcript); never work around it.
 Report the round, how it ran (in place or restored), the workspace, and the point, then continue as Dispatch step 5.
+
+## Continue here
+
+When the sandbox cannot finish (it lacks a tool such as Docker, or the work needs the user), continue the run on this machine.
+Run `{remote} local {run}` with the same `--continue`, `--from`, `--prompt`, and `--phases` as resume.
+It collects an uncollected run first (report that summary as in Collect and publish), installs the collected transcript of a session to continue into this machine's Claude Code with its paths pointing at the worktree, and prints `command`.
+Give the user that command to run in a terminal; never start it from this session.
+A later sandbox round restores from this machine's branch, so commits made here carry over.
 
 ## Collect and publish
 

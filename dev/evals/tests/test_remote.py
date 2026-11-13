@@ -15,6 +15,7 @@ import json
 import io
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -562,6 +563,53 @@ class RemoteCycleTest(unittest.TestCase):
         self.resume(run, "--from", "ship", mode="crash-ship-again")
         self.assertEqual(self.wait(run), 1, "the first ship session's success is not the second one's")
         self.assertEqual(self.status(run)["reason"], "ship ended with exit 1 (no-result)")
+
+    def test_local_brings_a_failed_run_home_and_continues_its_session_here(self) -> None:
+        claude_dir = self.t / "claude"
+        self.env["CLAUDE_CONFIG_DIR"] = str(claude_dir)
+        run = self.dispatch(mode="fail-build-once")["run"]
+        self.assertEqual(self.wait(run), 1)
+        build_session = self.calls()[0]["session"]
+        out = json.loads(self.remote("local", run, "--prompt", "Docker works here.").stdout)
+        self.assertEqual((out["phase"], out["mode"], out["session"]), ("build", "continue", build_session))
+        self.assertEqual(out["collected"]["state"], "failed", "an uncollected run is collected first")
+        self.assertEqual(list(self.vms.glob("ws-*/home/.dev-workflow/lock")), [], "which frees its workspace")
+        worktree = Path(out["worktree"])
+        self.assertEqual(self.git(worktree, "rev-parse", "--abbrev-ref", "HEAD"), "dev/greeting")
+        transcript = Path(out["transcript"])
+        self.assertEqual(transcript.parent, claude_dir / "projects" / re.sub(r"[^A-Za-z0-9]", "-", str(worktree)),
+                         "where Claude Code here looks up sessions run in the worktree")
+        text = transcript.read_text()
+        self.assertIn(json.dumps(str(worktree)), text)
+        self.assertNotIn(str(self.vms), text, "the sandbox checkout's paths point at the worktree")
+        self.assertTrue((transcript.with_suffix("") / "subagents" / "agent-1.jsonl").exists())
+        command = shlex.split(out["command"])
+        self.assertEqual(command[:6], ["cd", str(worktree), "&&", "claude", "--resume", build_session])
+        self.assertIn("continues here, on the operator's machine", command[6])
+        self.assertIn("Continue the /dev:build greeting run", command[6])
+        self.assertTrue(command[6].endswith("\n\nDocker works here."))
+        record = json.loads((self.t / "state" / "runs" / f"{run}.json").read_text())
+        self.assertEqual((record["state"], record["rounds"][-1]["how"]), ("collected", "here"))
+        transcript.write_text("continued here\n")
+        self.remote("local", run)
+        self.assertEqual(transcript.read_text(), "continued here\n", "a session continued here is never overwritten")
+
+    def test_local_from_starts_a_phase_fresh_here(self) -> None:
+        run = self.dispatch()["run"]
+        self.assertEqual(self.wait(run), 0)
+        self.remote("collect", run)
+        out = json.loads(self.remote("local", run, "--from", "ship", "--prompt", "Run the e2e suite.").stdout)
+        self.assertEqual((out["mode"], out["session"], out["transcript"]), ("fresh", None, None))
+        self.assertIsNone(out["collected"], "a collected run is not collected again")
+        self.assertEqual(shlex.split(out["command"])[3:], ["claude", "/dev:ship plan .dev/greeting\n\nRun the e2e suite."])
+
+    def test_local_refuses_a_live_run(self) -> None:
+        run = self.dispatch("--phases", "build", mode="sleep")["run"]
+        for _ in range(100):
+            if self.calls():
+                break
+            time.sleep(0.1)
+        self.assertIn("stop it first", self.remote("local", run, check=False).stderr)
 
     def test_resume_refuses_a_live_run_and_a_point_it_cannot_reach(self) -> None:
         run = self.dispatch("--phases", "build", mode="sleep")["run"]

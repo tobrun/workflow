@@ -80,8 +80,10 @@ Every round refreshes the plugin, runner, and contract in the run directory, so 
 | ---------- | -------------- | ------------------- |
 | uncollected (`dispatched`) | in place, on its workspace | the workspace's checkout and plan directory as they are, uncommitted work included |
 | collected or released | restored: on its workspace when its lock is free, otherwise `--workspace` or any free one | this machine's branch (committed, as at dispatch) and plan directory; a continued session keeps the workspace's tree when it already stands on that commit |
+| any, with `local` | here: collected first when it is not, then in the run's worktree | the collected branch and plan directory; a continued session's transcript goes to this machine's Claude Code project directory for the worktree (`$CLAUDE_CONFIG_DIR`, default `~/.claude`), with the sandbox checkout and plugin paths rewritten, and never over a copy already continued here |
 
 A restored round continues a session from the workspace's own transcript, or the one collect brought home; with neither it refuses and names `--from`.
+`local` prints the command that starts the round (`claude --resume {session}` with a prompt saying the session moved here, or the phase's own command); the operator runs it, attended, so the unattended contract does not apply.
 On another workspace, the run's logs and state go with it, so its history continues there.
 Before the new unit starts, `runner.sh queued` marks the round `starting`, so no one reads the last round's ending as this round's.
 Each phase log keeps every session the phase had, and a session's outcome is read only from where its own stream starts.

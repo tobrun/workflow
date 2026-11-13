@@ -11,6 +11,7 @@ Usage:
   remote.py stop RUN
   remote.py resume RUN [--continue PHASE | --from PHASE] [--prompt TEXT] [--phases LIST]
                      [--workspace WS] [--publish auto|sandbox|laptop]
+  remote.py local RUN [--continue PHASE | --from PHASE] [--prompt TEXT] [--phases LIST]
   remote.py collect RUN [--keep-lock]
   remote.py release RUN
 
@@ -960,12 +961,36 @@ def open_calls(pr_md: Path) -> list[str]:
     return [] if [c.lower().strip("-* .") for c in calls] == ["none"] else calls
 
 
+def work_checkout(rec: dict) -> Path:
+    """A checkout of the run's branch here without touching the user's own: the existing checkout of
+    the branch, or a worktree named after the repository, with .dev/{plan} linked to the canonical plan."""
+    root, branch = Path(rec["repo_root"]), rec["branch"]
+    plan_dir = root / ".dev" / rec["plan"]
+    where = checked_out_at(root, branch)
+    if where is None and not git_ok("rev-parse", "--verify", "-q", f"refs/heads/{branch}", cwd=root):
+        where = root  # nothing came home to check out
+    elif where is None:
+        where = state_root() / "worktrees" / rec["id"] / rec["repo"]
+        if not where.exists():
+            where.parent.mkdir(parents=True, exist_ok=True)
+            git("worktree", "add", "-q", str(where), branch, cwd=root)
+    if where.resolve() != root.resolve():
+        link = where / ".dev" / rec["plan"]
+        link.parent.mkdir(parents=True, exist_ok=True)
+        if not link.is_symlink() and not link.exists():
+            link.symlink_to(plan_dir)
+    return where
+
+
 def cmd_collect(args: argparse.Namespace) -> int:
-    rec = load_record(args.run)
+    cfg = load_config()
+    print(json.dumps(collect_run(Host(cfg), cfg, load_record(args.run), args.keep_lock), indent=2))
+    return 0
+
+
+def collect_run(host: Host, cfg: dict, rec: dict, keep_lock: bool) -> dict:
     if rec.get("state") != "dispatched":
         raise Refused(f"run {rec['id']} was already {rec.get('state')}")
-    cfg = load_config()
-    host = Host(cfg)
     live = run_state(host, rec)
     if live.get("state") not in TERMINAL:
         raise Refused(f"run {rec['id']} is {live.get('state')}; wait for it or stop it before collecting")
@@ -1034,18 +1059,7 @@ def cmd_collect(args: argparse.Namespace) -> int:
         summary["pr"] = None
 
     # 3. A checkout of the branch for publication, without touching the user's own checkout.
-    if where is None and not git_ok("rev-parse", "--verify", "-q", local_ref, cwd=root):
-        where = root  # nothing came home to check out
-    elif where is None:
-        where = state_root() / "worktrees" / rec["id"] / rec["repo"]
-        if not where.exists():
-            where.parent.mkdir(parents=True, exist_ok=True)
-            git("worktree", "add", "-q", str(where), branch, cwd=root)
-    if where.resolve() != root.resolve():
-        link = where / ".dev" / rec["plan"]
-        link.parent.mkdir(parents=True, exist_ok=True)
-        if not link.is_symlink() and not link.exists():
-            link.symlink_to(plan_dir)
+    where = work_checkout(rec)
     summary["worktree"] = str(where)
     summary["plan_dir"] = str(plan_dir)
     summary["review"], summary["verdict"] = latest_review(plan_dir)
@@ -1053,11 +1067,93 @@ def cmd_collect(args: argparse.Namespace) -> int:
     summary["open_calls"] = open_calls(plan_dir / "pr.md")
     summary["artifacts"] = str(with_dir)
 
-    if not args.keep_lock:
+    if not keep_lock:
         summary["workspace_released"] = release(host, rec)
     rec.update(state="collected", collected_at=now(), outcome=live.get("state"), worktree=str(where))
     save_record(rec)
-    print(json.dumps(summary, indent=2))
+    return summary
+
+
+PHASE_COMMANDS = {"build": "/dev:build {plan}", "ship": "/dev:ship plan .dev/{plan}",
+                  "ship-quick": "/dev:ship quick plan .dev/{plan}"}  # as runner.sh's prompt_for
+
+
+def claude_projects() -> Path:
+    return Path(os.environ.get("CLAUDE_CONFIG_DIR", "~/.claude")).expanduser() / "projects"
+
+
+def install_session(rec: dict, session: str, worktree: Path) -> Path:
+    """Put a collected transcript where this machine's Claude Code resumes sessions run in `worktree`,
+    with the sandbox's checkout and plugin paths pointing at their counterparts here."""
+    src_root = state_root() / "runs" / rec["id"] / "sessions"
+    dest_root = claude_projects() / re.sub(r"[^A-Za-z0-9]", "-", str(worktree))
+    swaps = [(f"{rec['vm_home']}/work/{rec['repo']}", str(worktree)), (f"{run_dir(rec)}/dev", str(PLUGIN_ROOT))]
+    sources = [src_root / f"{session}.jsonl"]
+    if (src_root / session).is_dir():
+        sources += sorted(p for p in (src_root / session).rglob("*") if p.is_file())
+    for src in sources:
+        dest = dest_root / src.relative_to(src_root)
+        if dest.exists():
+            continue  # a copy already continued here keeps its newer turns
+        text = src.read_text(encoding="utf-8", errors="replace")
+        for old, new in swaps:
+            text = text.replace(old, new)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text(text, encoding="utf-8")
+    return dest_root / f"{session}.jsonl"
+
+
+def local_prompt(rec: dict, point: dict, worktree: Path) -> str:
+    command = PHASE_COMMANDS[point["phase"]].format(plan=rec["plan"])
+    if point["mode"] == "fresh":
+        text = command
+    else:
+        artifacts = state_root() / "runs" / rec["id"]
+        text = (f"This session ran unattended in a sandbox workspace and continues here, on the operator's machine, "
+                f"in {worktree}; paths in the earlier turns have been rewritten to point here. Continue the {command} "
+                f"run from where it stopped. The sandbox's contract no longer applies: the operator is here to answer "
+                f"questions, and local tools the sandbox lacked, such as Docker, are available. Check the working tree "
+                f"and .dev/{rec['plan']} before acting.")
+        gate = artifacts / f"gate-{point['phase']}.txt"
+        if gate.exists():
+            text += f" The runner's completion gate last reported what is in {gate}."
+        patch = artifacts / f"uncommitted-{point['phase']}.patch"
+        if patch.exists():
+            text += f" Uncommitted work the sandbox left is not in this checkout; its diff is in {patch}."
+    return text + (f"\n\n{point['prompt']}" if point["prompt"] else "")
+
+
+def cmd_local(args: argparse.Namespace) -> int:
+    """Bring a run home and continue it on this machine: a phase's own session or a fresh start of it."""
+    rec = load_record(args.run)
+    cfg = load_config()
+    collected = None
+    if rec.get("state") == "dispatched":
+        host = Host(cfg)
+        live = run_state(host, rec)
+        if live.get("state") in ("starting", "running"):
+            raise Refused(f"run {rec['id']} is {live['state']}; stop it first (remote.py stop {rec['id']})")
+        collected = collect_run(host, cfg, rec, keep_lock=False)
+    phases = parse_phases(args.phases) if args.phases else list(rec["phases"])
+    point = resume_point(collected_status(rec), phases, args.start, args.cont)
+    point["prompt"] = args.prompt or ""
+    worktree = work_checkout(rec)
+    transcript = None
+    if point["mode"] == "continue":
+        if not (state_root() / "runs" / rec["id"] / "sessions" / f"{point['session']}.jsonl").exists():
+            raise Refused(f"the transcript of {point['phase']}'s session {point['session']} was not collected; "
+                          f"--from {point['phase']} starts it fresh here")
+        transcript = install_session(rec, point["session"], worktree)
+    argv = ["claude", *(["--resume", point["session"]] if point["mode"] == "continue" else []),
+            local_prompt(rec, point, worktree)]
+    rec.update(worktree=str(worktree))
+    rec.setdefault("rounds", []).append({"round": len(rec.get("rounds", [])) + 2, "at": now(), "how": "here",
+                                         "workspace": None, "phases": phases, **point})
+    save_record(rec)
+    print(json.dumps({"run": rec["id"], "phase": point["phase"], "mode": point["mode"],
+                      "session": point["session"] or None, "worktree": str(worktree),
+                      "transcript": str(transcript) if transcript else None, "collected": collected,
+                      "command": f"cd {shlex.quote(str(worktree))} && {shlex.join(argv)}"}, indent=2))
     return 0
 
 
@@ -1109,12 +1205,19 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--phases", help="replace the run's phase list; the round runs from its phase to the end")
     r.add_argument("--workspace", help="restore a collected run on this workspace")
     r.add_argument("--publish", choices=PUBLISH, help="override the run's publish mode from this round on")
+    lo = sub.add_parser("local")
+    lo.add_argument("run")
+    here = lo.add_mutually_exclusive_group()
+    here.add_argument("--continue", dest="cont", choices=PHASES, help="continue this phase's session here")
+    here.add_argument("--from", dest="start", choices=PHASES, help="start this phase fresh here")
+    lo.add_argument("--prompt", help="an instruction added to the session's first prompt")
+    lo.add_argument("--phases", help="replace the run's phase list")
     c = sub.add_parser("collect")
     c.add_argument("run")
     c.add_argument("--keep-lock", action="store_true")
     args = parser.parse_args(argv)
     handler = {"doctor": cmd_doctor, "dispatch": cmd_dispatch, "status": cmd_status, "logs": cmd_logs,
-               "wait": cmd_wait, "stop": cmd_stop, "resume": cmd_resume, "collect": cmd_collect,
+               "wait": cmd_wait, "stop": cmd_stop, "resume": cmd_resume, "local": cmd_local, "collect": cmd_collect,
                "release": cmd_release}[args.command]
     try:
         return handler(args)

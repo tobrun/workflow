@@ -105,6 +105,17 @@
         "Answer 2: none; the spec still has Research, Scope with a Validation block of the repo's real commands, and a Change plan",
         "Answer 3: any three of the interview, the decisions talked through with the user, the fresh-context reviewer, and the promotion to docs/decisions.md and docs/contracts.md"
       ]
+    },
+    {
+      "id": "scope-commits-its-ledger",
+      "prompt": "Answer briefly, from the skill text and execution.md only. Scope finished on the full path while the checkout is on main, with docs/decisions.md and docs/contracts.md updated, a settled spec in .dev/rate-limit/, and an unrelated edit to src/app.py that the user made earlier. (1) What does scope commit, and what does it leave uncommitted? (2) On which branch, and what has to happen first? (3) Does it push? (4) What does it recommend next?",
+      "fixture": "none - the answers come from the skill text",
+      "assertions": [
+        "Answer 1: only the ledger files it changed (docs/decisions.md, docs/contracts.md); the plan directory stays out of git because plan files travel with the run, and src/app.py is other pending work it never includes",
+        "Answer 2: not on main: it creates dev/rate-limit from HEAD first, a branch change that waits for the user's consent where the repository requires it",
+        "Answer 3: no - a request to scope authorizes committing its ledger entries, not a push",
+        "Answer 4: build, or remote to run it on a sandbox, recommended and never launched"
+      ]
     }
   ]
 }

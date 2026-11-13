@@ -11,7 +11,6 @@ Never weaken a check to make it pass, and never stand in for the panel - your ow
 
 Invoking this skill is the task: detect the diff yourself and start.
 Follow [../../references/execution.md](../../references/execution.md), resolving the allowed branch, base, and publication actions before remote-only work.
-First run `python3 {ship-skill-root}/../../scripts/skill-metrics.py start ship`.
 
 ## Modes and scope
 
@@ -73,6 +72,5 @@ Say plainly in the wrap-up that quick mode skipped the gauntlet and the panel, a
 
 ## Wrap up
 
-Open the summary with `python3 {ship-skill-root}/../../scripts/skill-metrics.py end ship --count violations_found=N --count violations_fixed=N --count violations_surviving=N --count findings_verified=N --count findings_refuted=N --count remediation_rounds=N --count blockers_cleared=N --count evidence_items=N`, counting only from tool output and the aggregator, pasting its table verbatim, plus any `--friction` lines per [../../references/run-journal.md](../../references/run-journal.md).
-Then, for whichever phases ran: per check, violations found, fixed, and surviving with the human call each waits on, and the scope stated honestly ("hardened the diff" is not "hardened the repo"); the verdict and top findings with every `review_N.md` this run wrote and what each remediation round cleared; the PR URL, draft or ready, what its evidence shows, and the state of its checks.
+Summarize in one message, counting only from tool output and the aggregator. For whichever phases ran: per check, violations found, fixed, and surviving with the human call each waits on, and the scope stated honestly ("hardened the diff" is not "hardened the repo"); the verdict and top findings with every `review_N.md` this run wrote and what each remediation round cleared; the PR URL, draft or ready, what its evidence shows, and the state of its checks.
 Recommend next steps, never invoking them: `commit` for the gauntlet's fixes when phase 3 did not run; `scope` on its small path, then `build`, then `ship` in quick mode when the user accepts findings that are plain defects; `scope` on the plan directory when a finding needs a decision or scope change.

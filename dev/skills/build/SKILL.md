@@ -11,7 +11,6 @@ Execute every change set of a spec, proving each `tests:` scenario with a real t
 Input: `.dev/{plan-name}/spec.md`, located per [../../references/plan-layout.md](../../references/plan-layout.md). Without a spec or with an empty change plan, ask the user to run `scope` first.
 Follow [../../references/execution.md](../../references/execution.md) for branch, commit, and documentation actions; use the authorized current branch, or create `{plan-name}` when a new branch is permitted. Build never pushes or opens a PR - that is `ship`.
 Read [references/layers.md](references/layers.md), [references/tests.md](references/tests.md), and [references/mocking.md](references/mocking.md) before implementing, and [references/test-evidence.md](references/test-evidence.md) for runner receipts.
-First run `python3 {build-skill-root}/../../scripts/skill-metrics.py start build`.
 
 ## Workflow
 
@@ -70,8 +69,7 @@ Parallel agents see only this file and the code, and `ship` reads it later.
 
 ## Closing message
 
-Print `python3 {build-skill-root}/../../scripts/skill-metrics.py end build --count change_sets=N --count scenarios=N --count e2e_passed=N --count e2e_failed=N`, pasting its table verbatim, plus any `--friction` lines per [../../references/run-journal.md](../../references/run-journal.md).
-Then end with these two lines, in this order, whether the run is green or blocked:
+End with these two lines, in this order, whether the run is green or blocked:
 
 1. `Next step: run ship over this work, pointed at .dev/{plan-name}/implementation-notes.md and the {plan-name}-e2e.json report.` Name `ship` in quick mode when this run built change sets that fix an earlier `review_N.md`. Recommend it; never launch it.
 2. Any question left for the user: a blocked gate or an unresolved deviation.

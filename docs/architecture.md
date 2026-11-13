@@ -5,7 +5,7 @@ Two plugins live here: `dev`, the hand-invoked development workflow (scope, buil
 A person invokes each `dev` skill by hand; skills never invoke each other, and each one recommends the next step instead. The `dev` `yolo` skill is not an invoker: it reads the scope, build, and ship bodies by path and follows them inline in one session, answering each of their user questions with the stage's own recommendation.
 The generated Codex distributions under `plugins/` are built from their source plugin and never edited by hand.
 
-Captured: 2026-09-17 (full, scope) - Updated: 2026-11-13 (to-pitch, to-quiz, reflect, and scope-review removed per D-simplify-dev)
+Captured: 2026-09-17 (full, scope) - Updated: 2026-11-13 (simplified to six skills per D-simplify-dev; no run metrics or memory)
 
 ## Components
 
@@ -14,7 +14,6 @@ Captured: 2026-09-17 (full, scope) - Updated: 2026-11-13 (to-pitch, to-quiz, ref
 | dev skills | the interactive workflow skills and the references and scripts they share | `dev/skills/`, `dev/references/`, `dev/scripts/` | nothing at runtime; read by Claude, Codex, opencode, and Pi hosts |
 | remote transport | `remote.py` dispatches a plan to a fleet sandbox, follows it, and collects it home; `runner.sh` runs each phase as a headless Claude Code session inside the sandbox | `dev/skills/remote/` | the fleet host over SSH (`fleet sync/fetch/view/start`, `incus exec/list`), git, `~/.dev-workflow/remote/` |
 | dev evals | comprehension evals for the skills | `dev/evals/` | nothing at runtime |
-| workflow memory | the run journal `dev/scripts/skill-metrics.py` appends to (with opencode runs exported as JSONL beside it); local to the machine, shared by every consuming repository, never committed | ~/.dev-workflow/memory/ (outside this repository) | read by the reflect skill |
 | generated plugins | the Codex distributions built from each source plugin, with invocation policy in agents/openai.yaml | `plugins/` | Codex plugin marketplace |
 | repo scripts | validation of the whole repository, the plugin generator, and the Pi transport self-test | `scripts/` | every other component |
 | harden tools | optional local analyses a ship gauntlet can draw on: added lines, coverage-weighted complexity, flaky reruns, mutation | `tools/harden/` | nothing; run by hand against a target repository |
@@ -26,7 +25,6 @@ Captured: 2026-09-17 (full, scope) - Updated: 2026-11-13 (to-pitch, to-quiz, ref
 ### A dev skill run
 1. A person invokes `/dev:scope`, `/dev:build`, `/dev:ship`, or `/dev:commit` in Claude Code (or the Codex, opencode, or Pi equivalent).
 2. The skill reads its SKILL.md and references, writes plan files under .dev/{plan-name}/ in the consuming repository, and recommends the next skill; skills never invoke each other.
-3. `dev/scripts/skill-metrics.py` measures each run, appends a row to the consuming repository's .dev/metrics.jsonl, and appends a journal entry of measured friction signals to the workflow memory.
 
 ### A remote run
 1. After `/dev:scope` settles a spec here, a person invokes `/dev:remote {plan}`; `remote.py dispatch` refuses an unsettled spec, unignored plan files, uncommitted tracked work, or a busy fleet.
@@ -58,9 +56,7 @@ Captured: 2026-09-17 (full, scope) - Updated: 2026-11-13 (to-pitch, to-quiz, ref
 | -------- | ---- | -------- | ----- |
 | Claude Code, Codex, opencode, Pi | host | the skills | each reads the skills in its own format; the generated tree under `plugins/` serves Codex |
 | git and GitHub | external | the ship skill | branch state and `gh pr` calls made during a ship run |
-| Claude Code, Codex, opencode, Pi session stores | local store | skill-metrics.py | read only, through the session variable each harness sets |
 | fleet host and sandbox workspaces | remote compute | the remote skill | reached only over SSH with the user's key; workspaces hold only the git credentials the host allocates (push and PRs on the fleet's repositories), never the user's own; they receive commits through the exchange clone and files as tar streams, and return everything through `fleet fetch` and `runner.sh pack`; collected output is untrusted data |
-| workflow memory | local store | skill-metrics.py, claims.py | ~/.dev-workflow/memory/ or $DEV_MEMORY_DIR; quotes from transcripts stay on the machine |
 | consuming repository | store | the skills | `.dev/` plan files, `docs/` ledgers, shared config, and the root AGENTS.md bootstrap writes |
 
 ## Cross-cutting

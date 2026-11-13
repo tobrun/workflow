@@ -9,7 +9,6 @@ disable-model-invocation: true
 The spec is the deliverable: do not implement anything.
 Another session, often another model, builds from the spec alone, so everything it needs to know goes in the file.
 Paths follow [../../references/plan-layout.md](../../references/plan-layout.md), the decision notation follows [../../references/decision-ledger.md](../../references/decision-ledger.md), and authority and the confidence policy follow [../../references/execution.md](../../references/execution.md).
-First run `python3 {scope-skill-root}/../../scripts/skill-metrics.py start scope`.
 
 ## Choose the path
 
@@ -85,8 +84,7 @@ Apply confirmed findings that stay within the settled decisions, ask the user ab
 Copy into `docs/decisions.md` every decision that passes the promotion test in [../../references/decision-ledger.md](../../references/decision-ledger.md), verbatim, dated, and sourced to this spec.
 Promote cross-boundary invariants to `docs/contracts.md`, phrased for the relying side; a planned invariant keeps its `? verify:` until enforcing code exists.
 
-Close with `python3 {scope-skill-root}/../../scripts/skill-metrics.py end scope --count decisions=N --count change_sets=N --count scenarios=N`, pasting its table verbatim, plus any `--friction` lines per [../../references/run-journal.md](../../references/run-journal.md).
-Then recommend `build`; never launch it.
+Recommend `build`; never launch it.
 
 ## From review findings
 

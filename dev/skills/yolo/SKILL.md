@@ -17,10 +17,9 @@ Follow [../../references/execution.md](../../references/execution.md); unattende
 
 ## Preflight
 
-1. Run `python3 {yolo-skill-root}/../../scripts/skill-metrics.py start yolo`; the stages' own `start` and `end` calls are skipped, this run measures as one.
-2. Resolve the allowed branch/base, remote, push, PR, and screenshot-hosting actions before execution. Missing publication capability leaves a local deliverable and prepared PR body; it does not block the implementation.
-3. Confirm the host has a subagent tool: scope's reviewer, build's parallel change sets, and ship's review panel cannot run without one, and a yolo that silently drops them is not a yolo. Without one, stop here and say so; nothing has been spent yet.
-4. Check the ignore policy in [../../references/plan-layout.md](../../references/plan-layout.md#git-ignore-policy): `.dev/config.yaml` must be trackable and plan and scratch files ignored.
+1. Resolve the allowed branch/base, remote, push, PR, and screenshot-hosting actions before execution. Missing publication capability leaves a local deliverable and prepared PR body; it does not block the implementation.
+2. Confirm the host has a subagent tool: scope's reviewer, build's parallel change sets, and ship's review panel cannot run without one, and a yolo that silently drops them is not a yolo. Without one, stop here and say so; nothing has been spent yet.
+3. Check the ignore policy in [../../references/plan-layout.md](../../references/plan-layout.md#git-ignore-policy): `.dev/config.yaml` must be trackable and plan and scratch files ignored.
    Repair `.gitignore` when needed, verify both outcomes with `git check-ignore --no-index`, and commit the repair with the first change set.
 
 ## The no-question contract
@@ -69,6 +68,5 @@ A run with an open call of any kind, or a real blocker, opens the PR as a draft;
 
 ## Wrap up
 
-Print the measured run metrics with `python3 {yolo-skill-root}/../../scripts/skill-metrics.py end yolo --count decisions=N --count auto_applied=N --count below_75=N --count change_sets=N --count scenarios=N --count violations_fixed=N --count findings_verified=N --count remediation_rounds=N --count open_calls=N`, pasting its table verbatim, plus any `--friction` lines per [../../references/run-journal.md](../../references/run-journal.md).
-Then, in one message: the PR URL and whether it is draft or ready, the state of its required checks, the review verdict with the `review_N.md` paths, and the open calls in the order the reviewer should read them - guesses below 75% first, then blockers, then deviations.
+End with one message: the PR URL and whether it is draft or ready, the state of its required checks, the review verdict with the `review_N.md` paths, and the open calls in the order the reviewer should read them - guesses below 75% first, then blockers, then deviations.
 Recommend `scope` on the plan directory when an open call needs a decision changed, and `scope` on its small path, then `build`, then `ship` in quick mode when the reviewer accepts findings that are plain defects; never launch either.

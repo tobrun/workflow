@@ -40,8 +40,7 @@ These rules replace only the moments where a stage would wait on the user:
 - **Human calls become open calls.** A gauntlet threshold, a suppression, an upgrade that breaks the build, an e2e scenario red three times on one root cause, a reviewer blocker that survives both remediation rounds, a `diverged` ledger classification: never change the threshold, the ledger, the spec, or a contract to clear it.
   Record it where the stage already records such things and continue; it reaches the PR's Open calls section.
 - **A missing input is discovered, never requested.** Validation commands, the launch command for e2e, the plan directory: find them from the repository as the stage's fallback says; when none exists, log the gap as a deviation and run what can be run.
-- **Reports are for the PR.** Skip the spec and review HTML renders; keep the e2e report, since the PR's evidence is extracted from it.
-  Publish nothing.
+- **The PR is the only publication.** Publish nothing beyond the PR and its evidence images.
 
 ## Hard stops
 

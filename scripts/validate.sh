@@ -650,7 +650,7 @@ PYEOF
 }
 
 # ===========================================================================
-# D01: the dev plugin's spec-lint and change-set-brief tests pass
+# D01: the dev plugin's script tests pass
 # ===========================================================================
 check_dev_script() {
   local dir="dev/evals/tests"

@@ -29,7 +29,7 @@ The Evidence section is the PR's proof of the feature or fix, captured from a re
   Read the branch diff and pick the scenarios (or, with no e2e report, the screens and states) that exercise the behavior it adds or alters: the spec's `[e2e]` scenarios for this plan's change sets, a bug fix's reproduction.
   Leave out regression, setup, login, and unrelated scenarios and any step that looks the same before and after the change; a reviewer should see the diff's effect in a few images, not a tour of the app.
   Keep a failing scenario in only when it is one of the picked ones.
-- **An e2e report exists** (`/tmp/{project-slug}/reports/{plan-name}-e2e-report.html`, refreshed by phase 1 when fixes landed): run `pr-evidence.py extract` on it with one `--scenario {id}` per picked scenario.
+- **An e2e report exists** (`/tmp/{project-slug}/reports/{plan-name}-e2e.json`, refreshed by phase 1 when fixes landed): run `pr-evidence.py extract` on it with one `--scenario {id}` per picked scenario.
   Frontend reports yield one screenshot per meaningful step; `pr-evidence.py publish` pushes the PNGs to the `pr-evidence` branch so they render inline, because data URIs do not render on a PR.
   Non-frontend reports yield labeled Before/After state per step, plus captured output.
 - **No e2e report** (no spec, no e2e suite): capture the evidence in this phase, the same way build would.

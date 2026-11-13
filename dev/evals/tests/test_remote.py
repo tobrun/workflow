@@ -161,7 +161,7 @@ class RemoteCycleTest(unittest.TestCase):
         self.assertEqual(summary["open_calls"], [])
         self.assertIn("review_1.md", summary["plan"]["updated"])
         self.assertEqual(summary["plan"]["conflicts"], [])
-        report = self.t / "laptop-tmp" / "fixture" / "reports" / "greeting-e2e-report.html"
+        report = self.t / "laptop-tmp" / "fixture" / "reports" / "greeting-e2e.json"
         self.assertTrue(report.exists())
 
         worktree = Path(summary["worktree"])

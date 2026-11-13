@@ -16,14 +16,14 @@
     },
     {
       "id": "yolo-stops-and-calls",
-      "prompt": "Answer briefly, from the skill text only. (1) Name the three things that end a yolo run before the PR. (2) The gauntlet reports a complexity violation that a fix agent cannot clear without a higher threshold. What does yolo do with the threshold? (3) Where does each stage write the decisions yolo made in the user's place, and what happens to them before the PR is created? (4) The host has no subagent tool. What happens? (5) Which HTML reports does yolo render?",
+      "prompt": "Answer briefly, from the skill text only. (1) Name the three things that end a yolo run before the PR. (2) The gauntlet reports a complexity violation that a fix agent cannot clear without a higher threshold. What does yolo do with the threshold? (3) Where does each stage write the decisions yolo made in the user's place, and what happens to them before the PR is created? (4) The host has no subagent tool. What happens? (5) What may yolo publish?",
       "fixture": "none - the answers come from the skill text",
       "assertions": [
         "Answer 1: a found secret, a step needing a destructive action such as force-push or history rewrite, and a resource the session cannot reach that the task needs",
         "Answer 2: never changes it - the violation is recorded as an open call and the run continues",
         "Answer 3: scope in spec.md's auto-applied block and marks, build in implementation-notes.md deviations, ship in pr.md Open calls; the under-75% lines and deviations are added to Open calls before the PR is created",
         "Answer 4: it stops in preflight and says so, before anything is spent",
-        "Answer 5: only the e2e report, because the PR evidence is extracted from it; the spec and review renders are skipped and nothing is published"
+        "Answer 5: only the PR and its evidence images; nothing else is published"
       ]
     },
     {

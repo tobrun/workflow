@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """Turn e2e evidence into a PR-ready Evidence section, publish its images, and gate the body.
 
-    pr-evidence.py extract <e2e-report.html> --out <dir> [--scenario ID ...] [--branch pr-evidence]
+    pr-evidence.py extract <e2e-report.json> --out <dir> [--scenario ID ...] [--branch pr-evidence]
                            [--url-template URL]
     pr-evidence.py publish <dir> [--branch pr-evidence] [--remote origin]
     pr-evidence.py check <pr-body.md> [--kind frontend|non-frontend]
 
-`extract` reads the E2E_DATA block of a rendered e2e report, decodes every
+`extract` reads build's JSON e2e report, decodes every
 screenshot to `<dir>/{plan}/{scenario}/{step}.png`, and writes
 `<dir>/evidence.md`: one "## Evidence" section with the images (frontend) or
 before/after state tables (non-frontend) a reviewer can read inline on the PR.
@@ -37,7 +37,6 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
-DATA_BLOCK = re.compile(r"E2E_DATA_START.*?const\s+E2E_DATA\s*=\s*(\{.*?\})\s*;\s*/\*\s*E2E_DATA_END", re.DOTALL)
 IDENT = re.compile(r"[A-Za-z_$][A-Za-z0-9_$]*")
 PLACEHOLDERS = re.compile(r"\bTODO\b|\bTBD\b|\{[a-z][a-z0-9-]*\}|<[^>]*placeholder[^>]*>|screenshot here|data:image/", re.IGNORECASE)
 IMAGE = re.compile(r"!\[[^\]]*\]\((https?://[^)\s]+)\)")
@@ -64,89 +63,14 @@ def slug(text: str, fallback: str) -> str:
 
 
 def load_e2e_data(report: Path) -> dict:
-    """The data block is a JS object literal; accept JSON, then a lightly normalized form."""
-    match = DATA_BLOCK.search(report.read_text(encoding="utf-8", errors="replace"))
-    if not match:
-        fail(f"no E2E_DATA block between the markers in {report}")
-    literal = match.group(1)
-    for candidate in (literal, node_json(literal), js_to_json(literal)):
-        if candidate is None:
-            continue
-        try:
-            return json.loads(candidate)
-        except json.JSONDecodeError:
-            continue
-    fail("E2E_DATA is not parseable as JSON, through node, or as a plain JS object literal")
-    return {}
-
-
-def js_to_json(literal: str) -> str:
-    """Rewrite a plain JS object literal as JSON without touching string contents.
-
-    Handles bare keys, single-quoted strings, trailing commas, and comments;
-    string bodies (where prose can contain colons and commas) pass through as-is.
-    """
-    out: list[str] = []
-    i, n = 0, len(literal)
-    while i < n:
-        ch = literal[i]
-        if ch in "\"'":
-            quote, j, body = ch, i + 1, []
-            while j < n and literal[j] != quote:
-                if literal[j] == "\\" and j + 1 < n:
-                    body.append(literal[j:j + 2])
-                    j += 2
-                else:
-                    body.append(literal[j])
-                    j += 1
-            text = "".join(body)
-            if quote == "'":
-                text = text.replace("\\'", "'").replace('"', '\\"')
-            out.append(f'"{text}"')
-            i = j + 1
-        elif literal.startswith("//", i):
-            i = literal.find("\n", i) if literal.find("\n", i) != -1 else n
-        elif literal.startswith("/*", i):
-            end = literal.find("*/", i + 2)
-            i = n if end == -1 else end + 2
-        elif ch == ",":
-            j = i + 1
-            while j < n and literal[j] in " \t\r\n":
-                j += 1
-            if j < n and literal[j] in "}]":
-                i += 1
-            else:
-                out.append(ch)
-                i += 1
-        else:
-            ident = IDENT.match(literal, i)
-            if ident:
-                j = ident.end()
-                while j < n and literal[j] in " \t\r\n":
-                    j += 1
-                if j < n and literal[j] == ":":
-                    out.append(f'"{ident.group(0)}"')
-                else:
-                    out.append(ident.group(0))
-                i = ident.end()
-            else:
-                out.append(ch)
-                i += 1
-    return "".join(out)
-
-
-def node_json(literal: str) -> str | None:
-    """A JS object literal is exactly what node parses; use it when installed."""
-    with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False, encoding="utf-8") as handle:
-        handle.write(literal)
-    script = f"process.stdout.write(JSON.stringify(eval('(' + require('fs').readFileSync({handle.name!r}, 'utf8') + ')')))"
+    """The e2e report is one JSON document in the shape build's e2e-report.md defines."""
     try:
-        result = subprocess.run(["node", "-e", script], capture_output=True, text=True, check=False)
-        return result.stdout if result.returncode == 0 else None
-    except OSError:
-        return None
-    finally:
-        os.unlink(handle.name)
+        data = json.loads(report.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        fail(f"{report} is not a readable JSON e2e report: {error}")
+    if not isinstance(data, dict):
+        fail(f"{report} holds no JSON object")
+    return data
 
 
 def git(*args: str, env: dict | None = None, check: bool = True) -> str:

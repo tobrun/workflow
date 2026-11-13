@@ -1,10 +1,10 @@
-# E2E_DATA Schema
+# E2E Report
 
-The shape to populate in `templates/e2e-report.html` between the `E2E_DATA_START` / `E2E_DATA_END` markers.
-Replace the whole object per the shared etiquette in [../../../references/reporting.md](../../../references/reporting.md).
+The e2e pass writes one JSON document to `/tmp/{project-slug}/reports/{plan-name}-e2e.json` in this shape (shown with comments; the file itself is plain JSON).
+`ship` re-runs the scenarios after its fixes and overwrites the file, and `pr-evidence.py extract` reads it.
 
 ```js
-const E2E_DATA = {
+{
   title: "string - the spec's title",
   planName: "string - the .dev/{plan-name} slug",
   generatedAt: "string - ISO date of the run this report captures",
@@ -43,7 +43,7 @@ const E2E_DATA = {
   ],
 
   summary: { total: 0, passed: 0, failed: 0 }
-};
+}
 ```
 
 ## Filling it in honestly

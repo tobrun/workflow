@@ -36,9 +36,9 @@ class ScenarioSelectionTest(unittest.TestCase):
         self.addCleanup(lambda: __import__("shutil").rmtree(tmp, ignore_errors=True))
         data = {"kind": "frontend", "planName": "plan", "generatedAt": "now",
                 "scenarios": [scenario("login"), scenario("coupon"), scenario("regress", "fail")]}
-        report = tmp / "report.html"
+        report = tmp / "report.json"
         report.write_text(
-            f"/* E2E_DATA_START */ const E2E_DATA = {json.dumps(data)}; /* E2E_DATA_END */", encoding="utf-8"
+            json.dumps(data), encoding="utf-8"
         )
         args = [sys.executable, str(SCRIPT), "extract", str(report), "--out", str(tmp / "out"),
                 "--url-template", "https://x/{path}"]

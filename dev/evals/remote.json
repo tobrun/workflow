@@ -3,36 +3,36 @@
   "mode": "comprehension",
   "evals": [
     {
-      "id": "remote-split-and-authority",
-      "prompt": "Answer briefly, from the skill text and its references only. The user says 'run the rate-limit plan on a sandbox'. (1) Which phases run in the sandbox by default, and where do scope and the pull request happen? (2) remote.py dispatch refuses because tracked files have uncommitted changes. What do you do? (3) Does dispatching ship authorize a push and a PR, and who does them? (4) The workspace's gh is signed out. May the sandbox session push the branch or publish evidence images?",
+      "id": "remote-instance-and-start",
+      "prompt": "Answer briefly, from the skill text and its references only. (1) The user says '/dev:remote 2 rate-limit', and .dev/rate-limit/spec.md exists. What do you run, and on which instance? (2) The user says '/dev:remote add a --json flag to the status command' with no instance. What do you do? (3) remote.py start reports not_sent lines for a modified tracked file. What do you do? (4) Instance 1 is busy with another run. Do you start on instance 2 instead?",
       "fixture": "none - the answers come from the skill text",
       "assertions": [
-        "Answer 1: build then ship run in the sandbox; scope stays on this machine; the PR is opened by the sandbox when its git credentials pass dispatch's probe, otherwise from here after collect",
-        "Answer 2: never work around the refusal; committing is a commit request the user has to make, so report it and dispatch again once the work is committed",
-        "Answer 3: yes - dispatching ship is a request to ship, pull-request phase included, as invoking it locally would be; the sandbox publishes when the probe (a dry-run push to origin and gh auth status) passes, and --publish laptop keeps publication here when the user says no PR or local only",
-        "Answer 4: no - the probe fails, so under auto the run is dispatched with publication withheld (the reason is recorded): no push, no PR, no evidence image publishing, no attempt to authenticate gh or git; ship stops at a prepared pr.md with a passing pr-evidence check and the PR is published from here after collect"
+        "Answer 1: remote.py start 2 --plan rate-limit; the run goes to the second instance, the one the user named",
+        "Answer 2: run remote.py status, show it, and ask which instance; never pick one for the user",
+        "Answer 3: report the lines; only committed work is sent, so when the run needs that work say so early - committing it is the user's call, and a new start sends it",
+        "Answer 4: no - a busy instance is the user's to resolve; report what runs there and let them stop it or name another"
       ]
     },
     {
-      "id": "remote-failure-and-collect",
-      "prompt": "Answer briefly, from the skill text and its references only. (1) remote.py status shows a run as lost. What does that mean and what are the options? (2) A run failed on a gateway error halfway through build. Resume or collect? What does resume continue? (3) The user edited spec.md on the laptop while the sandbox also changed it. What does collect do with the two versions? (4) The user committed to the work branch locally while the run worked, and the histories diverged. What does collect do?",
+      "id": "remote-finishes-and-continues",
+      "prompt": "Answer briefly, from the skill text and its references only. (1) What makes a run finished, and what happens when its session ends before that? (2) A run ended blocked because git push was rejected. What do you do? (3) A run is done, and the PR's CI fails on a lint error. How do you get it fixed on the instance? (4) status shows a run as lost. What does that mean and what is the next step?",
       "fixture": "none - the answers come from the skill text",
       "assertions": [
-        "Answer 1: the unit is gone without recording an end (the VM restarted or the runner was killed); read the logs, then resume or collect",
-        "Answer 2: resume - a transient cause is a resume; it continues the recorded session of the phase that ended with its working tree untouched, then runs the remaining phases fresh",
-        "Answer 3: the local spec.md stays and the sandbox's version lands beside it as spec.md.remote; collect reports the conflict and resolving it is the user's call",
-        "Answer 4: it refuses to change the branch - updates are fast-forward only - and leaves the sandbox's commits at refs/dev-remote/{run} for the user to reconcile"
+        "Answer 1: everything committed, the branch pushed, and the pull request open at that commit; the instance's runner checks this each time the session ends and resumes the same session with what is missing until it holds, so the run ends by itself as done, or blocked on a hard stop",
+        "Answer 2: pull the run, report the blocked text, and publish from here within authority following ship's pull request reference: push the pulled branch and create the PR with --body-file .dev/{plan-name}/pr.md",
+        "Answer 3: remote.py continue {n} --prompt with the CI failure; it puts the finished run back to work in its own session and checkout",
+        "Answer 4: the runner vanished without recording an end (the instance restarted); read the logs and the reason, then continue for a transient cause"
       ]
     },
     {
-      "id": "remote-publication-path",
-      "prompt": "Answer briefly, from the skill text and its references only. A run finished done, collect succeeded, and the user authorized the PR. (1) Where do you work from, and is the user's own checkout switched? (2) What check do you run on pr.md before publishing, and with which repo root? (3) When does the PR open as a draft? (4) A required CI check fails with a large fix needed. What is the path?",
+      "id": "remote-pull-and-wrap-up",
+      "prompt": "Answer briefly, from the skill text and its references only. (1) remote.py pull reports branch_update 'diverged'. What happened to the local branch and where are the instance's commits? (2) spec.md was edited on both sides. What does pull leave? (3) The run is done and its PR is ready, but pr.md lists two open calls. What do you do? (4) The user wants to finish the remaining work on this machine. What is the path, and do you launch build?",
       "fixture": "none - the answers come from the skill text",
       "assertions": [
-        "Answer 1: from the worktree collect printed (the existing checkout of the branch, or ~/.dev-workflow/remote/worktrees/{run}/{repo} with .dev/{plan} linked to the canonical plan directory); the user's own checkout is never switched",
-        "Answer 2: pr-evidence.py check on .dev/{plan-name}/pr.md with --require-current and --repo-root set to the worktree; a failure is a refreshed-evidence task",
-        "Answer 3: when the run did not end done, the verdict is not PASS or CONCERNS, pr.md lists open calls, or a check was deferred or remote-only",
-        "Answer 4: a contained fix happens in the worktree; anything larger goes through scope's small path here and a build,ship-quick dispatch, which runs ship in quick mode"
+        "Answer 1: the local branch is left alone - updates are fast-forward only - and the instance's commits are at refs/dev-remote/{workspace} for the user to reconcile",
+        "Answer 2: this machine's spec.md stays and the instance's version lands beside it as spec.md.remote; report it and never apply it without the user",
+        "Answer 3: put the PR back to draft with gh pr ready --undo and report the open calls in the order the reviewer should read them",
+        "Answer 4: pull, switch to the work branch with the user's consent, and recommend the stage the plan directory is at (build continues from implementation-notes.md, ship from its phase file); never launch it"
       ]
     }
   ]

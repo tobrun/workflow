@@ -1,36 +1,9 @@
 #!/usr/bin/env bash
-# Stand-in for the host's `fleet` CLI in the remote.py tests, with the real
-# command's bundle semantics: sync clones the exchange clone's branches into
-# ~/work/<repo> once and later only moves refs/remotes/origin/*; fetch lands
-# the workspace's branches under refs/remotes/ws-<name>/* in the exchange clone.
+# Stand-in for the host's `fleet` CLI in the remote.py tests: only what remote.py calls.
 set -Eeuo pipefail
 root=${FAKE_FLEET_ROOT:?}
-src=${FAKE_SOURCES_ROOT:?}
-cmd=${1:-}; ws=${2:-}; repo=${3:-}
-work="$root/ws-$ws/home/work"
-tmp=$(mktemp -d)
-trap 'rm -rf "$tmp"' EXIT
+cmd=${1:-}; ws=${2:-}
 case $cmd in
-  sync)
-    if [ "${FAKE_FLEET_SYNC:-}" = skip ]; then echo "skip $repo"; exit 0; fi
-    git -C "$src/$repo" bundle create -q "$tmp/b" --branches --tags
-    mkdir -p "$work"
-    if [ ! -d "$work/$repo/.git" ]; then
-      git clone -q "$tmp/b" "$work/$repo" 2>/dev/null
-      echo "cloned  $repo"
-    elif [ "${FAKE_FLEET_SYNC:-}" = stale ]; then
-      # The host bug: root's fetch into the agent-owned checkout is refused, and sync still says fetched.
-      echo "fetched $repo"
-    else
-      git -C "$work/$repo" fetch -q "$tmp/b" "+refs/heads/*:refs/remotes/origin/*"
-      echo "fetched $repo"
-    fi ;;
-  fetch)
-    if ! git -C "$work/$repo" bundle create -q "$tmp/b" --branches 2>/dev/null; then
-      echo "fleet: skip $repo (no repo or no branches in the workspace)"; exit 0
-    fi
-    git -C "$src/$repo" fetch -q --prune "$tmp/b" "+refs/heads/*:refs/remotes/ws-$ws/*"
-    echo "fleet: $repo fetched" ;;
   view) echo "http://fake-host:6080/vnc.html?view_only=1#ws-$ws" ;;
   start) printf 'Running\n' >"$root/ws-$ws/state" ;;
   *) echo "fake fleet: unsupported $*" >&2; exit 2 ;;

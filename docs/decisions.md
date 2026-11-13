@@ -28,32 +28,46 @@ D-mutation-focused: Where should mutation testing run, and what should survivors
 
 risk: moderate - domains: remote compute, unattended agent output crossing into the user's repository (2026-11-09)
 
-D-remote-split: Which phases run in a sandbox and which stay on the laptop? (2026-11-09, user) publication moved to the sandbox by D-remote-publication (2026-11-12)
+D-remote-restart: What is a remote run? (2026-11-13, user)
+  ✓ one unattended yolo session on the fleet instance the user names by number, kept going by the instance's runner until its pull request is open - the phased design (dispatch, per-phase sessions, a build gate, collect, rounds, restore, run records on the laptop) was hard to use, fell apart, and could not continue; a run should just work and always finish, as yolo does, and the user wants to own which instance gets it (user, 2026-11-13); supersedes the six decisions below without changing their historical record ⚠ a task started without a plan is scoped on the instance, with no user and only the MCP servers the credential relay admits
+  ✗ repair the phased design - every repair so far added a mode (resume points, restore, local continuation) to a state machine the user already found too hard to use
+  ✗ let the skill pick a free instance - the user asked to assign instances themselves
+
+D-remote-finish: Who decides that a remote run is finished? (2026-11-13)
+  ✓ the runner, from the deliverable: a clean tree on a work branch and a pull request whose head is the checkout's HEAD, checked every time the session ends, with the same session resumed and told what is missing, up to a configured number of sessions; a hard stop is the session writing `blocked.md` - a session's own "success" is not evidence (the 2026-11-12 run skipped build steps and still ended "success"), and the pull request is the one outcome every yolo run ends in, draft when open calls remain (P-deterministic-guards-over-prose) (auto-applied at Confidence: 85%) ⚠ a tool the instance lacks becomes an open call in a draft pull request, not a failed run
+  ✗ gate on build's `check-tests.py` as before - it failed the run that prompted the restart for want of Docker on the instance, leaving nothing shipped; ship's own checks and the draft rules already carry that signal to the reviewer
+  ✗ trust the session's result event - it ends "success" on a question, a plan, or an API error
+
+D-remote-state: Where does a run's state live, and how does work cross? (2026-11-13)
+  ✓ on the instance only, one run per instance addressed by the instance's number, with commits crossing as git bundles and files as tar streams over `incus exec`, and `pull` updating the local branch by fast-forward only and plan files against the hashes both sides last agreed on - nothing on the laptop to fall out of step with the instance, no host exchange clone whose `fleet sync` failed silently, and the instance's output stays untrusted data that never overwrites local work (auto-applied at Confidence: 80%) ⚠ a new start on an instance moves its previous run to history, where only the newest ten are kept
+  ✗ run records on the laptop - a second source of truth, and the reason a collected run could not simply continue
+
+D-remote-split: Which phases run in a sandbox and which stay on the laptop? (2026-11-09, user) publication moved to the sandbox by D-remote-publication (2026-11-12) superseded by D-remote-restart (2026-11-13)
   ✓ scope and publication on the laptop, build and ship in a fleet sandbox - scope is an interview that needs the user and the laptop's MCP servers, publication needs the GitHub credentials the sandboxes are built never to hold, and build and ship are the long unattended stretches (user, 2026-11-09)
   ✗ everything remote, yolo-style - the sandbox has no user to interview and only the MCP servers the credential relay admits
   ✗ build remote, ship local - ship's gauntlet, panel, and remediation rounds are the heaviest part and need no laptop resource until phase 3
 
-D-remote-transport: How do code and files cross to the sandbox and back? (2026-11-09)
+D-remote-transport: How do code and files cross to the sandbox and back? (2026-11-09) superseded by D-remote-restart (2026-11-13)
   ✓ commits through the host's exchange clone with the fleet's own `fleet sync` and `fleet fetch` bundles, everything else as tar streams over `incus exec`, all driven by `remote.py` - the fleet already owns the bundle exchange and keeps host git out of agent-writable trees; one script owning every transfer is the deterministic guard (P-deterministic-guards-over-prose) (auto-applied at Confidence: 85%)
   ✗ SSH or git straight into the workspace - the egress ACLs and the tailnet boundary forbid it by design
   ✗ shared mounts - the fleet retired them for bundles
 
-D-remote-phase-sessions: How does a phase run in the sandbox? (2026-11-09)
+D-remote-phase-sessions: How does a phase run in the sandbox? (2026-11-09) superseded by D-remote-restart (2026-11-13)
   ✓ one fresh headless `claude -p "/dev:{phase}"` session per phase, with the dispatched plugin loaded by `--plugin-dir`, the unattended contract appended, permissions bypassed inside the VM, and `AskUserQuestion` removed, run as a transient systemd unit - a spike in ws1 on 2026-11-09 proved a `disable-model-invocation` skill runs from a `-p` slash prompt; a fresh context per phase suits the gateway's 131k window and makes each phase resumable on its own session (auto-applied at Confidence: 85%) ⚠ the sandbox agent runs on the gateway's model, not the laptop's, so a remote run's quality follows that model
   ✗ build and ship in one session - one context for both phases loses the middle on a 131k window
   ✗ skill bodies read by path, as yolo does - native invocation resolves `{skill-root}` and metrics anchoring without prose
 
-D-remote-collect: How does sandbox output reach the user's repository? (2026-11-09)
+D-remote-collect: How does sandbox output reach the user's repository? (2026-11-09) superseded by D-remote-restart (2026-11-13)
   ✓ fast-forward-only branch updates from `refs/dev-remote/{run}`, plan files merged against a dispatch-time SHA-256 manifest with both-sides edits kept as `{name}.remote`, tarballs extracted with the `data` filter, and a worktree for publication so the user's checkout never switches - the sandbox's output is untrusted data and the laptop may have moved on meanwhile (auto-applied at Confidence: 80%)
   ✗ reset the local branch to the sandbox's - silently drops commits made here during the run
   ✗ publish from the fleet host - puts GitHub credentials next to agent output and bypasses the laptop session's authority
 
-D-remote-build-gate: How does an unwatched build prove it finished? (2026-11-12)
+D-remote-build-gate: How does an unwatched build prove it finished? (2026-11-12) superseded by D-remote-restart (2026-11-13)
   ✓ the runner re-runs build's own `check-tests.py` gate after the build session and resumes that session with the checker's output, at most twice, before ship may start - the first Bedrock run on 2026-11-12 skipped build's steps 1 and 6 on a one-file plan and still ended "success", so the session's own account is not evidence (P-deterministic-guards-over-prose) (auto-applied at Confidence: 85%) ⚠ two resumes is a guess
   ✗ a stronger contract line - the contract already says to run the skill as written; prose is what was skipped
   ✗ fail the run at once - a resume with the checker's output is usually enough, and the session keeps its context
 
-D-remote-publication: Who pushes the branch and opens the PR for a remote run? (2026-11-12, user)
+D-remote-publication: Who pushes the branch and opens the PR for a remote run? (2026-11-12, user) superseded by D-remote-restart (2026-11-13)
   ✓ the sandbox, with git credentials the host allocates, when a dispatch-time probe (a dry-run push of a nonexistent ref to `origin`, then `gh auth status`) passes; otherwise the laptop after collect, with the reason recorded - sandboxes should be allocated git credentials even where other systems stay credential-free (user, 2026-11-12); the probe tests access, not how it is supplied, so a token file, a credential helper, and a wire-substituting relay all qualify; publishing in the sandbox lets ship's pull-request phase and CI follow-through run unattended like the rest of ship (auto-applied at Confidence: 85%) ⚠ the sandbox agent can push to every repository the credential reaches, so its scope is the host's to keep narrow; the desktop fleet relays the host's own `gh` session (dotfiles "Credential relay" -> GitHub, 2026-11-12), so a sandbox acts with the operator's full account rights, and the contract allows only the work and evidence branches, no force-push, and no change to git or `gh` authentication
   ✗ always publish from the laptop - leaves a finished ship waiting on the laptop for a step the sandbox can do
   ✗ require the credential, refuse without it - a workspace without one still builds and ships to a prepared `pr.md`, and `--publish sandbox` is there when the user wants the refusal

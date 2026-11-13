@@ -114,7 +114,7 @@
         "Answer 1: only the ledger files it changed (docs/decisions.md, docs/contracts.md); the plan directory stays out of git because plan files travel with the run, and src/app.py is other pending work it never includes",
         "Answer 2: not on main: it creates dev/rate-limit from HEAD first, a branch change that waits for the user's consent where the repository requires it",
         "Answer 3: no - a request to scope authorizes committing its ledger entries, not a push",
-        "Answer 4: build, or remote to run it on a sandbox, recommended and never launched"
+        "Answer 4: build, or remote to run it on a fleet instance, recommended and never launched"
       ]
     }
   ]

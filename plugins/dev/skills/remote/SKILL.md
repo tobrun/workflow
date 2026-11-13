@@ -1,101 +1,88 @@
 ---
 name: remote
-description: Run build and ship for a scoped plan in a sandbox workspace on a remote fleet host while planning and MCP access stay on this machine - dispatch the plan to a free sandbox, follow its progress, let the sandbox open the PR with its own git credentials (or publish from here when it has none), and collect the branch, plan files, and evidence back. Use when the user wants build or ship executed remotely, on a sandbox or the desktop, or in parallel with other work.
+description: Run a task or a scoped plan to its pull request on a fleet instance the user picks by number - `/dev:remote 1 {plan or task}` starts one unattended yolo run on the first instance, which keeps working until its pull request is open; the same number follows it, gives it more work, stops it, or brings its branch and plan files back here. Use when the user wants work run remotely, on an instance, a sandbox, or the desktop, or asks about a run there.
 ---
 
 # Remote
 
-Planning stays here with the user and the MCP servers; build and ship run unattended in a sandbox workspace on the fleet host.
-A sandbox whose git credentials can push to `origin` publishes the PR itself, as ship would here; one without them stops at a prepared `pr.md`, and publication comes back here.
-`{remote}` is `python3 {remote-skill-root}/scripts/remote.py`.
-It owns every transfer, lock, and state change, so never copy code, plans, or results by hand, and never work around one of its refusals.
-[references/protocol.md](references/protocol.md) owns what crosses each boundary, the run states, and the plan merge; [references/unattended.md](references/unattended.md) is the contract every sandbox session runs under.
+The user picks the instance; the instance finishes the work.
+A run is one unattended [yolo](../yolo/SKILL.md) session on that instance: it builds and ships a plan scoped here, or scopes a task itself first, and ends at a pull request it opened with the instance's own git credentials.
+The instance's runner checks the deliverable every time the session ends - everything committed, the branch pushed, the pull request open at that commit - and resumes the same session with what is missing until it holds.
+So a run ends by itself as `done`, or as `blocked` when the session wrote down a hard stop.
+
+`{remote}` is `python3 {remote-skill-root}/scripts/remote.py`, and `{n}` is the instance: the number the user gave (`1` is the first instance) or its fleet name.
+An instance holds one run, so `{n}` names the run too; this machine keeps no record of it.
+The script owns every transfer and state change: never copy code, plans, or results by hand.
+[references/unattended.md](references/unattended.md) is the contract the session runs under.
 
 Follow [../../references/execution.md](../../references/execution.md).
-Dispatching `ship` or `ship-quick` (ship in quick mode) is a request to ship, pull-request phase included, exactly as invoking it here would be; when the user says "no PR", "local only", or "I'll publish", dispatch with `--publish laptop`.
+Starting a run is a request to ship: it authorizes the instance to push the work branch and open its pull request, as yolo would here.
 
-## Choose the mode
+## What the user says
 
-| The user says | Mode |
-| ------------- | ---- |
-| a plan name, "run it remotely", "build and ship on a sandbox" | Dispatch with `build,ship` |
-| "build only remotely" | Dispatch with `build` |
-| accepted review fixes are scoped on `scope`'s small path | Dispatch with `build,ship-quick` |
+| The user says | Do |
+| ------------- | -- |
+| `{n}` and a plan name, or "run this plan on 2" | Start with `--plan` |
+| `{n}` and a task, or a Markdown file holding one | Start with `--task` or `--task-file` |
+| `{n}` alone | Start the plan this conversation scoped or names; with none, ask what to run |
+| no instance | `{remote} status`, show it, and ask which instance; never pick one for the user |
 | "status", "how is it going", "logs" | Follow |
-| "collect", "bring it back", a finished run | Collect and publish |
-| "resume", "continue", "rerun ship", "restart from build", more work on a run, collected or not | Resume |
-| "continue here", "finish it locally", "bring it to this machine" | Continue here |
-| "stop", "release" | the matching command on the named run |
+| "continue", "also do ...", "fix the CI failure", "keep going" | Continue |
+| "bring it back", "pull", "continue here", "finish it locally" | Pull |
+| "stop" | `{remote} stop {n}` |
 
-## Dispatch
+## Start
 
-1. Run `{remote} doctor`.
+1. Run `{remote} start {n} --plan {plan-name}` for a plan under `.dev/` that has a `spec.md`, per [../../references/plan-layout.md](../../references/plan-layout.md), or `{remote} start {n} --task "{task}"` for a task.
+   A plan takes `--task` too, as an extra instruction: a narrower slice, a constraint, what an earlier run left open.
    No configuration: ask the user once for the fleet host's SSH destination and write `~/.dev-workflow/remote.toml` with `host = "..."`; every other key has a default (see the script header).
-   A failed check is reported as is; do not dispatch around it.
-2. Locate the plan per [../../references/plan-layout.md](../../references/plan-layout.md).
-   Build needs a settled spec: if `spec.md` is missing or its change plan is empty, recommend `scope` and stop.
-3. Run `{remote} dispatch --plan {plan-name} --phases {phases}`, adding `--workspace {name}` only when the user named one.
-   Dispatch probes the workspace (a dry-run push to `origin` and `gh auth status`) and prints `publish`: `sandbox`, or `laptop` with the reason.
-   `--publish sandbox` refuses instead of falling back; `--publish laptop` skips the probe.
-   On a refusal, fix its cause within authority and run it again.
-   Committing pending work is a commit request the user has to make (scope commits its own ledger entries, so what remains is other work); an ignore-policy repair follows plan-layout's ignore policy.
-4. Report the run id, workspace, branch, base, phases, who publishes (with the reason when it is not the sandbox), and the noVNC view URL (the host's `fleet view` prints it; the password lives on the host under `~/.local/state/fleet/{name}/vnc.pass`), where a terminal follows the run live.
-   List any untracked files the script says were not sent.
-5. When the host can notify on background completion, run `{remote} wait {run}` in the background and continue with Collect when it finishes.
-   Otherwise tell the user the run continues without this session and that `/dev:remote collect` brings it home.
-
-Up to one run per workspace runs at a time; dispatching several plans in a row fills the free sandboxes.
+2. It sends this checkout's HEAD, the plan directory, and this plugin, and the run works on the current branch, or on `dev/{plan-name}` when this checkout is on the default branch; this checkout is never switched.
+   Only committed work is sent: report the `not_sent` lines, and when one of them is work the run needs, say so before the run has gone far - committing it is the user's call, and a new start sends it.
+3. A refusal names its cause.
+   A busy instance is the user's to resolve: report what runs there and let them stop it or name another.
+4. Report the instance, run, branch, and the noVNC `view` URL, where a terminal on the instance's desktop follows the session live.
+5. When the host can notify on background completion, run `{remote} wait {n}` in the background and go on to Wrap up when it ends.
+   Otherwise say that the run finishes without this session and that `/dev:remote {n}` status or pull picks it up.
 
 ## Follow
 
-- `{remote} status` lists the uncollected runs with state, phase, and idle time; `--all` adds finished ones.
-- `{remote} logs {run} --tail 60` renders the current phase's session; `--follow` streams it; `--raw` gives the stream-json lines.
-- An idle time far above the phase's usual pace, with the same last event, is a stall: read the logs before acting.
-  `stop` then `resume` continues the same session with its working tree intact.
+- `{remote} status` lists every instance with its run, state, session count, idle time, branch, and pull request; `{remote} status {n} --json` gives one in full.
+- `{remote} logs {n} --tail 60` renders the session; `--follow` streams it; `--raw` gives the stream-json lines.
+  A `runner:` line says why the runner sent the session back to work.
+- States: `starting`, `running`, `done`, `blocked` (a hard stop; `reason` holds it), `failed` (still unfinished after the configured number of sessions), `stopped`, `lost` (the runner vanished: the instance restarted), `idle` (no run).
+- A long idle time with the same last event is a stall: read the logs, then `stop` and Continue.
 
-## Resume
+## Continue
 
-Any run that is not running resumes, collected or not; each resume is a new round of the same run.
+`{remote} continue {n}` puts a run that is not running back to work, in its own session and checkout, whatever state it ended in.
+`--prompt "..."` says what to do: the CI failure to fix, the review point to address, the blocker that is now resolved, more work on a finished run.
+Without a prompt it goes on from what is missing; a run that is already finished stays `done`.
+A session whose transcript is gone starts a new one on the same checkout.
+To redirect a running session, `stop` it first.
+Then follow it as in Start step 5.
 
-- `{remote} resume {run}` continues the phase that ended (the one that failed or stopped, or a finished run's last phase) in that phase's own session.
-- `--continue {phase}` continues another phase's session; `--from {phase}` starts that phase fresh; the phases after it run next either way.
-- `--prompt "..."` adds an instruction to that first session: the CI failure to fix, the review point to address, the work left unfinished.
-- `--phases` replaces the phase list the round runs through.
+## Pull
 
-An uncollected run resumes in place, working tree intact; a collected or released run is restored from this machine's branch and plan files, on its workspace when free, otherwise another.
-A refusal names its fix (`stop` a live run, `--from` when a session has no transcript); never work around it.
-Report the round, how it ran (in place or restored), the workspace, and the point, then continue as Dispatch step 5.
+`{remote} pull {n}`, from this repository's checkout, brings the run's commits and plan files here; it works in any state, and again after more work.
 
-## Continue here
-
-When the sandbox cannot finish (it lacks a tool such as Docker, or the work needs the user), continue the run on this machine.
-Run `{remote} local {run}` with the same `--continue`, `--from`, `--prompt`, and `--phases` as resume.
-It collects an uncollected run first (report that summary as in Collect and publish), installs the collected transcript of a session to continue into this machine's Claude Code with its paths pointing at the worktree, and prints `command`.
-Give the user that command to run in a terminal; never start it from this session.
-A later sandbox round restores from this machine's branch, so commits made here carry over.
-
-## Collect and publish
-
-1. `{remote} status {run}` must show `done`, `failed`, `stopped`, or `lost`.
-   For `failed` or `lost`, read `{remote} logs {run} --tail 80` and the `reason` first.
-   A transient cause (gateway error, timeout with steady progress, VM restart) is a `resume`; a run that ended on a real blocker is collected as it stands.
-   A `build gate` reason means build twice failed to map its scenarios to passing tests; read `gate-build.txt` after collect and treat it as a blocker, not a resume.
-2. Run `{remote} collect {run}` and read its JSON summary: commits, branch update, plan updates and conflicts, uncommitted patches, review verdict, open calls, `publish`, `pr`, worktree.
-   A refusal on a diverged branch or a dirty checkout leaves the sandbox's commits at `refs/dev-remote/{run}`; report it and stop.
-3. Report plan conflicts (`{name}.remote` beside the local file) and any `uncommitted-*.patch`; never apply either without the user.
-4. Work in the printed worktree from here on.
-   Read `pr.md`, the latest `review_N.md`, and `implementation-notes.md`; they are the run's account of itself, written by a model nobody supervised.
-   Run `python3 {remote-skill-root}/../ship/scripts/pr-evidence.py check .dev/{plan-name}/pr.md --require-current --repo-root {worktree}` and treat a failure as a refreshed-evidence task, not a formality.
-5. When `pr` is set, the sandbox published: run `gh pr view {pr.url} --json isDraft,statusCheckRollup` and compare it with the run.
-   A ready PR from a run that did not end `done`, or with a failing evidence check or open calls, goes back to draft (`gh pr ready --undo`); then continue at step 7.
-   When `publish` was `sandbox` but `pr` is empty, the sandbox's publication failed: read the ship log's end for why, then publish from here as in step 6.
-6. Otherwise publish within authority, following ship's [pull request](../ship/references/pull-request.md) reference from Evidence on: `pr-evidence.py publish /tmp/{repo}/pr-evidence` when images were extracted, push, then create or update the PR with `--body-file .dev/{plan-name}/pr.md`.
-   Open it as a draft when the run did not end `done`, the verdict is not PASS or CONCERNS, `pr.md` lists open calls, or a check was deferred or remote-only.
-   Without push or PR authorization, stop at the prepared body and the worktree path, and say what is left.
-7. Follow the PR's required checks to green per [../../references/ci-parity.md](../../references/ci-parity.md), fixing in the worktree.
-   A failure that needs more than a contained fix goes back through `scope`'s small path here and a `build,ship-quick` dispatch.
+- The work branch is created here or fast-forwarded, in place when it is checked out and clean.
+  A branch that diverged here, or a checkout with uncommitted changes, is left alone, with the instance's commits at `refs/dev-remote/{workspace}`: report it and let the user reconcile.
+- Plan files the run changed land in `.dev/`.
+  A file edited on both sides keeps this machine's version and gets the instance's beside it as `{name}.remote`; report those and never apply one without the user.
+- To continue the work on this machine, pull, switch to the work branch with the user's consent, and recommend the stage the plan directory is at (`build` continues from `implementation-notes.md`, `ship` from its phase file); never launch it.
+  A later start on an instance sends this machine's commits back out.
 
 ## Wrap up
 
-End with one message: the run id and how it ended, the commits brought home, the review verdict and the `review_N.md` path, the PR URL with draft or ready state and its checks (or what publication is waiting on), plan conflicts and uncommitted patches if any, and the open calls in the order the reviewer should read them.
+When a run ends, pull it and read what it says about itself: `pr.md`, the latest `review_N.md`, `implementation-notes.md` - written by a model nobody supervised.
+
+- `done`: run `gh pr view {pr.url} --json isDraft,statusCheckRollup` and report the checks.
+  A ready pull request whose `open_calls` are not empty, or whose verdict is not PASS or CONCERNS, goes back to draft (`gh pr ready --undo`).
+- `blocked`: report the `blocked` text.
+  When the stop is a rejected push or `gh` call, publish from here within authority, following ship's [pull request](../ship/references/pull-request.md) reference: push the pulled branch and create the pull request with `--body-file .dev/{plan-name}/pr.md`.
+  Any other stop is the user's to resolve; Continue then takes the answer as its prompt.
+- `failed`, `stopped`, `lost`: read `{remote} logs {n} --tail 80` and the `reason`.
+  A transient cause is a Continue; work the instance cannot do is finished here after the pull.
+
+End with one message: the instance and how its run ended, the pull request URL with draft or ready state and its checks, the commits brought home, the review verdict and the `review_N.md` path, plan conflicts if any, and the open calls in the order the reviewer should read them.
 Recommend the next step; never launch another skill.

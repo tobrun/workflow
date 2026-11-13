@@ -1,24 +1,23 @@
 #!/usr/bin/env python3
 """Stand-in for headless Claude Code in the remote.py tests.
 
-Reads the phase from the `-p` prompt (/dev:build, /dev:ship, ...) and does a
-phase's visible work in the current checkout: commits, plan files, a report,
-and the session's transcript where Claude Code keeps it (a resume without that
-transcript fails, as the real one does). Writes stream-json to stdout like `--output-format stream-json`. FAKE_CLAUDE_MODE:
+Does a yolo run's visible work in the current checkout: a plan directory when
+the prompt carries a task and none exists, a build commit, a ship commit with
+review and pr.md, the push, and the pull request (through the fake gh). Each
+step happens once, so a resumed session picks up where the last one stopped.
+It keeps the session's transcript where Claude Code keeps it (a resume without
+that transcript fails, as the real one does) and writes stream-json to stdout
+like `--output-format stream-json`. FAKE_CLAUDE_MODE:
 
-  ok               every phase succeeds (default)
-  fail-build-once  the first build session ends in an error result
-  api-error-once   the first build session ends in a gateway 500 (subtype success, is_error)
-  sleep            build waits 60 s before working (for stop)
-  dirty-sleep      build writes an uncommitted file, then waits 60 s
-  dirty            build leaves an uncommitted file behind
-  edit-spec        build also rewrites spec.md
-  skip-evidence    build never writes test-evidence.json (its gate keeps failing)
-  skip-evidence-once  the first build session skips the evidence; a resumed one writes it
-  crash-ship-again  a ship session in a checkout that already shipped dies without a result
-
-Under a contract that authorizes publication, ship pushes the branch to
-origin and opens the PR with `gh pr create` (the fake gh records it).
+  ok              the first session finishes everything (default)
+  early-once      the first session builds, then ends content before ship and the PR
+  dirty-once      the first session leaves its ship change uncommitted
+  api-error-once  the first session ends in a gateway 500 (subtype success, is_error)
+  crash-once      the first session dies without a result
+  never           no session ever opens the pull request
+  blocked         the session writes blocked.md, as the contract says for a hard stop
+  no-push         the push is rejected, so the session blocks after committing
+  sleep           waits 60 s before working (for stop)
 """
 
 import json
@@ -44,8 +43,8 @@ def emit(event: dict) -> None:
     print(json.dumps(event), flush=True)
 
 
-def git(*args: str) -> None:
-    subprocess.run(["git", *args], check=True, capture_output=True)
+def git(*args: str) -> str:
+    return subprocess.run(["git", *args], check=True, capture_output=True, text=True).stdout.strip()
 
 
 def transcript_path(session: str) -> Path:
@@ -53,28 +52,11 @@ def transcript_path(session: str) -> Path:
     return HOME / ".claude" / "projects" / re.sub(r"[^A-Za-z0-9]", "-", os.getcwd()) / f"{session}.jsonl"
 
 
-def record_transcript(phase: str, session: str) -> None:
-    transcript = transcript_path(session)
-    transcript.parent.mkdir(parents=True, exist_ok=True)
-    with transcript.open("a") as handle:
-        handle.write(json.dumps({"type": "user", "message": f"ran {phase}", "cwd": os.getcwd()}) + "\n")
-    subagent = transcript.with_suffix("") / "subagents" / "agent-1.jsonl"
-    subagent.parent.mkdir(parents=True, exist_ok=True)
-    subagent.write_text(json.dumps({"type": "user", "message": f"{phase} subagent"}) + "\n")
-
-
-def evidence(plugin: Path, plan: str) -> None:
-    """What build's steps 5 and 6 leave: a receipted runner result mapped to each spec scenario."""
-    report = VM / "unit.xml"
-    junit = ("import sys; open(sys.argv[1], 'w').write('<testsuite name=\"t\" tests=\"1\">"
-             "<testcase classname=\"tests.test_feature\" name=\"test_greeting\"/></testsuite>')")
-    subprocess.run([sys.executable, str(plugin / "skills" / "build" / "scripts" / "check-tests.py"), "capture",
-                    "--layer", "unit", "--report", str(report), "--receipt", f".dev/{plan}/unit-run.json",
-                    "--source", "feature.txt", "--", sys.executable, "-c", junit, str(report)],
-                   check=True, capture_output=True)
-    Path(f".dev/{plan}/test-evidence.json").write_text(json.dumps({"schema": "dev.test-evidence/1", "scenarios": [
-        {"id": "CS1-S1", "scenario": "[unit] the greeting is printed", "receipt": "unit-run.json",
-         "source": "feature.txt", "case": "tests.test_feature::test_greeting"}]}))
+def commit(name: str, line: str, message: str) -> None:
+    with open(name, "a") as handle:
+        handle.write(line + "\n")
+    git("add", name)
+    git("commit", "-q", "-m", message)
 
 
 def main() -> int:
@@ -83,72 +65,72 @@ def main() -> int:
     session = resume or opt("--session-id") or str(uuid.uuid4())
     plugin = Path(opt("--plugin-dir") or "")
     contract = Path(opt("--append-system-prompt-file") or "").read_text()
-    calls = VM / "claude-calls.jsonl"
-    with calls.open("a") as handle:
+    with (VM / "claude-calls.jsonl").open("a") as handle:
         handle.write(json.dumps({"prompt": prompt, "session": session, "resume": resume, "cwd": os.getcwd(),
-                                 "argv": sys.argv[1:],
+                                 "argv": sys.argv[1:], "branch": git("branch", "--show-current"),
                                  "bg_wait_ms": os.environ.get("CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS")}) + "\n")
-    assert (plugin / "skills" / "build" / "SKILL.md").exists(), "plugin copy is missing build"
-    assert "{plugin}" not in contract and "{plan}" not in contract, "contract placeholders left unrendered"
+    assert (plugin / "skills" / "yolo" / "SKILL.md").exists(), "plugin copy is missing yolo"
+    assert not re.search(r"\{(plugin|run|branch|default)\}", contract), "contract placeholders left unrendered"
     if resume and not transcript_path(resume).exists():  # as Claude Code does without the transcript
         print(f"No conversation found with session ID: {resume}", file=sys.stderr)
         return 1
     emit({"type": "system", "subtype": "init", "session_id": session, "model": "fake"})
-    phase = prompt.split()[0].removeprefix("/dev:") if prompt.startswith("/dev:") else None
-    if phase is None and resume:
-        phase = next(w for w in ("build", "ship") if f"/dev:{w}" in prompt)
-    plan = next(p for p in Path(".dev").iterdir() if p.is_dir()).name
-    record_transcript(phase, session)  # Claude Code writes the transcript from the first turn on
-    marker = VM / "failed-once"
-    if phase == "build" and MODE == "fail-build-once" and not marker.exists():
-        marker.write_text("1")
-        emit({"type": "result", "subtype": "error_during_execution", "is_error": True, "num_turns": 1})
-        return 1
-    if phase == "build" and MODE == "api-error-once" and not marker.exists():
-        marker.write_text("1")
+    transcript = transcript_path(session)
+    transcript.parent.mkdir(parents=True, exist_ok=True)
+    with transcript.open("a") as handle:  # Claude Code writes the transcript from the first turn on
+        handle.write(json.dumps({"type": "user", "message": prompt, "cwd": os.getcwd()}) + "\n")
+    first = not (VM / "first-session-done").exists()
+    (VM / "first-session-done").write_text("1")
+    if first and MODE == "api-error-once":
         emit({"type": "assistant", "message": {"content": [
             {"type": "text", "text": "API Error: 500 litellm.InternalServerError: Connection error."}]}})
         emit({"type": "result", "subtype": "success", "is_error": True, "num_turns": 1})
         return 1
-    if phase == "build" and MODE in ("sleep", "dirty-sleep"):
-        if MODE == "dirty-sleep":
-            Path("in-flight.txt").write_text("not committed yet\n")
+    if first and MODE == "crash-once":
+        raise SystemExit("fake claude: crashed")
+    if MODE == "sleep":
         time.sleep(60)
     emit({"type": "assistant", "message": {"content": [
-        {"type": "text", "text": f"Working on {phase} for {plan}"},
+        {"type": "text", "text": "Working on the run"},
         {"type": "tool_use", "name": "Bash", "input": {"command": "git status", "description": "Show status"}}]}})
-    if phase == "build":
-        with open("feature.txt", "a") as handle:
-            handle.write("built\n")
-        git("add", "feature.txt")
-        git("commit", "-q", "-m", "feat: build the feature")
-        Path(f".dev/{plan}/implementation-notes.md").write_text("## Change set 1\n\nDone.\n")
-        skip = MODE == "skip-evidence" or (MODE == "skip-evidence-once" and not resume)
-        if not skip:
-            evidence(plugin, plan)
-        if MODE == "edit-spec":
-            Path(f".dev/{plan}/spec.md").write_text("remote rewrite\n")
-        if MODE == "dirty":
-            Path("stray.txt").write_text("left behind\n")
-    elif phase in ("ship", "ship-quick"):
-        if MODE == "crash-ship-again" and Path("ship.txt").exists():
-            raise SystemExit("fake claude: crashed")
-        with open("ship.txt", "a") as handle:  # appended, so every ship session has a change to commit
-            handle.write("hardened\n")
-        git("add", "ship.txt")
-        git("commit", "-q", "-m", "fix: harden after review")
-        Path(f".dev/{plan}/review_1.md").write_text("# Review\n\nVerdict: PASS\n")
-        Path(f".dev/{plan}/pr.md").write_text("## Summary\n\nDemo.\n\n## Open calls\n\nnone\n")
-        if "Publication is authorized" in contract:  # ship's pull-request phase, as the contract allows
-            branch = subprocess.run(["git", "branch", "--show-current"], check=True, capture_output=True,
-                                    text=True).stdout.strip()
-            git("push", "-q", "-u", "origin", branch)
-            # As the real agent does: no --head, so gh has to find the branch's remote itself.
-            subprocess.run(["gh", "pr", "create", "--base", "main", "--title", "Greeting",
-                            "--body-file", f".dev/{plan}/pr.md"], check=True, capture_output=True)
-        reports = Path(os.environ["DEV_REMOTE_TMP"]) / Path.cwd().name / "reports"
-        reports.mkdir(parents=True, exist_ok=True)
-        (reports / f"{plan}-e2e.json").write_text("{}\n")
+    blocked = Path(re.search(r"`(\S+/blocked\.md)`", contract).group(1))
+    if MODE == "blocked":
+        blocked.write_text("The gauntlet found a committed secret in config/prod.env.\n")
+        emit({"type": "result", "subtype": "success", "is_error": False, "num_turns": 2, "duration_ms": 900})
+        return 0
+    plans = [p for p in Path(".dev").iterdir() if p.is_dir()] if Path(".dev").is_dir() else []
+    if not plans:  # a task, not a plan: yolo's scope stage writes the plan
+        plans = [Path(".dev/from-task")]
+        plans[0].mkdir(parents=True)
+        (plans[0] / "spec.md").write_text(f"# From the task\n\n{prompt}\n")
+    plan = plans[0]
+    log = git("log", "--format=%s")
+    if "feat: build the feature" not in log:
+        commit("feature.txt", "built", "feat: build the feature")
+        (plan / "implementation-notes.md").write_text("## Change set 1\n\nDone.\n")
+    if not (first and MODE == "early-once"):
+        if Path("ship.txt").exists() and git("status", "--porcelain"):
+            git("add", "ship.txt")
+            git("commit", "-q", "-m", "fix: harden after review")
+        elif "fix: harden after review" not in log:
+            if first and MODE == "dirty-once":
+                Path("ship.txt").write_text("hardened\n")
+            else:
+                commit("ship.txt", "hardened", "fix: harden after review")
+        if "The operator adds" in prompt and resume:
+            commit("extra.txt", prompt.split("The operator adds:")[1].strip(), "feat: the operator's addition")
+        (plan / "review_1.md").write_text("# Review\n\nVerdict: PASS\n")
+        (plan / "pr.md").write_text("## Summary\n\nDemo.\n\n## Open calls\n\nnone\n")
+        if not git("status", "--porcelain") and MODE != "never":
+            branch = git("branch", "--show-current")
+            if MODE == "no-push":
+                blocked.write_text("git push was rejected: the instance has no write access to origin.\n")
+            else:
+                git("push", "-q", "-u", "origin", branch)
+                if not (VM / "pr.json").exists():
+                    # As the real agent does: no --head, so gh has to find the branch's remote itself.
+                    subprocess.run(["gh", "pr", "create", "--base", "main", "--title", "Greeting",
+                                    "--body-file", str(plan / "pr.md")], check=True, capture_output=True)
     for count in range(400):  # the real stream is mostly these progress ticks
         emit({"type": "system", "subtype": "thinking_tokens", "session_id": session, "tokens": count})
     emit({"type": "result", "subtype": "success", "is_error": False, "num_turns": 3, "duration_ms": 1200})

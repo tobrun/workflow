@@ -1,11 +1,11 @@
 """Tests for the remote skill's transport: remote.py on this side, runner.sh in the sandbox.
 
 Run from the repo root: python3 -m unittest discover -s dev/evals/tests -t .
-Each test builds a laptop checkout, a bare origin, an empty sources root, and
-two fake workspaces, then drives remote.py as a subprocess with the `local`
-transport. The fakes in remote_fakes/ stand in for incus, fleet, systemctl,
-and claude with the real commands' git semantics, so a test proves the whole
-dispatch -> run -> collect cycle on real git, without a fleet host or a model.
+Each test builds a laptop checkout, a bare origin, and two fake instances,
+then drives remote.py as a subprocess with the `local` transport. The fakes
+in remote_fakes/ stand in for incus, fleet, systemctl, gh, and claude with
+the real commands' semantics, so a test proves the whole start -> run ->
+pull cycle on real git, without a fleet host or a model.
 """
 
 from __future__ import annotations
@@ -86,29 +86,30 @@ class RemoteCycleTest(unittest.TestCase):
         t = Path(self.tmp.name).resolve()
         self.t = t
         self.repo = t / "laptop" / "fixture"
-        self.sources = t / "sources"
         self.vms = t / "vms"
-        for path in (self.repo, self.sources, self.vms / "ws-ws1" / "home", self.vms / "ws-ws2" / "home",
-                     t / "home"):
+        for path in (self.repo, self.vms / "ws-ws1" / "home", self.vms / "ws-ws2" / "home", t / "home"):
             path.mkdir(parents=True)
-        (t / "remote.toml").write_text(
-            f'transport = "local"\nsources_root = "{self.sources}"\nworkspaces = ["ws1", "ws2"]\n')
+        self.config = t / "remote.toml"
+        self.config.write_text('transport = "local"\nbackoff_seconds = 0\nattempts = 3\n')
         self.env = {**os.environ, **IDENTITY,
                     "HOME": str(t / "home"), "GIT_CONFIG_NOSYSTEM": "1",
                     "PATH": os.pathsep.join([str(FAKES), str(Path(sys.executable).parent), "/usr/bin", "/bin"]),
-                    "DEV_REMOTE_CONFIG": str(t / "remote.toml"), "DEV_REMOTE_HOME": str(t / "state"),
-                    "DEV_REMOTE_TMP": str(t / "laptop-tmp"),
-                    "FAKE_FLEET_ROOT": str(self.vms), "FAKE_SOURCES_ROOT": str(self.sources)}
+                    "DEV_REMOTE_CONFIG": str(self.config), "FAKE_FLEET_ROOT": str(self.vms)}
         self.env.pop("FAKE_CLAUDE_MODE", None)
-        origin = t / "origin.git"
-        self.git(t, "init", "-q", "--bare", "-b", "main", str(origin))
+        self.origin = t / "origin.git"
+        self.git(t, "init", "-q", "--bare", "-b", "main", str(self.origin))
         self.git(self.repo, "init", "-q", "-b", "main")
         (self.repo / ".gitignore").write_text("/.dev/*\n!/.dev/config.yaml\n")
         (self.repo / "README.md").write_text("# fixture\n")
         self.git(self.repo, "add", ".")
         self.git(self.repo, "commit", "-q", "-m", "initial")
-        self.git(self.repo, "remote", "add", "origin", str(origin))
+        self.git(self.repo, "remote", "add", "origin", str(self.origin))
         self.git(self.repo, "push", "-q", "-u", "origin", "main")
+        # As on the fleet: origin is a github.com URL that the instance's git config rewrites to a relay.
+        relay = t / "relay.gitconfig"
+        relay.write_text(f'[url "{self.origin}"]\n\tinsteadOf = https://github.com/test/fixture.git\n')
+        self.env.update(FAKE_GH="signed-in", FAKE_GITCONFIG=str(relay))
+        self.git(self.repo, "remote", "set-url", "origin", "https://github.com/test/fixture.git")
         self.base = self.git(self.repo, "rev-parse", "HEAD")
         plan = self.repo / ".dev" / "greeting"
         plan.mkdir(parents=True)
@@ -151,14 +152,24 @@ class RemoteCycleTest(unittest.TestCase):
             self.fail(f"remote.py {' '.join(args)} exited {result.returncode}:\n{result.stderr}{result.stdout}")
         return result
 
-    def dispatch(self, *extra: str, mode: str | None = None) -> dict:
-        return json.loads(self.remote("dispatch", "--plan", "greeting", *extra, mode=mode).stdout)
+    def start(self, n: str = "1", *extra: str, mode: str | None = None) -> dict:
+        what = extra if extra else ("--plan", "greeting")
+        return json.loads(self.remote("start", n, *what, mode=mode).stdout)
 
-    def wait(self, run: str) -> int:
-        return self.remote("wait", run, "--interval", "0.1", check=False).returncode
+    def wait(self, n: str = "1") -> int:
+        return self.remote("wait", n, "--interval", "0.1", check=False).returncode
 
-    def status(self, run: str) -> dict:
-        return json.loads(self.remote("status", run, "--json").stdout)[0]
+    def status(self, n: str = "1") -> dict:
+        return json.loads(self.remote("status", n, "--json").stdout)[0]
+
+    def pull(self, n: str = "1") -> dict:
+        return json.loads(self.remote("pull", n).stdout)
+
+    def run_dir(self, ws: str = "ws1") -> Path:
+        return self.vms / f"ws-{ws}" / "home" / ".dev-workflow" / "run"
+
+    def origin_branches(self) -> list[str]:
+        return self.git(self.origin, "for-each-ref", "--format=%(refname:short)", "refs/heads").split()
 
     def terminals(self, ws: str = "ws1") -> list[dict]:
         path = self.vms / f"ws-{ws}" / "terminal-calls.jsonl"
@@ -182,542 +193,359 @@ class RemoteCycleTest(unittest.TestCase):
         path = self.vms / f"ws-{ws}" / "claude-calls.jsonl"
         return [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
 
-    # --- the cycle -----------------------------------------------------------
+    # --- a run finishes by itself ----------------------------------------------
 
-    def test_full_cycle_brings_commits_plan_reports_and_sessions_home(self) -> None:
-        out = self.dispatch()
-        run = out["run"]
-        self.assertEqual(out["branch"], "dev/greeting")
-        self.assertEqual(out["base"], self.base)
-        self.assertEqual(self.wait(run), 0)
-        self.assertEqual(self.status(run)["state"], "done")
-        prompts = [c["prompt"] for c in self.calls(out["workspace"])]
-        self.assertEqual(prompts, ["/dev:build greeting", "/dev:ship plan .dev/greeting"])
-        argv = self.calls(out["workspace"])[0]["argv"]
+    def test_a_plan_runs_to_its_pull_request_and_comes_home(self) -> None:
+        out = self.start()
+        self.assertEqual((out["instance"], out["workspace"], out["branch"], out["base"]),
+                         ("1", "ws1", "dev/greeting", self.base))
+        self.assertTrue(out["run"].startswith("greeting-"))
+        self.assertEqual(self.wait(), 0)
+        live = self.status()
+        self.assertEqual((live["state"], live["attempt"], live["pr"]["url"], live["pr"]["draft"]),
+                         ("done", "1", "https://example.test/pr/7", "false"))
+        [call] = self.calls()
+        self.assertTrue(call["prompt"].startswith("/dev:yolo Build and ship the plan in `.dev/greeting/`."))
+        self.assertEqual(call["branch"], "dev/greeting")
+        argv = call["argv"]
         for flag in ("--permission-mode", "bypassPermissions", "--disallowed-tools", "AskUserQuestion",
                      "--output-format", "stream-json"):
             self.assertIn(flag, argv)
         settings = json.loads(Path(argv[argv.index("--settings") + 1]).read_text())
-        self.assertEqual(settings["attribution"], {"commit": "", "pr": ""}, "no Co-Authored-By in sandbox commits")
-        self.assertEqual({c["bg_wait_ms"] for c in self.calls(out["workspace"])}, {"6000000"},
-                         "every phase waits ten times Claude Code's 600 s default for its background agents")
+        self.assertEqual(settings["attribution"], {"commit": "", "pr": ""}, "no Co-Authored-By in its commits")
+        self.assertEqual(call["bg_wait_ms"], "6000000",
+                         "a session waits ten times Claude Code's 600 s default for its background agents")
+        self.assertEqual(self.origin_branches(), ["dev/greeting", "main"], "the instance published the branch")
 
-        summary = json.loads(self.remote("collect", run).stdout)
-        self.assertEqual(summary["branch_update"], "created")
-        self.assertEqual(len(summary["commits"]), 2)
+        summary = self.pull()
+        self.assertEqual((summary["state"], summary["branch"], summary["branch_update"]),
+                         ("done", "dev/greeting", "created"))
         self.assertEqual(self.git(self.repo, "rev-parse", "--abbrev-ref", "HEAD"), "main", "checkout untouched")
         log = self.git(self.repo, "log", "--format=%s", "main..dev/greeting")
         self.assertEqual(log.splitlines(), ["fix: harden after review", "feat: build the feature"])
+        self.assertEqual(len(summary["commits"]), 2)
         plan = self.repo / ".dev" / "greeting"
         self.assertTrue((plan / "implementation-notes.md").exists())
-        self.assertEqual(summary["verdict"], "PASS")
-        self.assertEqual(summary["open_calls"], [])
-        self.assertIn("review_1.md", summary["plan"]["updated"])
-        self.assertEqual(summary["plan"]["conflicts"], [])
-        report = self.t / "laptop-tmp" / "fixture" / "reports" / "greeting-e2e.json"
-        self.assertTrue(report.exists())
+        self.assertEqual(sorted(summary["plan"]["updated"]),
+                         ["greeting/implementation-notes.md", "greeting/pr.md", "greeting/review_1.md"])
+        self.assertEqual((summary["verdict"], summary["open_calls"], summary["blocked"]), ("PASS", [], None))
+        self.assertEqual(self.pull()["plan"], {"updated": [], "conflicts": []}, "a second pull changes nothing")
 
-        worktree = Path(summary["worktree"])
-        self.assertEqual(worktree.name, "fixture", "worktree keeps the repo name for /tmp/{project-slug}")
-        self.assertEqual(self.git(worktree, "rev-parse", "--abbrev-ref", "HEAD"), "dev/greeting")
-        self.assertEqual((worktree / ".dev" / "greeting").resolve(), plan.resolve())
+    def test_a_task_runs_as_yolo_from_scratch(self) -> None:
+        out = self.start("2", "--task", "Add a greeting")
+        self.assertEqual((out["instance"], out["workspace"], out["branch"]), ("2", "ws2", "dev/add-a-greeting"))
+        self.assertEqual(self.wait("2"), 0)
+        self.assertEqual([c["prompt"] for c in self.calls("ws2")], ["/dev:yolo Add a greeting"])
+        summary = self.pull("2")
+        self.assertEqual(summary["plans"], ["from-task"])
+        self.assertIn("Add a greeting", (self.repo / ".dev" / "from-task" / "spec.md").read_text())
+        self.assertEqual(self.calls("ws1"), [], "the instance is the one the user named")
 
-        artifacts = self.t / "state" / "runs" / run
-        sessions = [c["session"] for c in self.calls(out["workspace"])]
-        self.assertEqual(summary["sessions"], sorted(sessions), "every phase session's transcript comes home")
-        for sid in sessions:
-            self.assertTrue((artifacts / "sessions" / f"{sid}.jsonl").exists())
-            self.assertTrue((artifacts / "sessions" / sid / "subagents" / "agent-1.jsonl").exists(),
-                            "with its subagents, so a later round can continue it anywhere")
-        self.assertTrue((self.t / "state" / "runs" / run / "logs" / "build.jsonl").exists())
+    def test_a_plan_takes_an_extra_instruction(self) -> None:
+        self.start("1", "--plan", "greeting", "--task", "Only change set 1.")
+        self.wait()
+        self.assertTrue(self.calls()[0]["prompt"].endswith("The operator adds:\n\nOnly change set 1."))
 
-        lock = self.vms / f"ws-{out['workspace']}" / "home" / ".dev-workflow" / "lock"
-        self.assertFalse(lock.exists(), "collect releases the workspace")
-        self.assertIn("already", self.remote("collect", run, check=False).stderr)
+    def finishes_in_a_second_session(self, mode: str, why: str) -> None:
+        self.start(mode=mode)
+        self.assertEqual(self.wait(), 0)
+        first, second = self.calls()
+        self.assertEqual(second["resume"], first["session"], "the same session goes back to work")
+        self.assertIn("This run is not finished: " + why, second["prompt"])
+        live = self.status()
+        self.assertEqual((live["state"], live["attempt"], live["pr"]["number"]), ("done", "2", "7"))
 
-    # --- publication -----------------------------------------------------------
+    def test_a_session_that_stops_before_the_pull_request_is_sent_back(self) -> None:
+        self.finishes_in_a_second_session("early-once", "there is no pull request for dev/greeting")
 
-    def contract(self, out: dict) -> str:
-        return (self.vms / f"ws-{out['workspace']}" / "home" / ".dev-workflow" / "runs" / out["run"]
-                / "contract.md").read_text()
+    def test_a_session_that_leaves_uncommitted_work_is_sent_back(self) -> None:
+        self.finishes_in_a_second_session("dirty-once", "the working tree has uncommitted changes:\n?? ship.txt")
 
-    def origin_branches(self) -> list[str]:
-        return self.git(self.t / "origin.git", "for-each-ref", "--format=%(refname:short)", "refs/heads").split()
+    def test_a_gateway_error_is_retried_in_the_same_session(self) -> None:
+        self.finishes_in_a_second_session("api-error-once", "the last session ended early (api-error); ")
 
-    def test_sandbox_publishes_when_its_credentials_can_push(self) -> None:
-        # As on the fleet: origin is a github.com URL that the workspace's git config rewrites to a relay.
-        relay = self.t / "relay.gitconfig"
-        relay.write_text(f'[url "{self.t / "origin.git"}"]\n\tinsteadOf = https://github.com/test/fixture.git\n')
-        self.env.update(FAKE_GH="signed-in", FAKE_GITCONFIG=str(relay))
-        self.git(self.repo, "remote", "set-url", "origin", "https://github.com/test/fixture.git")
-        out = self.dispatch()
-        self.assertEqual(out["publish"], {"mode": "sandbox"})
-        contract = self.contract(out)
-        self.assertIn("Publication is authorized", contract)
-        self.assertNotIn("Publication is withheld", contract)
-        self.assertNotIn("<!-- publish", contract)
-        self.assertNotIn("{branch}", contract)
-        self.assertEqual(self.origin_branches(), ["main"], "the probe pushes nothing")
-        self.assertEqual(self.wait(out["run"]), 0)
-        self.assertIn("dev/greeting", self.origin_branches())
-        summary = json.loads(self.remote("collect", out["run"]).stdout)
-        self.assertEqual(summary["publish"], {"mode": "sandbox"})
-        self.assertEqual(summary["pr"], {"url": "https://example.test/pr/7", "number": "7", "state": "OPEN",
-                                         "draft": "false"})
-        self.assertEqual(self.git(self.repo, "rev-parse", "dev/greeting"),
-                         self.git(self.t / "origin.git", "rev-parse", "dev/greeting"),
-                         "the laptop branch matches what the sandbox published")
+    def test_a_crashed_session_is_retried(self) -> None:
+        self.finishes_in_a_second_session("crash-once", "the last session ended early (no-result); ")
 
-    def test_auto_withholds_publication_when_gh_is_signed_out(self) -> None:
-        out = self.dispatch()
-        self.assertEqual(out["publish"], {"mode": "laptop", "reason": "gh is not signed in"})
-        self.assertIn("Publication is withheld", self.contract(out))
-        self.assertNotIn("Publication is authorized", self.contract(out))
-        self.assertEqual(self.wait(out["run"]), 0)
+    def test_attempts_run_out_as_failed_and_continue_picks_the_run_up(self) -> None:
+        self.start(mode="never")
+        self.assertEqual(self.wait(), 1)
+        live = self.status()
+        self.assertEqual(live["state"], "failed")
+        self.assertIn("still unfinished after 3 sessions: there is no pull request", live["reason"])
+        self.assertEqual(len(self.calls()), 3)
+        out = json.loads(self.remote("continue", "1").stdout)
+        self.assertEqual((out["was"], out["session"]), ("failed", self.calls()[0]["session"]))
+        self.assertEqual(self.wait(), 0)
+        self.assertEqual(self.calls()[-1]["resume"], self.calls()[0]["session"])
+        self.assertEqual(self.status()["state"], "done")
+
+    # --- blocked, and what continue does ---------------------------------------
+
+    def test_a_hard_stop_ends_blocked_and_continue_goes_on_with_an_instruction(self) -> None:
+        self.start(mode="blocked")
+        self.assertEqual(self.wait(), 1)
+        live = self.status()
+        self.assertEqual(live["state"], "blocked")
+        self.assertIn("committed secret", live["reason"])
+        self.assertEqual(len(self.calls()), 1, "a blocked run is not sent back to work")
+        self.assertIn("committed secret", self.pull()["blocked"])
+        self.remote("continue", "1", "--prompt", "The secret is rotated; go on.")
+        self.assertEqual(self.wait(), 0)
+        last = self.calls()[-1]
+        self.assertEqual(last["resume"], self.calls()[0]["session"])
+        self.assertIn("The operator adds:\n\nThe secret is rotated; go on.", last["prompt"])
+        self.assertFalse((self.run_dir() / "blocked.md").exists())
+        self.assertEqual(len(list(self.run_dir().glob("blocked-*.md"))), 1, "the earlier stop stays on record")
+        summary = self.pull()
+        self.assertEqual((summary["state"], summary["blocked"]), ("done", None))
+        self.assertIn("feat: the operator's addition", " ".join(summary["commits"]))
+
+    def test_a_rejected_push_blocks_and_the_commits_still_come_home(self) -> None:
+        self.start(mode="no-push")
+        self.assertEqual(self.wait(), 1)
         self.assertEqual(self.origin_branches(), ["main"])
-        summary = json.loads(self.remote("collect", out["run"]).stdout)
-        self.assertIsNone(summary["pr"])
+        summary = self.pull()
+        self.assertEqual((summary["state"], summary["branch_update"], len(summary["commits"])),
+                         ("blocked", "created", 2))
+        self.assertIn("no write access", summary["blocked"])
+        self.assertTrue((self.repo / ".dev" / "greeting" / "pr.md").exists())
 
-    def test_auto_withholds_publication_when_origin_rejects_the_push(self) -> None:
-        self.env["FAKE_GH"] = "signed-in"
-        self.git(self.repo, "remote", "set-url", "origin", str(self.t / "missing.git"))
-        out = self.dispatch("--phases", "build,ship")
-        self.assertEqual(out["publish"]["mode"], "laptop")
-        self.assertTrue(out["publish"]["reason"].startswith("git push to origin failed"), out["publish"])
+    def test_continue_gives_a_finished_run_more_work(self) -> None:
+        self.start()
+        self.assertEqual(self.wait(), 0)
+        self.assertEqual(self.pull()["branch_update"], "created")
+        self.remote("continue", "1", "--prompt", "Also greet in French.")
+        self.assertEqual(self.wait(), 0)
+        self.assertEqual(self.calls()[-1]["resume"], self.calls()[0]["session"])
+        summary = self.pull()
+        self.assertEqual((summary["branch_update"], len(summary["commits"])), ("fast-forwarded", 3))
+        self.assertEqual(self.git(self.origin, "rev-parse", "dev/greeting"),
+                         self.git(self.repo, "rev-parse", "dev/greeting"), "the pull request has the new commit")
 
-    def test_requested_sandbox_publication_refuses_without_credentials(self) -> None:
-        result = self.remote("dispatch", "--plan", "greeting", "--publish", "sandbox", check=False)
+    def test_continue_starts_a_new_session_when_the_transcript_is_gone(self) -> None:
+        self.start(mode="never")
+        self.assertEqual(self.wait(), 1)
+        shutil.rmtree(self.vms / "ws-ws1" / "home" / ".claude")
+        self.remote("continue", "1")
+        self.assertEqual(self.wait(), 0)
+        last = self.calls()[-1]
+        self.assertIsNone(last["resume"])
+        self.assertTrue(last["prompt"].startswith("/dev:yolo Build and ship the plan"))
+        self.assertIn("This run is not finished: there is no pull request", last["prompt"])
+
+    def test_continue_refuses_an_idle_and_a_running_instance(self) -> None:
+        result = self.remote("continue", "2", check=False)
         self.assertEqual(result.returncode, 1)
-        self.assertIn("the workspace cannot publish: gh is not signed in", result.stderr)
-        self.assertEqual(list(self.vms.glob("ws-*/home/.dev-workflow/lock")), [], "the refusal frees the workspace")
+        self.assertIn("instance 2 has no run", result.stderr)
+        self.start(mode="sleep")
+        self.running()
+        result = self.remote("continue", "1", check=False)
+        self.assertIn("still running", result.stderr)
 
-    def test_requested_laptop_publication_and_build_only_runs_skip_the_probe(self) -> None:
-        self.env["FAKE_GH"] = "signed-in"
-        self.assertEqual(self.dispatch("--publish", "laptop")["publish"], {"mode": "laptop", "reason": "requested"})
-        self.assertEqual(self.dispatch("--phases", "build", "--branch", "dev/other")["publish"],
-                         {"mode": "laptop", "reason": "no ship phase"})
+    # --- the instance is the user's choice -------------------------------------
+
+    def running(self, n: str = "1") -> dict:
+        for _ in range(100):
+            live = self.status(n)
+            if live["state"] == "running" and self.calls(f"ws{n}"):
+                return live
+            time.sleep(0.1)
+        self.fail(f"instance {n} never ran: {live}")
+
+    def test_a_busy_instance_refuses_and_stop_frees_it(self) -> None:
+        first = self.start(mode="sleep")["run"]
+        self.running()
+        result = self.remote("start", "1", "--plan", "greeting", check=False)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn(f"instance 1 is running {first} (fixture, dev/greeting)", result.stderr)
+        self.assertIn("`stop 1` first", result.stderr)
+        stopped = json.loads(self.remote("stop", "1").stdout)
+        self.assertEqual((stopped["state"], stopped["reason"]), ("stopped", "stopped"))
+        second = self.start()["run"]
+        self.assertEqual(self.wait(), 0)
+        history = self.vms / "ws-ws1" / "home" / ".dev-workflow" / "history"
+        self.assertEqual([p.name for p in history.iterdir()], [first], "the run before stays on the instance")
+        self.assertEqual(self.status()["id"], second)
+
+    def test_lost_when_the_runner_dies_without_recording_an_end(self) -> None:
+        self.start(mode="sleep")
+        self.running()
+        pid = int((self.vms / "ws-ws1" / "units" / "dev-remote.pid").read_text())
+        os.kill(pid, 9)
+        for _ in range(50):
+            if self.status()["state"] == "lost":
+                break
+            time.sleep(0.1)
+        self.assertEqual(self.status()["state"], "lost")
+        self.assertEqual(self.wait(), 1)
+
+    def test_instances_are_numbered_by_the_configuration_or_named(self) -> None:
+        self.config.write_text(self.config.read_text() + 'instances = ["ws2", "ws1"]\n')
+        out = self.start("1")
+        self.assertEqual((out["instance"], out["workspace"]), ("1", "ws2"))
+        self.assertEqual(self.wait("ws2"), 0)
+        rows = json.loads(self.remote("status", "--json").stdout)
+        self.assertEqual([(r["instance"], r["workspace"], r["state"]) for r in rows],
+                         [("1", "ws2", "done"), ("2", "ws1", "idle")])
+        table = self.remote("status").stdout
+        self.assertIn("https://example.test/pr/7", table)
+        result = self.remote("start", "3", "--plan", "greeting", check=False)
+        self.assertIn("no instance 3 (instances: 1 to 2)", result.stderr)
+
+    def test_start_says_what_it_will_not_run(self) -> None:
+        for args, why in ((("--plan", "missing"), "no scoped plan at .dev/missing/spec.md"),
+                          ((), "nothing to run")):
+            result = self.remote("start", "1", *args, check=False)
+            self.assertEqual(result.returncode, 1)
+            self.assertIn(why, result.stderr)
+        result = self.remote("start", "9", "--plan", "greeting", check=False)
+        self.assertIn("no instance ws-ws9 on the host (have: ws1, ws2)", result.stderr)
+        self.assertEqual(self.calls(), [])
+
+    # --- what crosses ----------------------------------------------------------
+
+    def test_only_committed_work_is_sent_and_the_rest_is_named(self) -> None:
+        (self.repo / "README.md").write_text("# edited\n")
+        (self.repo / "notes.txt").write_text("scratch\n")
+        out = self.start()
+        self.assertEqual(out["not_sent"], [" M README.md", "?? notes.txt"])
+        self.assertEqual(self.wait(), 0)
+        work = self.vms / "ws-ws1" / "home" / "work" / "fixture"
+        self.assertEqual((work / "README.md").read_text(), "# fixture\n")
+        self.assertFalse((work / "notes.txt").exists())
+
+    def test_the_current_work_branch_is_used_and_fast_forwarded_in_place(self) -> None:
+        self.git(self.repo, "switch", "-q", "-c", "feature")
+        (self.repo / "local.txt").write_text("committed here\n")
+        self.git(self.repo, "add", "local.txt")
+        self.git(self.repo, "commit", "-q", "-m", "feat: local work")
+        out = self.start()
+        self.assertEqual((out["branch"], out["base"]), ("feature", self.base))
+        self.assertEqual(self.wait(), 0)
+        self.assertEqual(self.calls()[0]["branch"], "feature")
+        summary = self.pull()
+        self.assertEqual((summary["branch_update"], len(summary["commits"])), ("fast-forwarded", 3))
+        self.assertTrue((self.repo / "ship.txt").exists(), "the checked-out branch moved with its files")
+        (self.repo / "local.txt").write_text("edited after\n")
+        self.remote("continue", "1", "--prompt", "One more.")
+        self.assertEqual(self.wait(), 0)
+        self.assertIn("not updated", self.pull()["branch_update"])
+        self.assertEqual(self.git(self.repo, "log", "--format=%s", "-1", "refs/dev-remote/ws1"),
+                         "feat: the operator's addition")
+
+    def test_work_an_earlier_run_left_on_the_instance_is_the_starting_point(self) -> None:
+        self.start(mode="no-push")
+        self.assertEqual(self.wait(), 1)
+        self.start()
+        self.assertEqual(self.wait(), 0)
+        summary = self.pull()
+        self.assertEqual(len(summary["commits"]), 2, "the second run went on from the first one's commits")
+        work = self.vms / "ws-ws1" / "home" / "work" / "fixture"
+        self.assertTrue((work / ".dev" / "greeting" / "implementation-notes.md").exists())
+
+    def test_a_branch_the_instance_diverged_on_is_kept_aside(self) -> None:
+        self.start(mode="no-push")
+        self.assertEqual(self.wait(), 1)
+        (self.repo / "README.md").write_text("# moved on\n")
+        self.git(self.repo, "commit", "-q", "-am", "docs: move on")
+        self.start()
+        self.assertEqual(self.wait(), 0)
+        work = self.vms / "ws-ws1" / "home" / "work" / "fixture"
+        kept = self.git(work, "for-each-ref", "--format=%(refname)", "refs/dev-remote/kept").splitlines()
+        self.assertEqual(len(kept), 1)
+        self.assertEqual(self.git(work, "log", "--format=%s", "-1", kept[0]), "fix: harden after review")
+        self.assertEqual(self.git(work, "log", "--format=%s", "dev/greeting").splitlines()[-2:],
+                         ["docs: move on", "initial"])
+
+    def test_a_plan_file_edited_on_both_sides_keeps_both(self) -> None:
+        self.start()
+        self.assertEqual(self.wait(), 0)
+        spec = self.repo / ".dev" / "greeting" / "spec.md"
+        spec.write_text(SPEC + "\nlocal edit\n")
+        work_spec = self.vms / "ws-ws1" / "home" / "work" / "fixture" / ".dev" / "greeting" / "spec.md"
+        work_spec.write_text("remote rewrite\n")
+        summary = self.pull()
+        self.assertEqual(summary["plan"]["conflicts"], ["greeting/spec.md"])
+        self.assertIn("local edit", spec.read_text())
+        self.assertEqual((spec.parent / "spec.md.remote").read_text(), "remote rewrite\n")
+
+    def test_a_diverged_local_branch_is_left_for_the_user(self) -> None:
+        self.git(self.repo, "branch", "dev/greeting")
+        self.git(self.repo, "switch", "-q", "dev/greeting")
+        self.start()
+        (self.repo / "mine.txt").write_text("mine\n")
+        self.git(self.repo, "add", "mine.txt")
+        self.git(self.repo, "commit", "-q", "-m", "feat: mine")
+        self.assertEqual(self.wait(), 0)
+        summary = self.pull()
+        self.assertEqual(summary["branch_update"], "diverged: the instance's commits are at refs/dev-remote/ws1")
+        self.assertEqual(self.git(self.repo, "log", "--format=%s", "-1"), "feat: mine")
+
+    def test_pull_refuses_from_another_repository(self) -> None:
+        self.start()
+        self.assertEqual(self.wait(), 0)
+        other = self.t / "laptop" / "other"
+        other.mkdir()
+        self.git(other, "init", "-q", "-b", "main")
+        result = subprocess.run([sys.executable, str(SCRIPT), "pull", "1"], cwd=other, env=self.env,
+                                capture_output=True, text=True, check=False)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("holds a run of fixture", result.stderr)
+
+    # --- following a run -------------------------------------------------------
 
     def test_logs_render_the_session(self) -> None:
-        run = self.dispatch()["run"]
-        self.wait(run)
-        text = self.remote("logs", run, "--tail", "3").stdout
-        self.assertEqual(text.splitlines(), ["say: Working on ship for greeting", "tool: Bash Show status",
+        self.start()
+        self.wait()
+        text = self.remote("logs", "1", "--tail", "3").stdout
+        self.assertEqual(text.splitlines(), ["say: Working on the run", "tool: Bash Show status",
                                              "result: success after 3 turns, 0.0 min, error=False"],
                          "progress ticks never crowd out the session's events")
 
     def test_desktop_viewer_follows_the_run_until_the_next_run_replaces_it(self) -> None:
         self.env["FAKE_DISPLAY"] = ":1"
-        first = self.dispatch("--workspace", "ws1", "--phases", "build")["run"]
-        self.assertEqual(self.wait(first), 0)
+        first = self.start(mode="early-once")["run"]
+        self.assertEqual(self.wait(), 0)
         [call] = self.terminals()
         self.assertEqual(call["display"], ":1")
         self.assertEqual(call["argv"][:3], ["--maximize", "--title", f"dev:remote {first}"])
-        self.assertEqual(call["argv"][-3:], ["python3", f"{self.vms}/ws-ws1/home/.dev-workflow/runs/{first}/dev/"
-                                             "skills/remote/scripts/view.py",
-                                             f"{self.vms}/ws-ws1/home/.dev-workflow/runs/{first}"])
+        self.assertEqual(call["argv"][-4:], ["python3", f"{self.run_dir()}/dev/skills/remote/scripts/view.py",
+                                             str(self.run_dir()), first])
         screen = self.viewer_output(0, "━━ done")
-        for shown in (f"run {first}", "━━ phase build", "● Working on build for greeting", "Bash Show status",
-                      "$ git status", "result: success after 3 turns"):
+        for shown in (f"run {first}", "fixture · plan greeting · branch dev/greeting", "━━ session 1",
+                      "● Working on the run", "Bash Show status", "$ git status", "result: success after 3 turns",
+                      "↺ session 1 is not finished: there is no pull request for dev/greeting", "━━ session 2",
+                      "pull request https://example.test/pr/7"):
             self.assertIn(shown, screen)
-        self.assertLess(screen.index("━━ phase build"), screen.index("━━ done"))
+        self.assertLess(screen.index("↺ session 1 is not finished"), screen.index("━━ session 2"))
+        self.assertLess(screen.index("━━ session 2"), screen.index("━━ done"))
         self.assertTrue(alive(self.viewer_pid(0)), "the window outlasts its run, showing how it ended")
-        self.remote("collect", first)
-        second = self.dispatch("--workspace", "ws1", "--phases", "ship")["run"]
-        self.assertEqual(self.wait(second), 0)
+        self.remote("continue", "1", "--prompt", "More.")
+        self.assertEqual(self.wait(), 0)
+        screen = self.viewer_output(0, "━━ session 3")
+        self.assertEqual(len(self.terminals()), 1, "continue keeps the window that already follows the run")
+        self.assertLess(screen.index("━━ continued"), screen.index("━━ session 3"))
+        self.start()
+        self.assertEqual(self.wait(), 0)
         self.assertEqual(len(self.terminals()), 2)
         self.viewer_output(1, "━━ done")
-        self.assertFalse(alive(self.viewer_pid(0)), "the next run on the workspace closes the earlier window")
+        self.assertFalse(alive(self.viewer_pid(0)), "the next run on the instance closes the earlier window")
         self.assertTrue(alive(self.viewer_pid(1)))
 
-    def test_desktop_viewer_survives_a_resume_and_shows_it(self) -> None:
-        self.env["FAKE_DISPLAY"] = ":1"
-        run = self.dispatch(mode="fail-build-once")["run"]
-        self.assertEqual(self.wait(run), 1)
-        self.viewer_output(0, "━━ failed: build ended with exit 1")
-        self.remote("resume", run, mode="fail-build-once")
-        self.assertEqual(self.wait(run), 0)
-        screen = self.viewer_output(0, "━━ done")
-        self.assertEqual(len(self.terminals()), 1, "resume keeps the window that already follows the run")
-        self.assertLess(screen.index("━━ failed"), screen.index("━━ resumed"))
-        self.assertLess(screen.index("━━ resumed"), screen.index("━━ phase ship"))
-
     def test_no_desktop_viewer_when_turned_off_or_without_a_display(self) -> None:
-        run = self.dispatch("--phases", "build")["run"]
-        self.assertEqual(self.wait(run), 0)
+        self.start()
+        self.assertEqual(self.wait(), 0)
         self.assertEqual(self.terminals(), [], "no DISPLAY, no window")
-        self.remote("collect", run)
         self.env["FAKE_DISPLAY"] = ":1"
-        config = self.t / "remote.toml"
-        config.write_text(config.read_text() + "view = false\n")
-        run = self.dispatch("--phases", "build")["run"]
-        self.assertEqual(self.wait(run), 0)
-        self.assertEqual(self.terminals(), [])
-        config.write_text(config.read_text().replace("view = false", 'view = "yes"'))
+        self.config.write_text(self.config.read_text() + "view = false\n")
+        self.start("2", "--task", "Another task")
+        self.assertEqual(self.wait("2"), 0)
+        self.assertEqual(self.terminals("ws2"), [])
+        self.config.write_text(self.config.read_text().replace("view = false", 'view = "yes"'))
         result = self.remote("status", check=False)
         self.assertEqual(result.returncode, 1)
         self.assertIn("view must be true or false", result.stderr)
-
-    def test_second_run_on_the_same_workspace_starts_from_a_clean_checkout(self) -> None:
-        first = self.dispatch("--workspace", "ws1", "--phases", "build", mode="dirty")
-        self.assertEqual(self.wait(first["run"]), 0)
-        summary = json.loads(self.remote("collect", first["run"]).stdout)
-        self.assertEqual(len(summary["uncommitted_patches"]), 1)
-        self.assertIn("stray.txt", Path(summary["uncommitted_patches"][0]).read_text())
-        worktree = Path(summary["worktree"])
-        laptop_reports = self.t / "laptop-tmp" / "fixture" / "reports"
-        laptop_reports.mkdir(parents=True, exist_ok=True)
-        (laptop_reports / "from-laptop.html").write_text("<html>earlier e2e</html>\n")
-        # Still on main here: the existing work branch, not HEAD, is what continues.
-        second = self.dispatch("--workspace", "ws1", "--phases", "ship")
-        self.assertEqual(second["branch"], "dev/greeting")
-        self.assertEqual(second["sent"], "refs/heads/dev/greeting")
-        self.assertEqual(self.wait(second["run"]), 0)
-        work = self.vms / "ws-ws1" / "home" / "work" / "fixture"
-        self.assertFalse((work / "stray.txt").exists())
-        self.assertTrue((work / "feature.txt").exists(), "the sandbox continued from the built branch")
-        self.assertTrue((self.vms / "ws-ws1" / "tmp" / "fixture" / "reports" / "from-laptop.html").exists(),
-                        "reports collected earlier travel with the next dispatch")
-        summary = json.loads(self.remote("collect", second["run"]).stdout)
-        self.assertEqual(summary["branch_update"], "fast-forwarded")
-        self.assertEqual(summary["worktree"], str(worktree))
-        self.assertTrue((worktree / "ship.txt").exists(), "the checked-out branch fast-forwards in place")
-
-    def test_refuses_when_fleet_sync_leaves_the_workspace_stale(self) -> None:
-        first = self.dispatch("--workspace", "ws1", "--phases", "build")
-        self.assertEqual(self.wait(first["run"]), 0)
-        self.remote("collect", first["run"])
-        self.git(self.repo, "checkout", "-q", "-b", "dev/next", "main")
-        self.env["FAKE_FLEET_SYNC"] = "stale"
-        result = self.remote("dispatch", "--plan", "greeting", "--workspace", "ws1", "--phases", "build",
-                             check=False)
-        self.assertEqual(result.returncode, 1)
-        self.assertIn("fleet sync did not deliver dev/next to ws1", result.stderr)
-        self.assertEqual(list(self.vms.glob("ws-*/home/.dev-workflow/lock")), [], "the refusal frees the workspace")
-
-    def test_base_is_the_local_default_when_there_is_no_origin(self) -> None:
-        self.git(self.repo, "remote", "remove", "origin")
-        self.git(self.repo, "checkout", "-q", "-b", "dev/greeting")
-        (self.repo / "work.txt").write_text("done\n")
-        self.git(self.repo, "add", "work.txt")
-        self.git(self.repo, "commit", "-q", "-m", "work")
-        self.git(self.repo, "checkout", "-q", "main")
-        out = self.dispatch("--phases", "ship")
-        self.assertEqual(out["sent"], "refs/heads/dev/greeting")
-        self.assertEqual(out["base"], self.base, "ship must diff the branch against main, not against itself")
-
-    def test_refuses_when_the_work_branch_checkout_is_dirty(self) -> None:
-        self.git(self.repo, "checkout", "-q", "-b", "dev/greeting")
-        self.git(self.repo, "checkout", "-q", "main")
-        tree = self.t / "wt" / "fixture"
-        self.git(self.repo, "worktree", "add", "-q", str(tree), "dev/greeting")
-        (tree / "README.md").write_text("edited in the worktree\n")
-        result = self.remote("dispatch", "--plan", "greeting", check=False)
-        self.assertIn(f"tracked files in {tree}", result.stderr)
-
-    # --- refusals ------------------------------------------------------------
-
-    def test_refuses_uncommitted_tracked_changes(self) -> None:
-        (self.repo / "README.md").write_text("changed\n")
-        result = self.remote("dispatch", "--plan", "greeting", check=False)
-        self.assertEqual(result.returncode, 1)
-        self.assertIn("uncommitted changes", result.stderr)
-
-    def test_refuses_plan_files_that_git_would_track(self) -> None:
-        (self.repo / ".gitignore").write_text("\n")
-        self.git(self.repo, "commit", "-q", "-am", "drop ignore")
-        result = self.remote("dispatch", "--plan", "greeting", check=False)
-        self.assertIn("not git-ignored", result.stderr)
-        self.assertIn("dispatch sends the plan directory to the sandbox with the run", result.stderr)
-        self.assertIn("add `/.dev/*` and `!/.dev/config.yaml` to .gitignore", result.stderr)
-
-    def test_refuses_a_committed_plan_and_says_how_to_untrack_it(self) -> None:
-        self.git(self.repo, "add", "-f", ".dev/greeting/spec.md")
-        self.git(self.repo, "commit", "-q", "-m", "commit the plan")
-        result = self.remote("dispatch", "--plan", "greeting", check=False)
-        self.assertEqual(result.returncode, 1)
-        self.assertIn(".dev/greeting is committed", result.stderr)
-        self.assertIn("git rm -r --cached .dev/greeting", result.stderr)
-
-    def test_refuses_an_unsettled_spec(self) -> None:
-        (self.repo / ".dev" / "greeting" / "spec.md").write_text(SPEC.replace("(✓ plain text)", "(✓ cloud)"))
-        result = self.remote("dispatch", "--plan", "greeting", check=False)
-        self.assertIn("not settled", result.stderr)
-
-    def test_busy_workspaces_refuse_and_release_frees_one(self) -> None:
-        a = self.dispatch(mode="sleep")
-        self.git(self.repo, "checkout", "-q", "-b", "other")
-        b = self.dispatch(mode="sleep")
-        self.assertNotEqual(a["workspace"], b["workspace"])
-        self.git(self.repo, "checkout", "-q", "-b", "third")
-        result = self.remote("dispatch", "--plan", "greeting", check=False)
-        self.assertIn("every workspace is busy", result.stderr)
-        self.assertIn(a["run"], result.stderr)
-        refused = self.remote("release", a["run"], check=False)
-        self.assertIn("stop it first", refused.stderr)
-        self.remote("stop", a["run"])
-        self.remote("stop", b["run"])
-        self.assertTrue(json.loads(self.remote("release", a["run"]).stdout)["lock_released"])
-        self.assertEqual(self.dispatch(mode="sleep")["workspace"], a["workspace"])
-
-    def test_run_ids_stay_unique_within_one_second(self) -> None:
-        a = self.dispatch(mode="sleep")
-        self.git(self.repo, "checkout", "-q", "-b", "other")
-        b = self.dispatch(mode="sleep")
-        self.assertNotEqual(a["run"], b["run"])
-        self.assertEqual(len(json.loads(self.remote("status", "--json").stdout)), 2)
-
-    def test_refuses_a_second_run_on_the_same_branch(self) -> None:
-        self.dispatch(mode="sleep")
-        result = self.remote("dispatch", "--plan", "greeting", check=False)
-        self.assertIn("already working on dev/greeting", result.stderr)
-
-    # --- failure handling ----------------------------------------------------
-
-    def test_failed_phase_resumes_its_own_session_then_runs_the_rest(self) -> None:
-        run = self.dispatch(mode="fail-build-once")["run"]
-        self.assertEqual(self.wait(run), 1)
-        status = self.status(run)
-        self.assertEqual(status["state"], "failed")
-        self.assertEqual(status["phase"], "build")
-        self.assertIn("error_during_execution", status["reason"])
-        first_session = self.calls()[0]["session"]
-        self.remote("resume", run, mode="fail-build-once")
-        self.assertEqual(self.wait(run), 0)
-        calls = self.calls()
-        self.assertEqual(calls[1]["resume"], first_session)
-        self.assertIn("Continue the /dev:build greeting run", calls[1]["prompt"])
-        self.assertEqual(calls[2]["prompt"], "/dev:ship plan .dev/greeting")
-
-    def test_gateway_error_is_named_and_resumes(self) -> None:
-        run = self.dispatch(mode="api-error-once")["run"]
-        self.assertEqual(self.wait(run), 1)
-        self.assertEqual(self.status(run)["reason"], "build ended with exit 1 (api-error)")
-        self.remote("resume", run, mode="api-error-once")
-        self.assertEqual(self.wait(run), 0)
-
-    def resume(self, *args: str, mode: str | None = None) -> dict:
-        return json.loads(self.remote("resume", *args, mode=mode).stdout)
-
-    def test_a_collected_run_continues_its_last_session(self) -> None:
-        run = self.dispatch()["run"]
-        self.assertEqual(self.wait(run), 0)
-        self.remote("collect", run)
-        ship_session = self.calls()[1]["session"]
-        out = self.resume(run, "--prompt", "Finish the mutation pass.")
-        self.assertEqual((out["how"], out["workspace"], out["round"]), ("restored", "ws1", 2))
-        self.assertEqual((out["phase"], out["mode"], out["session"]), ("ship", "continue", ship_session))
-        self.assertIn(self.status(run)["state"], ("starting", "running", "done"))
-        self.assertEqual(self.wait(run), 0)
-        last = self.calls()[-1]
-        self.assertEqual(last["resume"], ship_session)
-        self.assertTrue(last["prompt"].startswith("Continue the /dev:ship plan .dev/greeting run"))
-        self.assertTrue(last["prompt"].endswith("\n\nFinish the mutation pass."))
-        self.assertEqual(len(self.calls()), 3, "only ship continues; build is not run again")
-        summary = json.loads(self.remote("collect", run).stdout)
-        self.assertEqual(summary["state"], "done", "a second round collects like the first")
-        record = json.loads((self.t / "state" / "runs" / f"{run}.json").read_text())
-        self.assertEqual([r["round"] for r in record["rounds"]], [2])
-        self.assertEqual(record["state"], "collected")
-
-    def test_a_restored_run_takes_this_machines_branch_and_plan_to_another_workspace(self) -> None:
-        run = self.dispatch("--workspace", "ws1")["run"]
-        self.assertEqual(self.wait(run), 0)
-        summary = json.loads(self.remote("collect", run).stdout)
-        worktree = Path(summary["worktree"])
-        (worktree / "laptop.txt").write_text("a fix made here after collect\n")
-        self.git(worktree, "add", "laptop.txt")
-        self.git(worktree, "commit", "-q", "-m", "fix: made on the laptop")
-        (self.repo / ".dev" / "greeting" / "notes.md").write_text("edited here\n")
-        lock = self.vms / "ws-ws1" / "home" / ".dev-workflow" / "lock"
-        lock.mkdir()
-        (lock / "run").write_text("someone-else")
-        ship_session = self.calls("ws1")[1]["session"]
-        out = self.resume(run)
-        self.assertEqual((out["workspace"], out["mode"], out["session"]), ("ws2", "continue", ship_session),
-                         "the run's workspace is busy, so another one continues the same session")
-        self.assertEqual(self.wait(run), 0)
-        self.assertEqual(self.calls("ws2")[-1]["resume"], ship_session,
-                         "the collected transcript went with the run, or the fake would have failed the resume")
-        work = self.vms / "ws-ws2" / "home" / "work" / "fixture"
-        self.assertTrue((work / "laptop.txt").exists(), "the laptop's commit is what the round continues from")
-        self.assertEqual((work / ".dev" / "greeting" / "notes.md").read_text(), "edited here\n")
-        logs = self.vms / "ws-ws2" / "home" / ".dev-workflow" / "runs" / run / "logs"
-        self.assertTrue((logs / "build.jsonl").exists(), "the run's earlier logs travel with it")
-        self.remote("collect", run)
-        self.assertEqual(self.git(self.repo, "log", "-1", "--format=%s", "dev/greeting"), "fix: harden after review")
-
-    def test_from_starts_a_phase_fresh_with_an_instruction(self) -> None:
-        run = self.dispatch()["run"]
-        self.assertEqual(self.wait(run), 0)
-        out = self.resume(run, "--from", "ship", "--prompt", "CI failed on lint; fix it.")
-        self.assertEqual((out["how"], out["mode"], out["session"]), ("in place", "fresh", None),
-                         "an uncollected run resumes in place, even a finished one")
-        self.assertEqual(self.wait(run), 0)
-        last = self.calls()[-1]
-        self.assertIsNone(last["resume"])
-        self.assertEqual(last["prompt"], "/dev:ship plan .dev/greeting\n\nCI failed on lint; fix it.")
-
-    def test_a_later_session_is_judged_by_its_own_stream(self) -> None:
-        run = self.dispatch(mode="crash-ship-again")["run"]
-        self.assertEqual(self.wait(run), 0)
-        self.resume(run, "--from", "ship", mode="crash-ship-again")
-        self.assertEqual(self.wait(run), 1, "the first ship session's success is not the second one's")
-        self.assertEqual(self.status(run)["reason"], "ship ended with exit 1 (no-result)")
-
-    def test_local_brings_a_failed_run_home_and_continues_its_session_here(self) -> None:
-        claude_dir = self.t / "claude"
-        self.env["CLAUDE_CONFIG_DIR"] = str(claude_dir)
-        run = self.dispatch(mode="fail-build-once")["run"]
-        self.assertEqual(self.wait(run), 1)
-        build_session = self.calls()[0]["session"]
-        out = json.loads(self.remote("local", run, "--prompt", "Docker works here.").stdout)
-        self.assertEqual((out["phase"], out["mode"], out["session"]), ("build", "continue", build_session))
-        self.assertEqual(out["collected"]["state"], "failed", "an uncollected run is collected first")
-        self.assertEqual(list(self.vms.glob("ws-*/home/.dev-workflow/lock")), [], "which frees its workspace")
-        worktree = Path(out["worktree"])
-        self.assertEqual(self.git(worktree, "rev-parse", "--abbrev-ref", "HEAD"), "dev/greeting")
-        transcript = Path(out["transcript"])
-        self.assertEqual(transcript.parent, claude_dir / "projects" / re.sub(r"[^A-Za-z0-9]", "-", str(worktree)),
-                         "where Claude Code here looks up sessions run in the worktree")
-        text = transcript.read_text()
-        self.assertIn(json.dumps(str(worktree)), text)
-        self.assertNotIn(str(self.vms), text, "the sandbox checkout's paths point at the worktree")
-        self.assertTrue((transcript.with_suffix("") / "subagents" / "agent-1.jsonl").exists())
-        command = shlex.split(out["command"])
-        self.assertEqual(command[:6], ["cd", str(worktree), "&&", "claude", "--resume", build_session])
-        self.assertIn("continues here, on the operator's machine", command[6])
-        self.assertIn("Continue the /dev:build greeting run", command[6])
-        self.assertTrue(command[6].endswith("\n\nDocker works here."))
-        record = json.loads((self.t / "state" / "runs" / f"{run}.json").read_text())
-        self.assertEqual((record["state"], record["rounds"][-1]["how"]), ("collected", "here"))
-        transcript.write_text("continued here\n")
-        self.remote("local", run)
-        self.assertEqual(transcript.read_text(), "continued here\n", "a session continued here is never overwritten")
-
-    def test_local_from_starts_a_phase_fresh_here(self) -> None:
-        run = self.dispatch()["run"]
-        self.assertEqual(self.wait(run), 0)
-        self.remote("collect", run)
-        out = json.loads(self.remote("local", run, "--from", "ship", "--prompt", "Run the e2e suite.").stdout)
-        self.assertEqual((out["mode"], out["session"], out["transcript"]), ("fresh", None, None))
-        self.assertIsNone(out["collected"], "a collected run is not collected again")
-        self.assertEqual(shlex.split(out["command"])[3:], ["claude", "/dev:ship plan .dev/greeting\n\nRun the e2e suite."])
-
-    def test_local_refuses_a_live_run(self) -> None:
-        run = self.dispatch("--phases", "build", mode="sleep")["run"]
-        for _ in range(100):
-            if self.calls():
-                break
-            time.sleep(0.1)
-        self.assertIn("stop it first", self.remote("local", run, check=False).stderr)
-
-    def test_resume_refuses_a_live_run_and_a_point_it_cannot_reach(self) -> None:
-        run = self.dispatch("--phases", "build", mode="sleep")["run"]
-        for _ in range(100):
-            if self.calls():
-                break
-            time.sleep(0.1)
-        result = self.remote("resume", run, check=False)
-        self.assertIn("stop it first", result.stderr)
-        self.remote("stop", run)
-        result = self.remote("resume", run, "--continue", "ship", check=False)
-        self.assertIn("ship is not among the run's phases", result.stderr)
-        result = self.remote("resume", run, "--continue", "ship", "--phases", "build,ship", check=False)
-        self.assertIn("no session was recorded for ship", result.stderr)
-        self.assertIn("--from ship starts it fresh", result.stderr)
-
-    def test_continue_without_the_transcript_anywhere_points_to_from(self) -> None:
-        run = self.dispatch("--workspace", "ws1", "--phases", "build")["run"]
-        self.assertEqual(self.wait(run), 0)
-        self.remote("collect", run)
-        build_session = self.calls("ws1")[0]["session"]
-        shutil.rmtree(self.t / "state" / "runs" / run / "sessions")
-        (self.vms / "ws-ws1" / "home" / ".dev-workflow" / "lock").mkdir()
-        result = self.remote("resume", run, check=False)
-        self.assertIn(f"session {build_session} is neither on ws-ws2 nor collected here", result.stderr)
-        self.assertEqual(list(self.vms.glob("ws-ws2/home/.dev-workflow/lock")), [], "the refusal frees ws2")
-        self.assertEqual(self.resume(run, "--from", "build")["mode"], "fresh")
-        self.assertEqual(self.wait(run), 0)
-
-    def test_build_gate_resumes_a_build_that_skipped_its_evidence(self) -> None:
-        out = self.dispatch(mode="skip-evidence-once")
-        self.assertEqual(self.wait(out["run"]), 0)
-        builds = [c for c in self.calls(out["workspace"]) if "/dev:build" in c["prompt"]]
-        self.assertEqual(len(builds), 2, "one resume of the same build session")
-        self.assertEqual(builds[1]["resume"], builds[0]["session"])
-        self.assertIn("check-tests.py", builds[1]["prompt"])
-        self.assertIn("test-evidence.json", builds[1]["prompt"], "the gate's own output reaches the session")
-        status = json.loads((self.vms / f"ws-{out['workspace']}" / "home" / ".dev-workflow" / "runs" / out["run"]
-                             / "status.json").read_text())
-        self.assertEqual(status["gate"]["build"], "pass")
-
-    def test_build_gate_fails_the_run_after_its_resumes(self) -> None:
-        out = self.dispatch(mode="skip-evidence")
-        self.assertEqual(self.wait(out["run"]), 1)
-        self.assertTrue(self.status(out["run"])["reason"].startswith("build gate: check-tests.py still fails"))
-        prompts = [c["prompt"] for c in self.calls(out["workspace"])]
-        self.assertEqual(len(prompts), 3, "the build and two gate resumes; ship never starts")
-        summary = json.loads(self.remote("collect", out["run"]).stdout)
-        self.assertTrue((Path(summary["artifacts"]) / "gate-build.txt").exists())
-
-    def test_stop_records_stopped_and_collect_takes_what_exists(self) -> None:
-        run = self.dispatch(mode="dirty-sleep")["run"]
-        work = self.vms / "ws-ws1" / "home" / "work" / "fixture"
-        for _ in range(100):
-            if (work / "in-flight.txt").exists():
-                break
-            time.sleep(0.1)
-        self.assertEqual(self.remote("collect", run, check=False).returncode, 1, "a running run is not collected")
-        self.remote("stop", run)
-        self.assertEqual(self.status(run)["state"], "stopped")
-        summary = json.loads(self.remote("collect", run).stdout)
-        self.assertEqual(summary["state"], "stopped")
-        self.assertEqual(summary["commits"], [])
-        patches = [Path(p) for p in summary["uncommitted_patches"]]
-        self.assertEqual([p.name for p in patches], ["uncommitted-build.patch"])
-        self.assertIn("in-flight.txt", patches[0].read_text(), "a stop keeps the in-flight work beside the logs")
-
-    def test_lost_when_the_unit_dies_without_recording_an_end(self) -> None:
-        run = self.dispatch(mode="sleep")["run"]
-        for _ in range(100):
-            if self.calls():
-                break
-            time.sleep(0.1)
-        pid = int((self.vms / "ws-ws1" / "units" / f"dev-run-{run}.pid").read_text())
-        os.killpg(pid, 9)
-        time.sleep(0.3)
-        self.assertEqual(self.status(run)["state"], "lost")
-
-    def test_refuses_when_fleet_sync_never_clones(self) -> None:
-        self.env["FAKE_FLEET_SYNC"] = "skip"
-        result = self.remote("dispatch", "--plan", "greeting", check=False)
-        self.assertEqual(result.returncode, 1)
-        self.assertIn("the workspace has no such ref", result.stderr)
-        self.assertEqual(list(self.vms.glob("ws-*/home/.dev-workflow/lock")), [], "the refusal frees the workspace")
-        self.assertEqual(list((self.t / "state" / "runs").glob("*.json")) if (self.t / "state" / "runs").exists()
-                         else [], [], "a refused dispatch leaves no run record")
-
-    def test_plan_edited_on_both_sides_keeps_both(self) -> None:
-        run = self.dispatch("--phases", "build", mode="edit-spec")["run"]
-        self.wait(run)
-        spec = self.repo / ".dev" / "greeting" / "spec.md"
-        spec.write_text(SPEC + "\nlocal note\n")
-        summary = json.loads(self.remote("collect", run).stdout)
-        self.assertEqual(summary["plan"]["conflicts"], ["spec.md"])
-        self.assertIn("local note", spec.read_text())
-        self.assertEqual((spec.parent / "spec.md.remote").read_text(), "remote rewrite\n")
-
-    def test_diverged_branch_is_left_for_the_user(self) -> None:
-        self.git(self.repo, "checkout", "-q", "-b", "feature")
-        run = self.dispatch("--phases", "build")["run"]
-        self.wait(run)
-        (self.repo / "local.txt").write_text("local\n")
-        self.git(self.repo, "add", "local.txt")
-        self.git(self.repo, "commit", "-q", "-m", "local work")
-        result = self.remote("collect", run, check=False)
-        self.assertIn("diverged", result.stderr)
-        self.assertTrue(self.git(self.repo, "rev-parse", f"refs/dev-remote/{run}"))
-        self.assertEqual(self.git(self.repo, "log", "-1", "--format=%s"), "local work")
 
 
 class RemoteUnitTest(unittest.TestCase):
@@ -725,17 +553,21 @@ class RemoteUnitTest(unittest.TestCase):
         self.m = load_module()
 
     def test_github_repo_reads_every_github_url_form(self) -> None:
-        mod = load_module()
         for url in ("https://github.com/o/r.git", "git@github.com:o/r.git", "ssh://git@github.com/o/r",
                     "https://github.com/o/r/"):
-            self.assertEqual(mod.github_repo(url), "o/r", url)
+            self.assertEqual(self.m.github_repo(url), "o/r", url)
         for url in ("", "/srv/repo.git", "https://gitlab.com/o/r.git"):
-            self.assertEqual(mod.github_repo(url), "", url)
+            self.assertEqual(self.m.github_repo(url), "", url)
 
-    def test_normalize_url_matches_ssh_and_https_forms(self) -> None:
-        n = self.m.normalize_url
-        self.assertEqual(n("git@github.com:Owner/Repo.git"), n("https://github.com/owner/repo"))
-        self.assertNotEqual(n("git@github.com:owner/repo.git"), n("git@github.com:owner/other.git"))
+    def test_an_instance_is_a_number_or_a_fleet_name(self) -> None:
+        plain, listed = {"instances": []}, {"instances": ["desk", "ws7"]}
+        self.assertEqual([self.m.instance(plain, a) for a in ("1", "3", "ws2", "ws-ws2")], ["ws1", "ws3", "ws2", "ws2"])
+        self.assertEqual([self.m.instance(listed, a) for a in ("1", "2", "desk")], ["desk", "ws7", "desk"])
+        self.assertEqual([self.m.label(plain, "ws2"), self.m.label(listed, "ws7"), self.m.label(listed, "ws2")],
+                         ["2", "2", "ws2"])
+        for cfg, bad in ((plain, "0"), (listed, "3"), (plain, "No Such")):
+            with self.assertRaises(self.m.Refused):
+                self.m.instance(cfg, bad)
 
     def test_flat_toml_reads_the_config_without_a_toml_library(self) -> None:
         text = ('# remote\nhost = "user@fleet#1"  # the host\nworkspaces = ["ws1", "ws2"]\n'
@@ -824,6 +656,8 @@ class ViewTest(unittest.TestCase):
         self.assertEqual(r(self.assistant({"type": "tool_use", "name": "Read", "input": {"file_path": "/a/b.py"}})),
                          ["tool: Read /a/b.py"])
         self.assertEqual(r(self.assistant({"type": "text", "text": "hi"}, parent="t")), ["  say: hi"])
+        self.assertEqual(r(self.line(type="runner", text="session 1 is not finished: no pull request")),
+                         ["runner: session 1 is not finished: no pull request"])
         self.assertEqual(r(self.line(type="user", message={"content": [
             {"type": "tool_result", "is_error": True, "content": [{"type": "text", "text": "boom"}]}]})),
             ["tool error: boom"])
@@ -832,9 +666,7 @@ class ViewTest(unittest.TestCase):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         d = Path(tmp.name)
-        (d / "logs").mkdir()
-        (d / "run.json").write_text(json.dumps({"id": "r1", "repo": "fixture", "plan": "p", "branch": "dev/p",
-                                                "phases": ["build", "ship"], "publish": "laptop"}))
+        (d / "run.json").write_text(json.dumps({"id": "r1", "repo": "fixture", "plan": "p", "branch": "dev/p"}))
         return d
 
     def screen(self, follower, ticks: int = 1) -> str:
@@ -844,52 +676,54 @@ class ViewTest(unittest.TestCase):
                 follower.tick()
         return re.sub(r"\x1b\[[0-9;]*m|\x1b\][^\x07]*\x07", "", out.getvalue())
 
-    def test_follower_shows_phases_states_and_an_event_still_being_written(self) -> None:
+    def init(self, session: str) -> str:
+        return self.line(type="system", subtype="init", session_id=session, model="m")
+
+    def test_follower_shows_sessions_states_and_an_event_still_being_written(self) -> None:
         d = self.run_dir()
-        status = d / "status.json"
-        status.write_text(json.dumps({"state": "starting"}))
+        status, log = d / "status.json", d / "log.jsonl"
+        status.write_text(json.dumps({"state": "running"}))
         follower = self.v.Follower(d)
         with mock.patch.object(self.v, "unit_active", return_value=True):
-            self.assertIn("━━ starting", self.screen(follower))
-            status.write_text(json.dumps({"state": "running", "phase": "build"}))
             say = self.assistant({"type": "text", "text": "Building"})
-            (d / "logs" / "build.jsonl").write_text(say + "\n" + say[:20])
+            log.write_text(self.init("s1") + "\n" + say + "\n" + say[:20])
             text = self.screen(follower)
-            self.assertIn("━━ phase build", text)
+            self.assertIn("━━ session 1", text)
             self.assertEqual(text.count("● Building"), 1, "the half-written event waits for its newline")
-            with (d / "logs" / "build.jsonl").open("a") as handle:
+            with log.open("a") as handle:
                 handle.write(say[20:] + "\n")
             self.assertEqual(self.screen(follower).count("● Building"), 1)
-            status.write_text(json.dumps({"state": "running", "phase": "build", "gate": {"build": "resume 1"}}))
-            self.assertIn("build gate: resume 1", self.screen(follower))
-            (d / "logs" / "ship.jsonl").write_text(self.assistant({"type": "tool_use", "name": "Bash", "input": {
-                "command": f"cd {Path.home()}/work/fixture; python3 - <<'EOF'\nprint(1)\nEOF"}}) + "\n"
-                + self.assistant({"type": "tool_use", "name": "Bash", "input": {"command": "cd /tmp && ls"}}) + "\n")
-            status.write_text(json.dumps({"state": "done", "phase": ""}))
+            with log.open("a") as handle:
+                handle.write(self.line(type="runner", text="session 1 is not finished: there is no pull request")
+                             + "\n" + self.init("s1") + "\n" + self.assistant({"type": "tool_use", "name": "Bash", "input": {
+                    "command": f"cd {Path.home()}/work/fixture; python3 - <<'EOF'\nprint(1)\nEOF"}}) + "\n"
+                    + self.assistant({"type": "tool_use", "name": "Bash", "input": {"command": "cd /tmp && ls"}}) + "\n")
+            status.write_text(json.dumps({"state": "done", "pr": {"url": "https://x/pr/1", "draft": "true"}}))
             text = self.screen(follower)
-        self.assertIn("━━ phase ship", text)
+        self.assertLess(text.index("↺ session 1 is not finished: there is no pull request"),
+                        text.index("━━ session 2"))
         self.assertIn("Bash python3 - <<'EOF'", text)
         self.assertIn("    print(1)", text, "a heredoc's body follows its first line")
         self.assertIn("Bash cd /tmp && ls", text, "only a cd into the checkout is dropped")
-        self.assertIn("━━ done", text)
+        self.assertLess(text.index("━━ done"), text.index("pull request https://x/pr/1 (draft)"))
 
     def test_one_poll_that_sees_several_steps_prints_them_in_order(self) -> None:
         d = self.run_dir()
         status = d / "status.json"
-        status.write_text(json.dumps({"state": "failed", "phase": "build", "resumed": ""}))
+        status.write_text(json.dumps({"state": "blocked", "reason": "a secret", "continued": ""}))
         follower = self.v.Follower(d)
         with mock.patch.object(self.v, "unit_active", return_value=True):
-            self.screen(follower)
-            (d / "logs" / "build.jsonl").write_text(self.assistant({"type": "text", "text": "resumed build"}) + "\n")
-            (d / "logs" / "ship.jsonl").write_text(self.assistant({"type": "text", "text": "shipping"}) + "\n")
-            status.write_text(json.dumps({"state": "done", "resumed": "t1", "gate": {"build": "pass"}}))
+            self.assertIn("━━ blocked: a secret", self.screen(follower))
+            (d / "log.jsonl").write_text(self.init("s1") + "\n"
+                                         + self.assistant({"type": "text", "text": "going on"}) + "\n")
+            status.write_text(json.dumps({"state": "done", "continued": "t1"}))
             text = self.screen(follower)
-        marks = ["━━ resumed", "● resumed build", "build gate: pass", "━━ phase ship", "● shipping", "━━ done"]
+        marks = ["━━ continued", "━━ session 1", "● going on", "━━ done"]
         self.assertEqual([text.index(m) for m in marks], sorted(text.index(m) for m in marks), text)
 
     def test_follower_names_a_runner_that_vanished(self) -> None:
         d = self.run_dir()
-        (d / "status.json").write_text(json.dumps({"state": "running", "phase": "build"}))
+        (d / "status.json").write_text(json.dumps({"state": "running"}))
         follower = self.v.Follower(d)
         with mock.patch.object(self.v, "unit_active", return_value=False):
             text = self.screen(follower)
@@ -897,10 +731,10 @@ class ViewTest(unittest.TestCase):
         with mock.patch.object(self.v, "unit_active", return_value=False):
             follower.next_unit_check = 0
             self.assertNotIn("lost", self.screen(follower), "said once")
-        (d / "status.json").write_text(json.dumps({"state": "running", "phase": "build", "resumed": "t2"}))
+        (d / "status.json").write_text(json.dumps({"state": "running", "continued": "t2"}))
         with mock.patch.object(self.v, "unit_active", return_value=True):
             follower.next_unit_check = 0
-            self.assertIn("━━ resumed", self.screen(follower))
+            self.assertIn("━━ continued", self.screen(follower))
         self.assertFalse(follower.lost)
 
 

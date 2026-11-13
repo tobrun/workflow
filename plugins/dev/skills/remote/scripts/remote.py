@@ -61,8 +61,11 @@ from pathlib import Path
 
 try:
     import tomllib
-except ModuleNotFoundError:  # Python < 3.11
-    tomllib = None
+except ModuleNotFoundError:  # Python < 3.11: tomli is the same parser, when installed
+    try:
+        import tomli as tomllib
+    except ModuleNotFoundError:
+        tomllib = None
 
 from view import render_event  # noqa: E402 - the stream renderer, shared with the sandbox desktop viewer
 
@@ -103,15 +106,47 @@ def tmp_root() -> Path:
     return Path(os.environ.get("DEV_REMOTE_TMP", "/tmp"))
 
 
+def parse_flat_toml(text: str) -> dict:
+    """remote.toml's flat subset without a TOML library (Python 3.10): one `key = value` per line,
+    the value a string, number, boolean, or array of those, with `#` comments. Anything else
+    raises ValueError naming the line."""
+    cfg = {}
+    for number, raw in enumerate(text.splitlines(), 1):
+        line, quote = "", ""
+        for char in raw:  # drop a comment that is not inside a string
+            if quote:
+                quote = "" if char == quote and not line.endswith("\\") else quote
+            elif char in "\"'":
+                quote = char
+            elif char == "#":
+                break
+            line += char
+        line = line.strip()
+        if not line:
+            continue
+        match = re.match(r"^([A-Za-z0-9_-]+)\s*=\s*(.+)$", line)
+        if not match:
+            raise ValueError(f"line {number}: expected key = value (full TOML needs Python 3.11+ or tomli)")
+        value = match.group(2)
+        if len(value) > 1 and value[0] == value[-1] == "'":
+            cfg[match.group(1)] = value[1:-1]  # a literal string
+            continue
+        try:
+            cfg[match.group(1)] = json.loads(value)
+        except ValueError:
+            raise ValueError(f"line {number}: unsupported value {value!r} "
+                             "(full TOML needs Python 3.11+ or tomli)") from None
+    return cfg
+
+
 def load_config() -> dict:
     path = Path(os.environ.get("DEV_REMOTE_CONFIG", "~/.dev-workflow/remote.toml")).expanduser()
     if not path.exists():
         raise Refused(f"no configuration at {path}; create it with at least: host = \"user@fleet-host\"")
-    if tomllib is None:
-        raise Refused("Python 3.11+ is required to read remote.toml")
+    text = path.read_text(encoding="utf-8")
     try:
-        cfg = tomllib.loads(path.read_text(encoding="utf-8"))
-    except tomllib.TOMLDecodeError as exc:
+        cfg = tomllib.loads(text) if tomllib is not None else parse_flat_toml(text)
+    except ValueError as exc:  # tomllib.TOMLDecodeError is a ValueError
         raise Refused(f"{path}: {exc}") from exc
     cfg.setdefault("transport", "ssh")
     cfg.setdefault("sources_root", "/srv/agent-sources")

@@ -117,6 +117,25 @@ class EvidenceGateTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("provenance", result.stderr)
 
+    def test_an_app_named_todo_is_not_a_placeholder(self) -> None:
+        # Reproduces a real ship run on a todo CLI: the provenance marker and the captured
+        # command name todo.py, which the placeholder pattern read as a TODO.
+        self.source = self.root / "todo.py"
+        self.source.write_text("print('todo')\n")
+        marker = "<!-- dev-evidence: " + json.dumps({
+            "revision": "r1", "command": ["python3", "todo.py"],
+            "sources": {"todo.py": hashlib.sha256(self.source.read_bytes()).hexdigest()},
+        }) + " -->\n"
+        body = ("## Evidence\n" + marker + "**add** - python3 todo.py add late\n"
+                "**Before**\n```json\n[]\n```\n**After**\n```json\n[{\"title\": \"late\"}]\n```\n")
+        result = self.check(body, current=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_a_capitalized_todo_is_still_a_placeholder(self) -> None:
+        result = self.check("## Evidence\n**Before**\n```\npending\n```\n**After**\n```\naccepted\n```\nTODO: add a screenshot\n")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("placeholder", result.stderr)
+
     def test_source_change_invalidates_old_evidence(self) -> None:
         body = "## Evidence\n" + self.provenance() + "![Actual UI](https://example.invalid/capture.png)\n"
         self.assertEqual(self.check(body, current=True).returncode, 0)

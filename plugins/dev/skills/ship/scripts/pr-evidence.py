@@ -38,7 +38,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 IDENT = re.compile(r"[A-Za-z_$][A-Za-z0-9_$]*")
-PLACEHOLDERS = re.compile(r"\bTODO\b|\bTBD\b|\{[a-z][a-z0-9-]*\}|<[^>]*placeholder[^>]*>|screenshot here|data:image/", re.IGNORECASE)
+# TODO and TBD count only in capitals, the way placeholders are written, so an app named todo is not one.
+PLACEHOLDERS = re.compile(r"\bTODO\b|\bTBD\b|(?i:\{[a-z][a-z0-9-]*\}|<[^>]*placeholder[^>]*>|screenshot here|data:image/)")
+PROVENANCE_COMMENT = re.compile(r"<!--\s*dev-evidence:.*?-->", re.DOTALL)
 IMAGE = re.compile(r"!\[[^\]]*\]\((https?://[^)\s]+)\)")
 PAIR_LABELS = {
     "before": "before", "after": "after",
@@ -262,7 +264,7 @@ def check(args: argparse.Namespace) -> None:
     if section is None or not section.strip():
         problems.append("no non-empty '## Evidence' section")
         section = ""
-    placeholder = PLACEHOLDERS.search(section)
+    placeholder = PLACEHOLDERS.search(PROVENANCE_COMMENT.sub("", section))  # the marker holds file paths, not prose
     if placeholder:
         problems.append(f"placeholder or inline data URI in Evidence: {placeholder.group(0)!r}")
     images = IMAGE.findall(section)

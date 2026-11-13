@@ -133,18 +133,6 @@ class CodexTest(unittest.TestCase):
         self.assertIn("codex (session 01a00000", out)
         self.assertIn("in 900 / cache read 2.1k / cache write 0 / out 120 (reasoning 10)", out)
 
-    def test_claims_may_cite_a_subagent_rollout(self):
-        # Codex keeps a subagent's rollout beside its parent's, not under it, so the journal lists it.
-        _, _, entry = self.box.run()
-        [child] = entry["subagent_transcripts"]
-        candidate = self.box.tmp / "candidates.jsonl"
-        write_jsonl(candidate, [{"skill": "build", "thread": "subagent-spawn", "kind": "friction",
-                                 "claim": "The build subagent names the parent thread that spawned it.",
-                                 "quote": "01a00000-0000-7000-8000-000000000001", "source": {"run": entry["id"], "line": 0,
-                                                                     "transcript": child}, "salience": 1}])
-        result = subprocess.run([sys.executable, str(METRICS.with_name("claims.py")), "add", str(candidate)],
-                                cwd=self.box.repo, env=self.box.env, capture_output=True, text=True)
-        self.assertEqual(result.returncode, 0, result.stdout)
 
 
 # --- opencode -----------------------------------------------------------------

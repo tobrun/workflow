@@ -10,16 +10,12 @@ Skills are explicitly invoked and recommend the next step; only `yolo` follows s
 | --- | --- | --- |
 | [scope](skills/scope/SKILL.md) | The problem or consequential choices need planning. | A settled spec with invariants, argued choices, and layer-tagged scenarios. |
 | [scope-quick](skills/scope-quick/SKILL.md) | A small request or accepted review defect needs a minimal plan. | Change sets in the same spec format. |
-| [scope-review](skills/scope-review/SKILL.md) | A large or risky spec needs independent verification before implementation. | Verified refinements through one spec writer, a report, and qualifying settled ledger updates. |
 | [build](skills/build/SKILL.md) | A spec is ready to implement. | Code, tests, runner receipts, incremental notes, and actual application evidence. |
 | [ship](skills/ship/SKILL.md) | A change needs hardening, independent review, and an authorized PR. | Required checks, verified findings with explicit completeness, and current evidence. |
 | [ship-quick](skills/ship-quick/SKILL.md) | Small fixes from a prior review need rechecking. | One reviewer, refreshed affected evidence, and an authorized PR update. |
 | [yolo](skills/yolo/SKILL.md) | One task should run unattended. | The full scope/build/ship contracts, recorded assumptions, and a PR or local handoff within available authority. |
 | [remote](skills/remote/SKILL.md) | A scoped plan should build and ship in a sandbox on a fleet host, not on this machine. | The sandbox's commits, plan files, evidence, and run journal brought home, then a PR published from here. |
 | [commit](skills/commit/SKILL.md) | Requested work is ready for local commits. | Atomic commits with what/why messages; a push only when requested. |
-| [reflect](skills/reflect/SKILL.md) | Recurrent run friction should inform the next skill improvement. | Cited claims and one evaluated improvement brief. |
-| [to-pitch](skills/to-pitch/SKILL.md) | Finished work needs buy-in. | Demo, rationale, and evidence for a new reader. |
-| [to-quiz](skills/to-quiz/SKILL.md) | A reviewer wants a comprehension check. | A client-side quiz, with honest limits on merge enforcement. |
 
 ## Shared contracts
 
@@ -52,7 +48,7 @@ Claude Code, Codex, opencode, and Pi each name the running session to the shell 
 A value a harness does not record prints as `n/a`, never as zero: Pi's review panel runs with `--no-session`, so Pi runs show subagent tokens and agents as `n/a`, and a run outside any of the four shows every session-derived value as `n/a`.
 Every run appends a row to `.dev/metrics.jsonl` in the consuming repository, and the table compares the run against the median of earlier runs of the same skill, which is where a skill's cost and catch rate become visible over time.
 The same call appends an entry to the cross-repository run journal under `~/.dev-workflow/memory/journal/` (or `$DEV_MEMORY_DIR`): the friction signals measured from the transcript (interrupts, denied and failed tool calls, the user's own turns, and how often each deterministic checker ran and failed), each with its transcript line, plus at most three `--friction` lines in which the skill names where the run fought its own instructions.
-That journal is what `reflect` consolidates. It stays on the machine; set `DEV_MEMORY_DIR=off`, or `"memory": {"enabled": false}` in `.dev/config.json`, to keep a repository out of it.
+It stays on the machine; set `DEV_MEMORY_DIR=off`, or `"memory": {"enabled": false}` in `.dev/config.json`, to keep a repository out of it.
 
 ## Remote execution
 
@@ -65,7 +61,7 @@ laptop: review     ◀── /dev:remote collect ◀── git fetch ◀── f
 
 Each phase is a fresh headless Claude Code session in the sandbox, run as a transient systemd unit under [the unattended contract](skills/remote/references/unattended.md): yolo's no-question rules and hard stops, commit everything, push only the work and evidence branches.
 Dispatch probes the workspace first (a dry-run push to `origin` and `gh auth status`); a sandbox that passes runs ship's pull-request phase in full, and one that fails, or a dispatch with `--publish laptop`, stops at a prepared `pr.md` that is published from here after collect.
-Collect fetches the branch by fast-forward only, merges the plan files without overwriting local edits, imports the run journal so `reflect` sees remote runs, reports the PR the sandbox opened, and opens a worktree of the branch here for publication or CI fixes.
+Collect fetches the branch by fast-forward only, merges the plan files without overwriting local edits, imports the run journal, reports the PR the sandbox opened, and opens a worktree of the branch here for publication or CI fixes.
 Each workspace takes one run at a time, so three sandboxes build three plans in parallel while planning continues here.
 [The protocol](skills/remote/references/protocol.md) owns what crosses each boundary and the run states.
 
@@ -133,16 +129,12 @@ Preserve the explicit-invocation policy with a permission rule in `~/.config/ope
       "*": "allow",
       "scope": "ask",
       "scope-quick": "ask",
-      "scope-review": "ask",
       "commit": "ask",
       "build": "ask",
       "ship": "ask",
       "ship-quick": "ask",
       "yolo": "ask",
-      "remote": "ask",
-      "reflect": "ask",
-      "to-pitch": "ask",
-      "to-quiz": "ask"
+      "remote": "ask"
     }
   }
 }

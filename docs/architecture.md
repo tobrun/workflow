@@ -1,11 +1,11 @@
 # Architecture
 
 Purpose: this repository is a monorepo of agent skills and the tooling that ships them.
-Two plugins live here: `dev`, the hand-invoked development workflow (scope, scope-review, build, ship, the lighter scope-quick and ship-quick, yolo, remote, commit, reflect, and two presentation skills); and `bootstrap`, whose `agents-md` skill writes a consuming repository's root AGENTS.md from the workflow's lessons.
+Two plugins live here: `dev`, the hand-invoked development workflow (scope, build, ship, the lighter scope-quick and ship-quick, yolo, remote, and commit); and `bootstrap`, whose `agents-md` skill writes a consuming repository's root AGENTS.md from the workflow's lessons.
 A person invokes each `dev` skill by hand; skills never invoke each other, and each one recommends the next step instead. The `dev` `yolo` skill is not an invoker: it reads the scope, build, and ship bodies by path and follows them inline in one session, answering each of their user questions with the stage's own recommendation.
 The generated Codex distributions under `plugins/` are built from their source plugin and never edited by hand.
 
-Captured: 2026-09-17 (full, scope) - Updated: 2026-11-12 (dev:remote sandboxes publish with allocated git credentials)
+Captured: 2026-09-17 (full, scope) - Updated: 2026-11-13 (to-pitch, to-quiz, reflect, and scope-review removed per D-simplify-dev)
 
 ## Components
 
@@ -14,7 +14,7 @@ Captured: 2026-09-17 (full, scope) - Updated: 2026-11-12 (dev:remote sandboxes p
 | dev skills | the interactive workflow skills and the references and scripts they share | `dev/skills/`, `dev/references/`, `dev/scripts/` | nothing at runtime; read by Claude, Codex, opencode, and Pi hosts |
 | remote transport | `remote.py` dispatches a plan to a fleet sandbox, follows it, and collects it home; `runner.sh` runs each phase as a headless Claude Code session inside the sandbox | `dev/skills/remote/` | the fleet host over SSH (`fleet sync/fetch/view/start`, `incus exec/list`), git, `~/.dev-workflow/remote/` |
 | dev evals | comprehension evals for the skills | `dev/evals/` | nothing at runtime |
-| workflow memory | the run journal `dev/scripts/skill-metrics.py` appends to (with opencode runs exported as JSONL beside it) and the cited claims, threads, and resolutions `dev/scripts/claims.py` keeps from it; local to the machine, shared by every consuming repository, never committed | ~/.dev-workflow/memory/ (outside this repository) | read by the reflect skill |
+| workflow memory | the run journal `dev/scripts/skill-metrics.py` appends to (with opencode runs exported as JSONL beside it); local to the machine, shared by every consuming repository, never committed | ~/.dev-workflow/memory/ (outside this repository) | read by the reflect skill |
 | generated plugins | the Codex distributions built from each source plugin, with invocation policy in agents/openai.yaml | `plugins/` | Codex plugin marketplace |
 | repo scripts | validation of the whole repository, the plugin generator, and the Pi transport self-test | `scripts/` | every other component |
 | harden tools | optional local analyses a ship gauntlet can draw on: added lines, coverage-weighted complexity, flaky reruns, mutation | `tools/harden/` | nothing; run by hand against a target repository |
@@ -36,11 +36,6 @@ Captured: 2026-09-17 (full, scope) - Updated: 2026-11-12 (dev:remote sandboxes p
    When the probe passed, ship pushes the branch, opens the PR, and follows its checks; the runner reads the PR back with `gh pr view` into `status.json`.
 4. `remote.py collect` runs `fleet fetch`, fast-forwards the local branch from the exchange clone, merges plan files against the dispatch manifest, copies reports and logs home, imports the run journal with its transcripts, releases the lock, and gives the branch a worktree.
 5. A PR the sandbox opened is checked against the collected run and drafted when they disagree; without sandbox publication, evidence images, push, PR, and CI follow-through run here, from that worktree, with this machine's credentials.
-
-### Learning from runs
-1. A person invokes `/dev:reflect` in any repository; `dev/scripts/claims.py pending` lists the journal entries not yet consolidated.
-2. Read-only subagents propose claims about the skills, each quoting a transcript line or journal entry; `claims.py add` accepts a batch only when every quote is found at its source, then rebuilds the derived per-skill pages and threads.
-3. The person picks a thread; the skill writes a scope brief with an eval case from the real run and never edits a skill. After the fix merges, `/dev:reflect resolve` records the commit, and a later claim in the thread reopens it.
 
 ### Building the Codex distribution
 1. `scripts/build_codex_plugin.py` copies skills/, references/, and `scripts/` of the source plugin into plugins/{name}/, strips Claude-only frontmatter, and writes agents/openai.yaml for invocable skills. It removes obsolete distributions identified by their generated README and plugin manifest.

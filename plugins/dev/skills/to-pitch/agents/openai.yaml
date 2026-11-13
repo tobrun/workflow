@@ -1,6 +1,0 @@
-interface:
-  display_name: "To Pitch"
-  short_description: "Turn finished work into a buy-in document"
-  default_prompt: "Use $dev:to-pitch to create a buy-in document for the completed change."
-policy:
-  allow_implicit_invocation: false

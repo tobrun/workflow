@@ -1,7 +1,7 @@
 {
   "name": "dev",
   "version": "3.10.0",
-  "description": "Development workflow skills: scope changes with argued decisions, build across unit/integration/e2e with every scenario proven by tests, ship with a deterministic quality gauntlet and an adversarially verified review, take a task to a pull request unattended with yolo, run build and ship in a remote fleet sandbox with remote, create structured commits that feed a decision ledger, and render pitches or comprehension quizzes.",
+  "description": "Development workflow skills: scope changes with argued decisions, build across unit/integration/e2e with every scenario proven by tests, ship with a deterministic quality gauntlet and an adversarially verified review, take a task to a pull request unattended with yolo, run build and ship in a remote fleet sandbox with remote, and create structured commits that feed a decision ledger.",
   "author": {
     "name": "Tobrun"
   }

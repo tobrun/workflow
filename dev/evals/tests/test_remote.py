@@ -15,6 +15,7 @@ import json
 import io
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -85,7 +86,6 @@ class RemoteCycleTest(unittest.TestCase):
         self.repo = t / "laptop" / "fixture"
         self.sources = t / "sources"
         self.vms = t / "vms"
-        self.memory = t / "memory"
         for path in (self.repo, self.sources, self.vms / "ws-ws1" / "home", self.vms / "ws-ws2" / "home",
                      t / "home"):
             path.mkdir(parents=True)
@@ -95,7 +95,7 @@ class RemoteCycleTest(unittest.TestCase):
                     "HOME": str(t / "home"), "GIT_CONFIG_NOSYSTEM": "1",
                     "PATH": os.pathsep.join([str(FAKES), str(Path(sys.executable).parent), "/usr/bin", "/bin"]),
                     "DEV_REMOTE_CONFIG": str(t / "remote.toml"), "DEV_REMOTE_HOME": str(t / "state"),
-                    "DEV_REMOTE_TMP": str(t / "laptop-tmp"), "DEV_MEMORY_DIR": str(self.memory),
+                    "DEV_REMOTE_TMP": str(t / "laptop-tmp"),
                     "FAKE_FLEET_ROOT": str(self.vms), "FAKE_SOURCES_ROOT": str(self.sources)}
         self.env.pop("FAKE_CLAUDE_MODE", None)
         origin = t / "origin.git"
@@ -169,7 +169,7 @@ class RemoteCycleTest(unittest.TestCase):
 
     # --- the cycle -----------------------------------------------------------
 
-    def test_full_cycle_brings_commits_plan_reports_and_journal_home(self) -> None:
+    def test_full_cycle_brings_commits_plan_reports_and_sessions_home(self) -> None:
         out = self.dispatch()
         run = out["run"]
         self.assertEqual(out["branch"], "dev/greeting")
@@ -207,16 +207,13 @@ class RemoteCycleTest(unittest.TestCase):
         self.assertEqual(self.git(worktree, "rev-parse", "--abbrev-ref", "HEAD"), "dev/greeting")
         self.assertEqual((worktree / ".dev" / "greeting").resolve(), plan.resolve())
 
-        entries = [json.loads(line) for f in (self.memory / "journal").glob("*.jsonl")
-                   for line in f.read_text().splitlines()]
-        self.assertEqual([e["skill"] for e in entries], ["build", "ship"])
-        for entry in entries:
-            self.assertEqual(entry["remote"]["run"], run)
-            self.assertTrue(Path(entry["transcript"]).exists(), entry["transcript"])
-            self.assertTrue(entry["transcript"].startswith(str(self.memory)))
-            self.assertEqual(entry["signals"][0]["transcript"], entry["transcript"])
-            ledger = Path(entry["ledger"]).read_text().splitlines()
-            self.assertEqual(json.loads(ledger[entry["ledger_line"] - 1])["skill"], entry["skill"])
+        artifacts = self.t / "state" / "runs" / run
+        sessions = [c["session"] for c in self.calls(out["workspace"])]
+        self.assertEqual(summary["sessions"], sorted(sessions), "every phase session's transcript comes home")
+        for sid in sessions:
+            self.assertTrue((artifacts / "sessions" / f"{sid}.jsonl").exists())
+            self.assertTrue((artifacts / "sessions" / sid / "subagents" / "agent-1.jsonl").exists(),
+                            "with its subagents, so a later round can continue it anywhere")
         self.assertTrue((self.t / "state" / "runs" / run / "logs" / "build.jsonl").exists())
 
         lock = self.vms / f"ws-{out['workspace']}" / "home" / ".dev-workflow" / "lock"
@@ -483,6 +480,96 @@ class RemoteCycleTest(unittest.TestCase):
         self.remote("resume", run, mode="api-error-once")
         self.assertEqual(self.wait(run), 0)
 
+    def resume(self, *args: str, mode: str | None = None) -> dict:
+        return json.loads(self.remote("resume", *args, mode=mode).stdout)
+
+    def test_a_collected_run_continues_its_last_session(self) -> None:
+        run = self.dispatch()["run"]
+        self.assertEqual(self.wait(run), 0)
+        self.remote("collect", run)
+        ship_session = self.calls()[1]["session"]
+        out = self.resume(run, "--prompt", "Finish the mutation pass.")
+        self.assertEqual((out["how"], out["workspace"], out["round"]), ("restored", "ws1", 2))
+        self.assertEqual((out["phase"], out["mode"], out["session"]), ("ship", "continue", ship_session))
+        self.assertIn(self.status(run)["state"], ("starting", "running", "done"))
+        self.assertEqual(self.wait(run), 0)
+        last = self.calls()[-1]
+        self.assertEqual(last["resume"], ship_session)
+        self.assertTrue(last["prompt"].startswith("Continue the /dev:ship plan .dev/greeting run"))
+        self.assertTrue(last["prompt"].endswith("\n\nFinish the mutation pass."))
+        self.assertEqual(len(self.calls()), 3, "only ship continues; build is not run again")
+        summary = json.loads(self.remote("collect", run).stdout)
+        self.assertEqual(summary["state"], "done", "a second round collects like the first")
+        record = json.loads((self.t / "state" / "runs" / f"{run}.json").read_text())
+        self.assertEqual([r["round"] for r in record["rounds"]], [2])
+        self.assertEqual(record["state"], "collected")
+
+    def test_a_restored_run_takes_this_machines_branch_and_plan_to_another_workspace(self) -> None:
+        run = self.dispatch("--workspace", "ws1")["run"]
+        self.assertEqual(self.wait(run), 0)
+        summary = json.loads(self.remote("collect", run).stdout)
+        worktree = Path(summary["worktree"])
+        (worktree / "laptop.txt").write_text("a fix made here after collect\n")
+        self.git(worktree, "add", "laptop.txt")
+        self.git(worktree, "commit", "-q", "-m", "fix: made on the laptop")
+        (self.repo / ".dev" / "greeting" / "notes.md").write_text("edited here\n")
+        lock = self.vms / "ws-ws1" / "home" / ".dev-workflow" / "lock"
+        lock.mkdir()
+        (lock / "run").write_text("someone-else")
+        ship_session = self.calls("ws1")[1]["session"]
+        out = self.resume(run)
+        self.assertEqual((out["workspace"], out["mode"], out["session"]), ("ws2", "continue", ship_session),
+                         "the run's workspace is busy, so another one continues the same session")
+        self.assertEqual(self.wait(run), 0)
+        self.assertEqual(self.calls("ws2")[-1]["resume"], ship_session,
+                         "the collected transcript went with the run, or the fake would have failed the resume")
+        work = self.vms / "ws-ws2" / "home" / "work" / "fixture"
+        self.assertTrue((work / "laptop.txt").exists(), "the laptop's commit is what the round continues from")
+        self.assertEqual((work / ".dev" / "greeting" / "notes.md").read_text(), "edited here\n")
+        logs = self.vms / "ws-ws2" / "home" / ".dev-workflow" / "runs" / run / "logs"
+        self.assertTrue((logs / "build.jsonl").exists(), "the run's earlier logs travel with it")
+        self.remote("collect", run)
+        self.assertEqual(self.git(self.repo, "log", "-1", "--format=%s", "dev/greeting"), "fix: harden after review")
+
+    def test_from_starts_a_phase_fresh_with_an_instruction(self) -> None:
+        run = self.dispatch()["run"]
+        self.assertEqual(self.wait(run), 0)
+        out = self.resume(run, "--from", "ship", "--prompt", "CI failed on lint; fix it.")
+        self.assertEqual((out["how"], out["mode"], out["session"]), ("in place", "fresh", None),
+                         "an uncollected run resumes in place, even a finished one")
+        self.assertEqual(self.wait(run), 0)
+        last = self.calls()[-1]
+        self.assertIsNone(last["resume"])
+        self.assertEqual(last["prompt"], "/dev:ship plan .dev/greeting\n\nCI failed on lint; fix it.")
+
+    def test_resume_refuses_a_live_run_and_a_point_it_cannot_reach(self) -> None:
+        run = self.dispatch("--phases", "build", mode="sleep")["run"]
+        for _ in range(100):
+            if self.calls():
+                break
+            time.sleep(0.1)
+        result = self.remote("resume", run, check=False)
+        self.assertIn("stop it first", result.stderr)
+        self.remote("stop", run)
+        result = self.remote("resume", run, "--continue", "ship", check=False)
+        self.assertIn("ship is not among the run's phases", result.stderr)
+        result = self.remote("resume", run, "--continue", "ship", "--phases", "build,ship", check=False)
+        self.assertIn("no session was recorded for ship", result.stderr)
+        self.assertIn("--from ship starts it fresh", result.stderr)
+
+    def test_continue_without_the_transcript_anywhere_points_to_from(self) -> None:
+        run = self.dispatch("--workspace", "ws1", "--phases", "build")["run"]
+        self.assertEqual(self.wait(run), 0)
+        self.remote("collect", run)
+        build_session = self.calls("ws1")[0]["session"]
+        shutil.rmtree(self.t / "state" / "runs" / run / "sessions")
+        (self.vms / "ws-ws1" / "home" / ".dev-workflow" / "lock").mkdir()
+        result = self.remote("resume", run, check=False)
+        self.assertIn(f"session {build_session} is neither on ws-ws2 nor collected here", result.stderr)
+        self.assertEqual(list(self.vms.glob("ws-ws2/home/.dev-workflow/lock")), [], "the refusal frees ws2")
+        self.assertEqual(self.resume(run, "--from", "build")["mode"], "fresh")
+        self.assertEqual(self.wait(run), 0)
+
     def test_build_gate_resumes_a_build_that_skipped_its_evidence(self) -> None:
         out = self.dispatch(mode="skip-evidence-once")
         self.assertEqual(self.wait(out["run"]), 0)
@@ -580,11 +667,6 @@ class RemoteUnitTest(unittest.TestCase):
         n = self.m.normalize_url
         self.assertEqual(n("git@github.com:Owner/Repo.git"), n("https://github.com/owner/repo"))
         self.assertNotEqual(n("git@github.com:owner/repo.git"), n("git@github.com:owner/other.git"))
-
-    def test_rewrite_paths_only_touches_prefixed_strings(self) -> None:
-        out = self.m.rewrite_paths({"a": "/home/agent/x", "b": ["/home/agentx", 3], "c": {"d": "/home/agent/y"}},
-                                   "/home/agent/", "/m/")
-        self.assertEqual(out, {"a": "/m/x", "b": ["/home/agentx", 3], "c": {"d": "/m/y"}})
 
     def test_open_calls_reads_none_as_empty(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

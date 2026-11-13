@@ -12,7 +12,7 @@ Skills are explicitly invoked and recommend the next step; only `yolo` follows s
 | [build](skills/build/SKILL.md) | A spec is ready to implement. | Code, tests, runner receipts, incremental notes, and actual application evidence. |
 | [ship](skills/ship/SKILL.md) | A change needs hardening, independent review, and an authorized PR. | Required checks, verified findings with explicit completeness, and current evidence. |
 | [yolo](skills/yolo/SKILL.md) | One task should run unattended. | The full scope/build/ship contracts, recorded assumptions, and a PR or local handoff within available authority. |
-| [remote](skills/remote/SKILL.md) | A scoped plan should build and ship in a sandbox on a fleet host, not on this machine. | The sandbox's commits, plan files, evidence, and run journal brought home, then a PR published from here. |
+| [remote](skills/remote/SKILL.md) | A scoped plan should build and ship in a sandbox on a fleet host, not on this machine. | The sandbox's commits, plan files, evidence, and session transcripts brought home, then a PR published from here. |
 | [commit](skills/commit/SKILL.md) | Requested work is ready for local commits. | Atomic commits with what/why messages; a push only when requested. |
 
 ## Shared contracts
@@ -41,12 +41,12 @@ Mutation testing retains the configured, focused survivor-triage policy; a kill-
 
 ```text
 laptop: /dev:scope ──▶ /dev:remote ── git push ──▶ fleet host exchange clone ── fleet sync ──▶ ws-N: claude -p /dev:build, then /dev:ship ──▶ GitHub PR
-laptop: review     ◀── /dev:remote collect ◀── git fetch ◀── fleet fetch ◀────────────── commits, plan files, reports, journal
+laptop: review     ◀── /dev:remote collect ◀── git fetch ◀── fleet fetch ◀────────────── commits, plan files, reports, sessions
 ```
 
 Each phase is a fresh headless Claude Code session in the sandbox, run as a transient systemd unit under [the unattended contract](skills/remote/references/unattended.md): yolo's no-question rules and hard stops, commit everything, push only the work and evidence branches.
 Dispatch probes the workspace first (a dry-run push to `origin` and `gh auth status`); a sandbox that passes runs ship's pull-request phase in full, and one that fails, or a dispatch with `--publish laptop`, stops at a prepared `pr.md` that is published from here after collect.
-Collect fetches the branch by fast-forward only, merges the plan files without overwriting local edits, imports the run journal, reports the PR the sandbox opened, and opens a worktree of the branch here for publication or CI fixes.
+Collect fetches the branch by fast-forward only, merges the plan files without overwriting local edits, brings every session's transcript home, reports the PR the sandbox opened, and opens a worktree of the branch here for publication or CI fixes.
 On the workspace desktop, a terminal follows the session live, so the noVNC view `fleet view` prints shows the run as it happens.
 Each workspace takes one run at a time, so three sandboxes build three plans in parallel while planning continues here.
 [The protocol](skills/remote/references/protocol.md) owns what crosses each boundary and the run states.
@@ -68,6 +68,7 @@ For sandbox publication, the host also allocates git credentials: as the agent u
 A fine-grained token scoped to the fleet's repositories with contents and pull-request write is the narrowest credential that does; how it reaches the workspace (a token file, a credential helper, a relay that adds it on the wire) is the host's choice.
 The sandbox agent runs on whatever model the fleet's gateway serves, so a remote run's quality follows that model, not this machine's.
 `python3 dev/skills/remote/scripts/remote.py doctor` checks the setup; `status`, `logs --follow`, `stop`, `resume`, and `release` work from any terminal, without a session.
+`resume` starts a new round of any run that is not running, collected or not: it continues a phase's own session or starts a phase fresh (`--continue` or `--from`), with an optional `--prompt`, in place or restored from this machine's branch and plan files.
 
 ## Claude Code installation
 

@@ -9,13 +9,16 @@ Usage:
   remote.py logs RUN [--tail N] [--follow] [--raw]
   remote.py wait RUN [--interval SECONDS]
   remote.py stop RUN
-  remote.py resume RUN
+  remote.py resume RUN [--continue PHASE | --from PHASE] [--prompt TEXT] [--phases LIST]
+                     [--workspace WS] [--publish auto|sandbox|laptop]
   remote.py collect RUN [--keep-lock]
   remote.py release RUN
 
 The laptop keeps planning and MCP access; the sandbox gets the committed
 branch, the plan directory and this plugin, and runs each phase as a headless
-Claude Code session under references/unattended.md. Ship publishes from the
+Claude Code session under references/unattended.md. Any run that is not
+running can resume, collected or not, from a phase's own session or from a
+fresh start of a phase. Ship publishes from the
 sandbox when its git credentials can push to origin, otherwise from here
 after collect. Every byte
 crosses through the fleet host: git objects through its exchange clone
@@ -277,7 +280,7 @@ def runner(host: Host, rec: dict, *args: str, **kwargs) -> subprocess.CompletedP
     return host.vm(rec["workspace"], " ".join(q(a) for a in [f"{run_dir(rec)}/runner.sh", *args]), **kwargs)
 
 
-def acquire(host: Host, cfg: dict, wanted: str | None, run: str) -> str:
+def acquire(host: Host, cfg: dict, wanted: str | None, run: str, prefer: str | None = None) -> str:
     states = host.instances()
     if wanted:
         if wanted not in states:
@@ -286,6 +289,9 @@ def acquire(host: Host, cfg: dict, wanted: str | None, run: str) -> str:
     else:
         allowed = set(cfg["workspaces"]) or set(states)
         candidates = sorted(ws for ws, status in states.items() if status == "Running" and ws in allowed)
+        if prefer in candidates:  # a resumed run goes back where its caches and transcripts are
+            candidates.remove(prefer)
+            candidates.insert(0, prefer)
     held = []
     for ws in candidates:
         if states.get(ws) != "Running":
@@ -322,77 +328,6 @@ def run_state(host: Host, rec: dict) -> dict:
     status["state"] = state
     status["last_event_age"] = info.get("last_event_age")
     return status
-
-
-# --- journal import ----------------------------------------------------------
-
-def memory_dir(repo_root: Path) -> Path | None:
-    value = os.environ.get("DEV_MEMORY_DIR", "~/.dev-workflow/memory")
-    if value.strip().lower() in ("off", "0", "false", ""):
-        return None
-    try:
-        if json.loads((repo_root / ".dev" / "config.json").read_text(encoding="utf-8")).get(
-                "memory", {}).get("enabled") is False:
-            return None
-    except (OSError, ValueError, AttributeError):
-        pass
-    return Path(value).expanduser()
-
-
-def rewrite_paths(value: object, old: str, new: str) -> object:
-    if isinstance(value, str):
-        return new + value[len(old):] if value.startswith(old) else value
-    if isinstance(value, list):
-        return [rewrite_paths(v, old, new) for v in value]
-    if isinstance(value, dict):
-        return {k: rewrite_paths(v, old, new) for k, v in value.items()}
-    return value
-
-
-def import_journal(rec: dict, staged: Path, repo_root: Path) -> list[str]:
-    """Append the sandbox's journal entries to this machine's run journal.
-
-    Transcripts land under {memory}/remote/{run}/home/, mirroring the
-    workspace home, and every path in an entry is rewritten to point there,
-    so `reflect` verifies remote quotes the same way it verifies local ones.
-    """
-    memory = memory_dir(repo_root)
-    journal_files = sorted((staged / "memory" / "journal").glob("*.jsonl"))
-    if memory is None or not journal_files:
-        return []
-    mirror = memory / "remote" / rec["id"] / "home"
-    if (staged / "home").is_dir():
-        shutil.copytree(staged / "home", mirror, dirs_exist_ok=True)
-    remote_ledger = staged / "metrics.jsonl"
-    ledger_rows = remote_ledger.read_text(encoding="utf-8").splitlines() if remote_ledger.exists() else []
-    local_ledger = repo_root / ".dev" / "metrics.jsonl"
-    done = set(rec.get("journal_imported", []))
-    imported = []
-    for path in journal_files:
-        for line in path.read_text(encoding="utf-8").splitlines():
-            try:
-                entry = json.loads(line)
-            except ValueError:
-                continue
-            if entry.get("id") in done:
-                continue
-            row_line = entry.get("ledger_line") or 0
-            row = ledger_rows[row_line - 1] if 0 < row_line <= len(ledger_rows) else None
-            entry = rewrite_paths(entry, rec["vm_home"] + "/", str(mirror) + "/")
-            entry.update(repo_path=str(repo_root), ledger=None, ledger_line=None,
-                         remote={"run": rec["id"], "workspace": rec["workspace"], "host": rec["host"]})
-            if row:
-                local_ledger.parent.mkdir(parents=True, exist_ok=True)
-                count = sum(1 for _ in local_ledger.open(encoding="utf-8")) if local_ledger.exists() else 0
-                with local_ledger.open("a", encoding="utf-8") as handle:
-                    handle.write(row.rstrip("\n") + "\n")
-                entry.update(ledger=str(local_ledger), ledger_line=count + 1)
-            target = memory / "journal" / f"{str(entry.get('ended_at') or now())[:10]}.jsonl"
-            target.parent.mkdir(parents=True, exist_ok=True)
-            with target.open("a", encoding="utf-8") as handle:
-                handle.write(json.dumps(entry) + "\n")
-            imported.append(entry.get("id"))
-    return imported
 
 
 # --- plan files --------------------------------------------------------------
@@ -553,16 +488,109 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     return 0 if all(c["ok"] for c in report["checks"]) else 1
 
 
+def parse_phases(text: str) -> list[str]:
+    phases = [p.strip() for p in text.split(",") if p.strip()]
+    bad = [p for p in phases if p not in PHASES]
+    if not phases or bad:
+        raise Refused(f"phases must be a comma list of {', '.join(PHASES)} (got {text!r})")
+    return phases
+
+
+def committed_source(root: Path, branch: str) -> tuple[str, list[str]]:
+    """The ref to send for `branch` (it or HEAD), refusing uncommitted tracked work; plus untracked files."""
+    # An existing work branch is what the sandbox continues (a quick-mode ship round, a re-run);
+    # otherwise the branch starts at HEAD. Either way it must be fully committed where it is checked out.
+    exists = git_ok("rev-parse", "--verify", "-q", f"refs/heads/{branch}", cwd=root)
+    source = f"refs/heads/{branch}" if exists else "HEAD"
+    checkout = checked_out_at(root, branch) if exists else root
+    if checkout is None:
+        return source, []
+    dirty = git("status", "--porcelain", "--untracked-files=no", cwd=checkout)
+    if dirty:
+        raise Refused(f"tracked files in {checkout} have uncommitted changes; the sandbox receives committed "
+                      "work only:\n" + dirty)
+    return source, [line[3:] for line in git("status", "--porcelain", cwd=checkout).splitlines()
+                    if line.startswith("??")]
+
+
+def merge_base(root: Path, source: str, default: str) -> str:
+    # Ship diffs against this merge base, so a branch with no origin still measures from the local default.
+    base_ref = next((ref for ref in (f"refs/remotes/origin/{default}", f"refs/heads/{default}")
+                     if git_ok("rev-parse", "--verify", "-q", ref, cwd=root)), None)
+    return git("merge-base", source, base_ref, cwd=root) if base_ref else git("rev-parse", source, cwd=root)
+
+
+def refuse_busy_branch(root: Path, branch: str, run: str | None = None) -> None:
+    for other in all_records():
+        if (other.get("repo_root") == str(root) and other.get("branch") == branch
+                and other.get("state") == "dispatched" and other["id"] != run):
+            raise Refused(f"run {other['id']} is already working on {branch}; collect or release it first")
+
+
+def deliver(host: Host, cfg: dict, rec: dict, root: Path, source: str) -> None:
+    """Put `source` at refs/remotes/origin/{branch} in the workspace's checkout, through the exchange clone."""
+    ws, repo, branch, origin_url = rec["workspace"], rec["repo"], rec["branch"], rec["origin_url"]
+    exchange = f"{cfg['sources_root']}/{repo}"
+    host_origin = host.text(f"if [ ! -d {q(exchange)}/.git ]; then git init -q {q(exchange)}; fi; "
+                            f"git -C {q(exchange)} remote get-url origin 2>/dev/null || true")
+    if host_origin and origin_url and normalize_url(host_origin) != normalize_url(origin_url):
+        raise Refused(f"{exchange} on the host tracks {host_origin}, not {origin_url}; "
+                      "rename this checkout or move the host clone")
+    # The exchange clone is a private transport ref, never GitHub: force keeps it equal to this checkout.
+    git("push", "-q", "--no-verify", "--force", host.git_url(exchange), f"{source}:refs/heads/{branch}", cwd=root)
+    host.sh(f"fleet sync {q(ws)} {q(repo)}")
+    # fleet sync reports success even when its fetch into an existing checkout was refused,
+    # so the delivery is checked where the runner will look for it.
+    sent = git("rev-parse", source, cwd=root)
+    arrived = host.vm_text(ws, f"git -C \"$HOME/work/\"{q(repo)} rev-parse -q --verify "
+                               f"{q(f'refs/remotes/origin/{branch}')} 2>/dev/null", check=False)
+    if arrived != sent:
+        raise Refused(f"fleet sync did not deliver {branch} to {ws} (the workspace has {arrived or 'no such ref'}, "
+                      f"expected {sent[:12]}); a sync into an existing checkout fails silently when the host's "
+                      "fleet fetches as root into the agent-owned clone (git: dubious ownership) - fix fleet "
+                      f"sync on the host, or remove ~/work/{repo} in ws-{ws} so the next sync clones it fresh")
+
+
+def run_files(stage: tarfile.TarFile, cfg: dict, rec: dict, round_: dict) -> None:
+    """What every round refreshes in the run directory: the plugin, runner, contract, and run settings."""
+    payload = {**{k: rec[k] for k in ("id", "repo", "plan", "branch", "base", "default_branch",
+                                      "origin_url", "phases")},
+               "publish": rec["publish"]["mode"], "github_repo": github_repo(rec["origin_url"]),
+               "model": cfg["model"], "phase_timeout_seconds": int(float(cfg["phase_timeout_hours"]) * 3600),
+               "view": cfg["view"]}
+    contract = render_contract(rec["publish"]["mode"], {
+        "{plugin}": f"{run_dir(rec)}/dev", "{plan}": rec["plan"], "{branch}": rec["branch"],
+        "{default}": rec["default_branch"]})
+    plugin_tar(stage, "dev")
+    add_bytes(stage, "run.json", json.dumps(payload, indent=2).encode())
+    add_bytes(stage, "round.json", json.dumps(round_, indent=2).encode())
+    add_bytes(stage, "contract.md", contract.encode())
+    add_bytes(stage, "runner.sh", RUNNER.read_bytes(), 0o755)
+
+
+def plan_files(stage: tarfile.TarFile, rec: dict, plan_dir: Path) -> None:
+    stage.add(plan_dir, arcname="plan")
+    # Reports and evidence collected from an earlier run follow the plan, whichever sandbox runs next.
+    for name in ("reports", "pr-evidence"):
+        if (tmp_root() / rec["repo"] / name).is_dir():
+            stage.add(tmp_root() / rec["repo"] / name, arcname=f"tmp/{name}")
+
+
+def start_unit(host: Host, rec: dict, round_no: int) -> None:
+    ws, run = q(rec["workspace"]), q(rec["id"])
+    runner(host, rec, "queued", str(round_no))
+    host.sh(f"incus exec ws-{ws} -- systemctl reset-failed dev-run-{run} 2>/dev/null; "
+            f"incus exec ws-{ws} -- systemd-run --quiet --collect --unit=dev-run-{run} --uid=agent "
+            f"/bin/bash -lc {q(q(run_dir(rec) + '/runner.sh') + ' run')}")
+
+
 def cmd_dispatch(args: argparse.Namespace) -> int:
     cfg = load_config()
     root = Path(git("rev-parse", "--show-toplevel"))
     repo = root.name
     if not SAFE_NAME.match(repo):
         raise Refused(f"repository directory name {repo!r} is not a safe exchange name")
-    phases = [p.strip() for p in args.phases.split(",") if p.strip()]
-    bad = [p for p in phases if p not in PHASES]
-    if not phases or bad:
-        raise Refused(f"phases must be a comma list of {', '.join(PHASES)} (got {args.phases!r})")
+    phases = parse_phases(args.phases)
     if not SAFE_NAME.match(args.plan):
         raise Refused(f"invalid plan name {args.plan!r}")
     plan_dir = root / ".dev" / args.plan
@@ -591,27 +619,10 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
     branch = args.branch or (f"dev/{args.plan}" if current == default else current)
     if not git_ok("check-ref-format", "--branch", branch, cwd=root) or branch == default:
         raise Refused(f"cannot run on branch {branch!r}; pass --branch with a work branch name")
-    # An existing work branch is what the sandbox continues (a quick-mode ship round, a re-run);
-    # otherwise the branch starts at HEAD. Either way it must be fully committed where it is checked out.
-    exists = git_ok("rev-parse", "--verify", "-q", f"refs/heads/{branch}", cwd=root)
-    source = f"refs/heads/{branch}" if exists else "HEAD"
-    checkout = checked_out_at(root, branch) if exists else root
-    untracked = []
-    if checkout is not None:
-        dirty = git("status", "--porcelain", "--untracked-files=no", cwd=checkout)
-        if dirty:
-            raise Refused(f"tracked files in {checkout} have uncommitted changes; the sandbox receives committed "
-                          "work only:\n" + dirty)
-        untracked = [line[3:] for line in git("status", "--porcelain", cwd=checkout).splitlines()
-                     if line.startswith("??")]
-    # Ship diffs against this merge base, so a branch with no origin still measures from the local default.
-    base_ref = next((ref for ref in (f"refs/remotes/origin/{default}", f"refs/heads/{default}")
-                     if git_ok("rev-parse", "--verify", "-q", ref, cwd=root)), None)
-    base = git("merge-base", source, base_ref, cwd=root) if base_ref else git("rev-parse", source, cwd=root)
+    source, untracked = committed_source(root, branch)
+    base = merge_base(root, source, default)
     origin_url = git("remote", "get-url", "origin", cwd=root, check=False)
-    for other in all_records():
-        if other.get("repo_root") == str(root) and other.get("branch") == branch and other.get("state") == "dispatched":
-            raise Refused(f"run {other['id']} is already working on {branch}; collect or release it first")
+    refuse_busy_branch(root, branch)
 
     host = Host(cfg)
     stamp = datetime.now(timezone.utc).strftime("%y%m%d-%H%M")
@@ -623,52 +634,19 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
     rec = {"id": run, "repo": repo, "repo_root": str(root), "plan": args.plan, "branch": branch, "base": base,
            "default_branch": default, "origin_url": origin_url, "phases": phases, "workspace": ws,
            "host": cfg.get("host", "local"), "dispatched_at": now(), "manifest": manifest(plan_dir),
-           "state": "dispatched"}
+           "publish_requested": args.publish or cfg["publish"], "state": "dispatched"}
     try:
         rec["vm_home"] = host.vm_text(ws, 'printf %s "$HOME"')
-        exchange = f"{cfg['sources_root']}/{repo}"
-        host_origin = host.text(f"if [ ! -d {q(exchange)}/.git ]; then git init -q {q(exchange)}; fi; "
-                                f"git -C {q(exchange)} remote get-url origin 2>/dev/null || true")
-        if host_origin and origin_url and normalize_url(host_origin) != normalize_url(origin_url):
-            raise Refused(f"{exchange} on the host tracks {host_origin}, not {origin_url}; "
-                          "rename this checkout or move the host clone")
-        # The exchange clone is a private transport ref, never GitHub: force keeps it equal to this checkout.
-        git("push", "-q", "--no-verify", "--force", host.git_url(exchange), f"{source}:refs/heads/{branch}", cwd=root)
-        host.sh(f"fleet sync {q(ws)} {q(repo)}")
-        # fleet sync reports success even when its fetch into an existing checkout was refused,
-        # so the delivery is checked where the runner will look for it.
-        sent = git("rev-parse", source, cwd=root)
-        arrived = host.vm_text(ws, f"git -C \"$HOME/work/\"{q(repo)} rev-parse -q --verify "
-                                   f"{q(f'refs/remotes/origin/{branch}')} 2>/dev/null", check=False)
-        if arrived != sent:
-            raise Refused(f"fleet sync did not deliver {branch} to {ws} (the workspace has {arrived or 'no such ref'}, "
-                          f"expected {sent[:12]}); a sync into an existing checkout fails silently when the host's "
-                          "fleet fetches as root into the agent-owned clone (git: dubious ownership) - fix fleet "
-                          f"sync on the host, or remove ~/work/{repo} in ws-{ws} so the next sync clones it fresh")
-        rec["publish"] = resolve_publish(args.publish or cfg["publish"], phases,
+        deliver(host, cfg, rec, root, source)
+        rec["publish"] = resolve_publish(rec["publish_requested"], phases,
                                          lambda: probe_publish(host, ws, repo, branch, origin_url, run))
-        payload = {**{k: rec[k] for k in ("id", "repo", "plan", "branch", "base", "default_branch",
-                                          "origin_url", "phases")},
-                   "publish": rec["publish"]["mode"], "github_repo": github_repo(origin_url), "model": cfg["model"],
-                   "phase_timeout_seconds": int(float(cfg["phase_timeout_hours"]) * 3600),
-                   "view": cfg["view"]}
-        contract = render_contract(rec["publish"]["mode"], {
-            "{plugin}": f"{run_dir(rec)}/dev", "{plan}": args.plan, "{branch}": branch, "{default}": default})
         buffer = io.BytesIO()
         with tarfile.open(fileobj=buffer, mode="w:gz") as stage:
-            plugin_tar(stage, "dev")
-            stage.add(plan_dir, arcname="plan")
-            # Reports and evidence collected from an earlier run follow the plan, whichever sandbox runs next.
-            for name in ("reports", "pr-evidence"):
-                if (tmp_root() / repo / name).is_dir():
-                    stage.add(tmp_root() / repo / name, arcname=f"tmp/{name}")
-            add_bytes(stage, "run.json", json.dumps(payload, indent=2).encode())
-            add_bytes(stage, "contract.md", contract.encode())
-            add_bytes(stage, "runner.sh", RUNNER.read_bytes(), 0o755)
+            run_files(stage, cfg, rec, {"round": 1, "checkout": "fresh", "first": None})
+            plan_files(stage, rec, plan_dir)
         d = run_dir(rec)
         host.vm(ws, f"rm -rf {q(d)} && mkdir -p {q(d)} && tar -xzf - -C {q(d)}", data=buffer.getvalue())
-        host.sh(f"incus exec ws-{q(ws)} -- systemd-run --quiet --collect --unit=dev-run-{q(run)} --uid=agent "
-                f"/bin/bash -lc {q(q(d + '/runner.sh') + ' run')}")
+        start_unit(host, rec, 1)
     except Exception:
         release(host, rec)
         raise
@@ -761,21 +739,143 @@ def cmd_stop(args: argparse.Namespace) -> int:
     return 0
 
 
+def collected_status(rec: dict) -> dict:
+    try:
+        status = json.loads((state_root() / "runs" / rec["id"] / "status.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return status if isinstance(status, dict) else {}
+
+
+def resume_point(status: dict, phases: list[str], start: str | None, cont: str | None) -> dict:
+    """Where a round starts: a phase's recorded session continued, or a phase started fresh.
+
+    Without a choice, the phase that ended continues: the one that failed or stopped, or for
+    a finished run the last phase that has a session.
+    """
+    sessions = status.get("session") if isinstance(status.get("session"), dict) else {}
+    if start:
+        phase, mode = start, "fresh"
+    else:
+        phase = cont or status.get("phase") or next((p for p in reversed(phases) if sessions.get(p)), phases[0])
+        mode = "continue" if sessions.get(phase) or cont else "fresh"
+    if phase not in phases:
+        raise Refused(f"{phase} is not among the run's phases ({','.join(phases)}); pass --phases to include it")
+    if mode == "continue" and not sessions.get(phase):
+        raise Refused(f"no session was recorded for {phase}, so there is nothing to continue; "
+                      f"--from {phase} starts it fresh")
+    return {"phase": phase, "mode": mode, "session": sessions.get(phase, "") if mode == "continue" else "",
+            "prompt": ""}
+
+
+def project_dir(rec: dict) -> str:
+    """Where Claude Code keeps transcripts of sessions run in the workspace checkout."""
+    return f"{rec['vm_home']}/.claude/projects/" + re.sub(r"[^A-Za-z0-9]", "-", f"{rec['vm_home']}/work/{rec['repo']}")
+
+
 def cmd_resume(args: argparse.Namespace) -> int:
+    """Start a new round of a run that is not running, collected or not.
+
+    In place while the run is uncollected: its workspace, checkout and plan files as they are.
+    Restored once collected or released: this machine's branch and plan files are the truth,
+    sent to the run's workspace when it is free (any free one otherwise), with the transcript
+    of a session to continue when that workspace does not have it.
+    """
     rec = load_record(args.run)
-    if rec.get("state") != "dispatched":
-        raise Refused(f"run {rec['id']} is {rec.get('state')}; only an uncollected run can resume")
-    host = Host(load_config())
-    live = run_state(host, rec)
-    if live.get("state") not in ("failed", "lost", "stopped"):
-        raise Refused(f"run {rec['id']} is {live.get('state')}; only a failed, lost or stopped run resumes")
-    d = run_dir(rec)
-    host.sh(f"incus exec ws-{q(rec['workspace'])} -- systemctl reset-failed dev-run-{q(rec['id'])} 2>/dev/null; "
-            f"incus exec ws-{q(rec['workspace'])} -- systemd-run --quiet --collect --unit=dev-run-{q(rec['id'])} "
-            f"--uid=agent /bin/bash -lc {q(q(d + '/runner.sh') + ' resume')}")
-    rec.setdefault("resumes", []).append({"at": now(), "phase": live.get("phase")})
-    save_record(rec)
-    print(json.dumps({"run": rec["id"], "resumed_phase": live.get("phase")}, indent=2))
+    cfg = load_config()
+    host = Host(cfg)
+    phases = parse_phases(args.phases) if args.phases else list(rec["phases"])
+    in_place = rec.get("state") == "dispatched"
+    if in_place:
+        status = run_state(host, rec)
+        if status.get("state") in ("starting", "running"):
+            raise Refused(f"run {rec['id']} is {status['state']}; stop it first (remote.py stop {rec['id']})")
+        if status.get("state") == "unknown":
+            raise Refused(f"ws-{rec['workspace']} no longer holds run {rec['id']} ({status.get('detail') or 'no state'}); "
+                          f"`remote.py release {rec['id']}`, then resume restores it from this machine")
+    else:
+        status = collected_status(rec)
+    point = resume_point(status, phases, args.start, args.cont)
+    point["prompt"] = args.prompt or ""
+    remaining = phases[phases.index(point["phase"]):]
+    round_no = len(rec.get("rounds", [])) + 2
+    requested = args.publish or rec.get("publish_requested") or cfg["publish"]
+    record = {**rec, "phases": phases}
+
+    if in_place:
+        record["publish"] = resolve_publish(requested, remaining, lambda: probe_publish(
+            host, rec["workspace"], rec["repo"], rec["branch"], rec["origin_url"], rec["id"]))
+        buffer = io.BytesIO()
+        with tarfile.open(fileobj=buffer, mode="w:gz") as stage:
+            run_files(stage, cfg, record, {"round": round_no, "checkout": "as-is", "first": point})
+        d = run_dir(rec)
+        host.vm(rec["workspace"], f"rm -rf {q(d)}/dev {q(d)}/sessions-in && tar -xzf - -C {q(d)}",
+                data=buffer.getvalue())
+        start_unit(host, record, round_no)
+    else:
+        root = Path(rec["repo_root"])
+        if not (root / ".git").exists():
+            raise Refused(f"{root} is not a git checkout any more; the run restores from it")
+        branch = rec["branch"]
+        if not git_ok("rev-parse", "--verify", "-q", f"refs/heads/{branch}", cwd=root):
+            raise Refused(f"{branch} does not exist in {root}; nothing to restore the run from "
+                          f"(commits a collect refused wait at refs/dev-remote/{rec['id']})")
+        plan_dir = root / ".dev" / rec["plan"]
+        if not plan_dir.is_dir():
+            raise Refused(f"no plan directory {plan_dir} to restore the run with")
+        source, _ = committed_source(root, branch)
+        refuse_busy_branch(root, branch, rec["id"])
+        artifacts = state_root() / "runs" / rec["id"]
+        ws = acquire(host, cfg, args.workspace, rec["id"], prefer=rec["workspace"])
+        record.update(workspace=ws, base=merge_base(root, source, rec["default_branch"]))
+        try:
+            record["vm_home"] = host.vm_text(ws, 'printf %s "$HOME"')
+            deliver(host, cfg, record, root, source)
+            record["publish"] = resolve_publish(requested, remaining, lambda: probe_publish(
+                host, ws, rec["repo"], branch, rec["origin_url"], rec["id"]))
+            d = run_dir(record)
+            check = f"test -d {q(d)} && echo run; "
+            if point["session"]:
+                check += f"test -f {q(project_dir(record) + '/' + point['session'] + '.jsonl')} && echo session; "
+            have = host.vm_text(ws, check + "true", check=False).split()
+            send_session = bool(point["session"]) and "session" not in have
+            if send_session and not (artifacts / "sessions" / f"{point['session']}.jsonl").exists():
+                raise Refused(f"the transcript of {point['phase']}'s session {point['session']} is neither on "
+                              f"ws-{ws} nor collected here; --from {point['phase']} starts it fresh")
+            buffer = io.BytesIO()
+            with tarfile.open(fileobj=buffer, mode="w:gz") as stage:
+                run_files(stage, cfg, record, {"round": round_no,
+                                               "checkout": "sync" if point["mode"] == "continue" else "fresh",
+                                               "first": point})
+                plan_files(stage, record, plan_dir)
+                if send_session:
+                    for name in (f"{point['session']}.jsonl", point["session"]):
+                        if (artifacts / "sessions" / name).exists():
+                            stage.add(artifacts / "sessions" / name, arcname=f"sessions-in/{name}")
+                if "run" not in have:
+                    # Another workspace: the run's history goes with it, so its logs and state continue.
+                    for name in ("logs", "status.json", "sessions.txt"):
+                        if (artifacts / name).exists():
+                            stage.add(artifacts / name, arcname=name)
+            host.vm(ws, f"mkdir -p {q(d)} && rm -rf {q(d)}/dev {q(d)}/plan {q(d)}/tmp {q(d)}/sessions-in "
+                        f"&& tar -xzf - -C {q(d)}", data=buffer.getvalue())
+            start_unit(host, record, round_no)
+        except Exception:
+            release(host, record)
+            raise
+        record.update(state="dispatched", manifest=manifest(plan_dir))
+        for key in ("collected_at", "released_at", "outcome"):
+            record.pop(key, None)
+
+    record.setdefault("rounds", []).append({
+        "round": round_no, "at": now(), "how": "in place" if in_place else "restored",
+        "workspace": record["workspace"], "phases": phases, **point})
+    save_record(record)
+    view = host.text(f"fleet view {q(record['workspace'])}", check=False)
+    print(json.dumps({"run": rec["id"], "round": round_no, "how": "in place" if in_place else "restored",
+                      "workspace": record["workspace"], "phase": point["phase"], "mode": point["mode"],
+                      "session": point["session"] or None, "phases": remaining, "publish": record["publish"],
+                      "view": view or None}, indent=2))
     return 0
 
 
@@ -869,15 +969,15 @@ def cmd_collect(args: argparse.Namespace) -> int:
             shutil.copytree(staged / name, tmp_root() / rec["repo"] / name, dirs_exist_ok=True)
     if (staged / "run").is_dir():
         shutil.copytree(staged / "run", with_dir, dirs_exist_ok=True)
+    if (staged / "sessions").is_dir():  # every phase session's transcript, so any later round can continue it
+        shutil.copytree(staged / "sessions", with_dir / "sessions", dirs_exist_ok=True)
+    summary["sessions"] = sorted(p.stem for p in (with_dir / "sessions").glob("*.jsonl"))
     summary["uncommitted_patches"] = sorted(str(p) for p in with_dir.glob("*.patch"))
     # The pull request the sandbox opened, as the runner read it back from the host after ship.
     try:
         summary["pr"] = json.loads((with_dir / "status.json").read_text(encoding="utf-8")).get("pr")
     except (OSError, ValueError):
         summary["pr"] = None
-    imported = import_journal(rec, staged, root)
-    rec["journal_imported"] = rec.get("journal_imported", []) + imported
-    summary["journal_entries_imported"] = len(imported)
 
     # 3. A checkout of the branch for publication, without touching the user's own checkout.
     if where is None and not git_ok("rev-parse", "--verify", "-q", local_ref, cwd=root):
@@ -944,8 +1044,17 @@ def main(argv: list[str] | None = None) -> int:
     w.add_argument("run")
     w.add_argument("--interval", type=float, default=60)
     w.add_argument("--max-failures", type=int, default=30)
-    for name in ("stop", "resume", "release"):
+    for name in ("stop", "release"):
         sub.add_parser(name).add_argument("run")
+    r = sub.add_parser("resume")
+    r.add_argument("run")
+    point = r.add_mutually_exclusive_group()
+    point.add_argument("--continue", dest="cont", choices=PHASES, help="continue this phase's recorded session")
+    point.add_argument("--from", dest="start", choices=PHASES, help="start this phase with a fresh session")
+    r.add_argument("--prompt", help="an instruction added to the first session's prompt")
+    r.add_argument("--phases", help="replace the run's phase list; the round runs from its phase to the end")
+    r.add_argument("--workspace", help="restore a collected run on this workspace")
+    r.add_argument("--publish", choices=PUBLISH, help="override the run's publish mode from this round on")
     c = sub.add_parser("collect")
     c.add_argument("run")
     c.add_argument("--keep-lock", action="store_true")

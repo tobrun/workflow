@@ -51,7 +51,7 @@ TOKEN_KEYS = ("input", "cache_read", "cache_write", "output")
 EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 # The deterministic checkers the skills loop against; a failed run of one is loop
 # progress, so it is counted per checker instead of logged as a tool error.
-CHECKERS = ("lint-spec.py", "check-tests.py", "pr-evidence.py", "architecture-check.py",
+CHECKERS = ("lint-spec.py", "check-tests.py", "pr-evidence.py",
             "check-agents-md.py", "aggregate-findings.py", "claims.py")
 # A checker counts only where a command runs it, never where one greps or edits it.
 CHECKER_RUN = re.compile(r"(?:^|[;&|(]\s*|\bpython3?\s+(?:-\S+\s+)*)\S*?(" + "|".join(re.escape(c) for c in CHECKERS) + r")(?=\s|$)",

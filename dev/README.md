@@ -26,7 +26,6 @@ Skills are explicitly invoked and recommend the next step; only `yolo` follows s
   Missing or invalid results yield INCOMPLETE, not approval; useful findings remain visible.
 - [Decision ledger](references/decision-ledger.md) records choices and rationale.
   [Contracts](references/contracts.md) record boundary guarantees with provenance; planned guarantees remain unverified until checked against implementation.
-- [Architecture](references/architecture.md) and [dependency rules](references/dependency-rules.md) describe existing boundaries when a project keeps them.
   A missing overview does not turn a small task into whole-system documentation work.
 - [CI parity](references/ci-parity.md) keeps every existing required repository check mandatory at the change's impact, with full PR follow-through when publication is authorized.
   Share only when requested; evidence records the actual capture and tested sources.
@@ -59,6 +58,7 @@ laptop: review     ◀── /dev:remote collect ◀── git fetch ◀── f
 Each phase is a fresh headless Claude Code session in the sandbox, run as a transient systemd unit under [the unattended contract](skills/remote/references/unattended.md): yolo's no-question rules and hard stops, commit everything, push only the work and evidence branches.
 Dispatch probes the workspace first (a dry-run push to `origin` and `gh auth status`); a sandbox that passes runs ship's pull-request phase in full, and one that fails, or a dispatch with `--publish laptop`, stops at a prepared `pr.md` that is published from here after collect.
 Collect fetches the branch by fast-forward only, merges the plan files without overwriting local edits, imports the run journal, reports the PR the sandbox opened, and opens a worktree of the branch here for publication or CI fixes.
+On the workspace desktop, a terminal follows the session live, so the noVNC view `fleet view` prints shows the run as it happens.
 Each workspace takes one run at a time, so three sandboxes build three plans in parallel while planning continues here.
 [The protocol](skills/remote/references/protocol.md) owns what crosses each boundary and the run states.
 
@@ -71,6 +71,7 @@ workspaces = ["ws1", "ws2", "ws3"]  # fleet names to use; empty = every running 
 phase_timeout_hours = 8
 model = ""                          # optional --model for the sandbox agent
 publish = "auto"                    # auto: the sandbox publishes when its credentials pass the probe; sandbox; laptop
+view = true                         # a terminal on the sandbox desktop follows the run, for watching over noVNC
 ```
 
 The host contract is the Incus workspace fleet: a `fleet` CLI with `sync`, `fetch`, `start`, and `view`; `incus` for `exec` and `list`; workspaces running `ws-{name}` VMs with an `agent` user, Claude Code, Python 3, and systemd.
@@ -112,7 +113,7 @@ done
 ln -sfn "$PWD/dev/references" ~/.config/opencode/references
 ```
 
-The last symlink keeps the shared references (`decision-ledger.md`, `contracts.md`, `architecture.md`) reachable through the `../../references/` links inside the skills.
+The last symlink keeps the shared references (`decision-ledger.md`, `contracts.md`, `plan-layout.md`) reachable through the `../../references/` links inside the skills.
 Symlinks mean a `git pull` updates the skills in place; restart opencode afterwards, since skills load at startup.
 The symlinks point at the clone, so keep it in place; if you move it, rerun the commands from the new location.
 

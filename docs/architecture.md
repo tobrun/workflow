@@ -35,6 +35,7 @@ Captured: 2026-09-17 (full, scope) - Updated: 2026-11-13 (simplified to six skil
 4. `remote.py collect` runs `fleet fetch`, fast-forwards the local branch from the exchange clone, merges plan files against the dispatch manifest, copies reports, logs, and every phase session's transcript home, releases the lock, and gives the branch a worktree.
 5. A PR the sandbox opened is checked against the collected run and drafted when they disagree; without sandbox publication, evidence images, push, PR, and CI follow-through run here, from that worktree, with this machine's credentials.
 6. `remote.py resume` starts a new round of any run that is not running: in place while it is uncollected, otherwise restored from this machine's branch and plan files, with the collected transcript of a session it continues.
+7. `remote.py local` brings a run home and installs the transcript of a session to continue into this machine's Claude Code, then prints the command that continues it in the worktree.
 
 ### Building the Codex distribution
 1. `scripts/build_codex_plugin.py` copies skills/, references/, and `scripts/` of the source plugin into plugins/{name}/, strips Claude-only frontmatter, and writes agents/openai.yaml for invocable skills. It removes obsolete distributions identified by their generated README and plugin manifest.

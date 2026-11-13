@@ -18,6 +18,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tarfile
 import tempfile
 import time
 import unittest
@@ -696,6 +697,34 @@ class RemoteUnitTest(unittest.TestCase):
         for bad in ("[table]\n", "when = 2026-11-13\n"):
             with self.assertRaises(ValueError):
                 self.m.parse_flat_toml(bad)
+
+    @staticmethod
+    def archive(*members: tuple[str, str]) -> bytes:
+        """A tar.gz of (name, kind) members: file, link, or setuid."""
+        buffer = io.BytesIO()
+        with tarfile.open(fileobj=buffer, mode="w:gz") as tar:
+            for name, kind in members:
+                info = tarfile.TarInfo(name)
+                if kind == "link":
+                    info.type, info.linkname = tarfile.SYMTYPE, "/etc/passwd"
+                    tar.addfile(info)
+                    continue
+                info.size, info.mode = 4, 0o4777 if kind == "setuid" else 0o644
+                tar.addfile(info, io.BytesIO(b"data"))
+        return buffer.getvalue()
+
+    def test_extract_tar_keeps_untrusted_output_inside_its_folder_without_the_data_filter(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(self.m, "HAS_DATA_FILTER", False):
+            dest = Path(tmp) / "out"
+            self.m.extract_tar(self.archive(("plan/spec.md", "file"), ("evil-link", "link"),
+                                            ("run/tool", "setuid")), dest)
+            self.assertEqual((dest / "plan" / "spec.md").read_bytes(), b"data")
+            self.assertFalse((dest / "evil-link").is_symlink(), "links are not data")
+            self.assertEqual((dest / "run" / "tool").stat().st_mode & 0o7777, 0o755, "no setuid, no other-write")
+            for escape in ("../outside.txt", "/tmp/absolute.txt"):
+                with self.assertRaises(self.m.Refused):
+                    self.m.extract_tar(self.archive((escape, "file")), dest)
+            self.assertFalse((Path(tmp) / "outside.txt").exists())
 
     def test_open_calls_reads_none_as_empty(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

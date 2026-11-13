@@ -148,6 +148,8 @@ class RemoteCycleTest(unittest.TestCase):
             self.assertIn(flag, argv)
         settings = json.loads(Path(argv[argv.index("--settings") + 1]).read_text())
         self.assertEqual(settings["attribution"], {"commit": "", "pr": ""}, "no Co-Authored-By in sandbox commits")
+        self.assertEqual({c["bg_wait_ms"] for c in self.calls(out["workspace"])}, {"6000000"},
+                         "every phase waits ten times Claude Code's 600 s default for its background agents")
 
         summary = json.loads(self.remote("collect", run).stdout)
         self.assertEqual(summary["branch_update"], "created")

@@ -87,7 +87,8 @@ def main() -> int:
     calls = VM / "claude-calls.jsonl"
     with calls.open("a") as handle:
         handle.write(json.dumps({"prompt": prompt, "session": session, "resume": resume, "cwd": os.getcwd(),
-                                 "argv": sys.argv[1:]}) + "\n")
+                                 "argv": sys.argv[1:],
+                                 "bg_wait_ms": os.environ.get("CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS")}) + "\n")
     assert (plugin / "skills" / "build" / "SKILL.md").exists(), "plugin copy is missing build"
     assert "{plugin}" not in contract and "{plan}" not in contract, "contract placeholders left unrendered"
     emit({"type": "system", "subtype": "init", "session_id": session, "model": "fake"})

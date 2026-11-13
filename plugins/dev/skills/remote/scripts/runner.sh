@@ -275,6 +275,9 @@ setup_env() {
     set +a
   fi
   export DEV_MEMORY_DIR="$RUN_DIR/memory"
+  # How long a headless phase waits for its background agents before Claude Code ends it.
+  # The 600 s default killed a ship fix agent mid-run, so allow ten times that.
+  export CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS="${CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS:-6000000}"
   github_env
   trap 'p=$(field phase); [ -z "$p" ] || save_dirty "$p" || true; status stopped reason="stopped by signal"; exit 143' TERM INT
   # Any other early exit (set -e) still ends in a recorded state, never a silent "lost".

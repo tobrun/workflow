@@ -22,6 +22,7 @@ Nobody watches it and nobody can answer a question; the operator reads the commi
 <!-- publish: end -->
 - Commit every change you keep on `{branch}` before the session ends.
   Only commits leave this workspace; uncommitted work is treated as abandoned.
-- A desktop session is attached (`DISPLAY` is set), so headed browsers and screenshots work; the operator may be watching it.
+- A desktop session is attached (`DISPLAY` is set), so headed browsers and screenshots work; the operator may be watching it, through a terminal there that follows this session.
+  Leave that terminal open, and bring the window you are checking to the front before a screenshot.
 - MCP servers in this session are relayed with the operator's own rights; use them read-only.
 - When a problem cannot be resolved within these rules, record it where the stage records open calls, then end the session with a plain report as your final message.

@@ -12,7 +12,7 @@ Captured: 2026-09-17 (full, scope) - Updated: 2026-11-13 (simplified to six skil
 | Component | Responsibility | Lives at | Talks to |
 | --------- | -------------- | -------- | -------- |
 | dev skills | the interactive workflow skills and the references and scripts they share | `dev/skills/`, `dev/references/`, `dev/scripts/` | nothing at runtime; read by Claude, Codex, opencode, and Pi hosts |
-| remote transport | `remote.py` dispatches a plan to a fleet sandbox, follows it, and collects it home; `runner.sh` runs each phase as a headless Claude Code session inside the sandbox | `dev/skills/remote/` | the fleet host over SSH (`fleet sync/fetch/view/start`, `incus exec/list`), git, `~/.dev-workflow/remote/` |
+| remote transport | `remote.py` dispatches a plan to a fleet sandbox, follows it, and collects it home; `runner.sh` runs each phase as a headless Claude Code session inside the sandbox, and `view.py` follows it in a terminal on the sandbox desktop | `dev/skills/remote/` | the fleet host over SSH (`fleet sync/fetch/view/start`, `incus exec/list`), git, `~/.dev-workflow/remote/` |
 | dev evals | comprehension evals for the skills | `dev/evals/` | nothing at runtime |
 | generated plugins | the Codex distributions built from each source plugin, with invocation policy in agents/openai.yaml | `plugins/` | Codex plugin marketplace |
 | repo scripts | validation of the whole repository, the plugin generator, and the Pi transport self-test | `scripts/` | every other component |

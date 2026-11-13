@@ -37,7 +37,7 @@ Dispatching `ship` or `ship-quick` (ship in quick mode) is a request to ship, pu
    `--publish sandbox` refuses instead of falling back; `--publish laptop` skips the probe.
    On a refusal, fix its cause within authority and run it again.
    Committing pending work is a commit request the user has to make; an ignore-policy repair follows plan-layout's ignore policy.
-4. Report the run id, workspace, branch, base, phases, who publishes (with the reason when it is not the sandbox), and the noVNC view URL (the host's `fleet view` prints it; the password lives on the host under `~/.local/state/fleet/{name}/vnc.pass`).
+4. Report the run id, workspace, branch, base, phases, who publishes (with the reason when it is not the sandbox), and the noVNC view URL (the host's `fleet view` prints it; the password lives on the host under `~/.local/state/fleet/{name}/vnc.pass`), where a terminal follows the run live.
    List any untracked files the script says were not sent.
 5. When the host can notify on background completion, run `{remote} wait {run}` in the background and continue with Collect when it finishes.
    Otherwise tell the user the run continues without this session and that `/dev:remote collect` brings it home.

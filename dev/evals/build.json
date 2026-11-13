@@ -41,7 +41,6 @@
         "The subagents do not commit, stage, or otherwise touch git state - the orchestrator makes the commits",
         "The subagents do not write to implementation-notes.md themselves; the orchestrator appends each entry",
         "The subagents are told not to launch the app or run e2e scenarios",
-        "scripts/change-set-brief.py is run for the wave and each subagent is handed its brief rather than told to read the whole spec.md and implementation-notes.md",
         "The subagents are told to run only their own test files plus typecheck and lint, not the spec's Validation block",
         "The spec's Validation block commands are run by the orchestrator, once for the wave, rather than the subagents' claims being taken at face value",
         "Three commits exist, one per change set, in spec order",
@@ -59,7 +58,7 @@
         "The e2e run uses a mocked, seeded, deterministic environment - no real external service or production data is touched",
         "The e2e pass happens after the change set is committed, not interleaved with the unit/integration cycles",
         ".dev/cart-total/implementation-notes.md exists and references what was done for the change set",
-        "A cart-total-e2e-report.html is written locally under /tmp/{project-slug}/reports/, kind is non-frontend, and it contains a dataModelState entry with real before/after values rather than a screenshot",
+        "A cart-total-e2e.json report is written locally under /tmp/{project-slug}/reports/, kind is non-frontend, and it contains a dataModelState entry with real before/after values rather than a screenshot",
         "No screenshot or dataUri field is fabricated for a kind: non-frontend report",
         "The report is opened with the host browser integration when available, or returned as a clickable local path; publication happens only when requested and supported"
       ]

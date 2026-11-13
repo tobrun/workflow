@@ -40,7 +40,7 @@ An integration scenario describes a cross-component contract: "the order API per
 Drives the actual running application - the built artifact, not a test-harness shortcut - through a realistic end-user scenario, against the **mocked environment** of [mocking.md](mocking.md#the-e2e-environment).
 It never runs against production or a shared staging environment; the point is a repeatable journey, not a live probe.
 This is the only layer allowed to drive a browser.
-It produces the HTML scenario report in [e2e-report.md](e2e-report.md): screenshots for frontend systems, before/after data-model state for everything else.
+It produces the JSON scenario report in [e2e-report.md](e2e-report.md): screenshots for frontend systems, before/after data-model state for everything else.
 An e2e scenario describes user-observable, end-to-end behavior: "a guest can complete checkout with an expired coupon and sees the correct error."
 Keep the count small and reserve it for critical journeys - each scenario is also a piece of evidence someone reads in the report.
 

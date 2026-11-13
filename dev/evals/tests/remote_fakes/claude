@@ -141,7 +141,7 @@ def main() -> int:
                             "--body-file", f".dev/{plan}/pr.md"], check=True, capture_output=True)
         reports = Path(os.environ["DEV_REMOTE_TMP"]) / Path.cwd().name / "reports"
         reports.mkdir(parents=True, exist_ok=True)
-        (reports / f"{plan}-e2e-report.html").write_text("<html>e2e</html>\n")
+        (reports / f"{plan}-e2e.json").write_text("{}\n")
     journal(phase, session, plan)
     for count in range(400):  # the real stream is mostly these progress ticks
         emit({"type": "system", "subtype": "thinking_tokens", "session_id": session, "tokens": count})

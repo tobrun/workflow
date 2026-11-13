@@ -14,7 +14,7 @@ This reference owns the layout, the locating convention, and the diff scope; ski
 | `.dev/config.json` | the user | `skill-metrics.py` (run journal opt-out, per [run-journal.md](run-journal.md)) |
 | `.dev/config.yaml` | the user (repo-tracked settings) | `ship`, including YOLO (mutation testing) |
 
-Each producing skill also renders an HTML companion under `/tmp/{project-slug}/reports/` per [reporting.md](reporting.md), named by that skill.
+Build's e2e report lives at `/tmp/{project-slug}/reports/{plan-name}-e2e.json`, outside the plan directory because its screenshots are large.
 One writer per file at a time; every other skill only reads.
 A `remote` run writes these same files in a sandbox copy of the plan directory; its collect step merges them home and never overwrites a file edited here meanwhile.
 

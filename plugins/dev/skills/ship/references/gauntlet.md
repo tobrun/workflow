@@ -19,7 +19,7 @@ For each enabled tool (the batched four count as one), in order; skip mutation w
 ## Exit: refresh the e2e evidence
 
 Fix agents edit code, so once any tool dispatched fixes, the e2e report build wrote no longer describes the code phase 2 will judge.
-Before leaving phase 1, re-run the spec's `[e2e]` scenarios exactly as build does - same mocked environment, data mapping, and template, all owned by [../../build/SKILL.md](../../build/SKILL.md) and its references - overwriting `/tmp/{project-slug}/reports/{plan-name}-e2e-report.html`.
+Before leaving phase 1, re-run the spec's `[e2e]` scenarios exactly as build does - same mocked environment and report shape, both owned by [../../build/SKILL.md](../../build/SKILL.md) and its references - overwriting `/tmp/{project-slug}/reports/{plan-name}-e2e.json`.
 A scenario that fails here is a violation like any other: dispatch fixes and loop under the same two-round rule.
 Never write new e2e scenarios in this step; generation belongs to build, this step only re-executes.
 Skip it when no tool dispatched fixes (the report is still fresh), when there is no spec or no e2e suite to run (note that in the wrap-up), or in review-only mode, which never reaches phase 1.

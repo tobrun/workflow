@@ -1,5 +1,5 @@
 """Unit tests for the two checks that keep a build fast: lint-spec.py's change-set
-size limit and wave report, and build's change-set-brief.py.
+size limit and wave report.
 
 Run from the repo root: python3 -m unittest discover -s dev/evals/tests -t .
 Each test writes a scratch plan directory and runs the script as a subprocess, so
@@ -16,7 +16,6 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 LINT = REPO_ROOT / "dev" / "skills" / "scope" / "scripts" / "lint-spec.py"
-BRIEF = REPO_ROOT / "dev" / "skills" / "build" / "scripts" / "change-set-brief.py"
 CHECK = REPO_ROOT / "dev" / "skills" / "build" / "scripts" / "check-tests.py"
 
 HEAD = """# Coupons
@@ -151,76 +150,6 @@ class WaveReportTest(PlanCase):
         self.assertNotIn("build waves", out)
 
 
-class ChangeSetBriefTest(PlanCase):
-    def setUp(self) -> None:
-        super().setUp()
-        self.write_spec(
-            change_set(1, "`src/store.ts`", decision="D-coupon-store (✓ a table)"),
-            change_set(2, "`src/expiry.ts`", decision="D-expiry-clock (✓ the server clock)"),
-        )
-
-    def brief(self, number: int = 2) -> str:
-        result = run(BRIEF, str(self.plan), str(number))
-        self.assertEqual(result.returncode, 0, result.stderr)
-        return result.stdout
-
-    def test_brief_keeps_its_change_set_and_the_scope_section_verbatim(self) -> None:
-        out = self.brief()
-        self.assertIn("2. Change set 2\n   a. `src/expiry.ts` - edit", out)
-        self.assertIn("Inputs: a coupon code. Outputs: a discounted total.", out)
-        self.assertIn("- `npm run typecheck`", out)
-
-    def test_brief_keeps_only_the_decisions_its_change_set_links(self) -> None:
-        out = self.brief()
-        self.assertIn("D-expiry-clock: Which clock decides expiry?", out)
-        self.assertIn("  ✗ the client clock - a user can set it back", out)
-        self.assertNotIn("D-coupon-store: Where do coupons live?", out)
-
-    def test_brief_names_the_other_change_sets_without_their_plans(self) -> None:
-        out = self.brief()
-        self.assertIn("- 1. Change set 1", out)
-        self.assertNotIn("`src/store.ts`", out)
-
-    def test_brief_carries_earlier_work_and_deviations_but_no_test_inventory(self) -> None:
-        self.write_notes(
-            "# Implementation notes\n\n## Change set 1: Change set 1\n"
-            "- What was done: added the coupon table\n"
-            "- Seams tested: the store\n"
-            "- Tests added: test/store.test.ts::reads a coupon\n"
-            "- Deviations from spec: codes are stored upper-case\n"
-        )
-        out = self.brief()
-        self.assertIn("### Change set 1: Change set 1", out)
-        self.assertIn("- What was done: added the coupon table", out)
-        self.assertIn("- Deviations from spec: codes are stored upper-case", out)
-        self.assertNotIn("Tests added", out)
-        self.assertNotIn("Seams tested", out)
-
-    def test_linked_decision_missing_from_research_is_said_so(self) -> None:
-        self.write_spec(change_set(1, "`src/a.ts`", decision="D-ghost (✓ x)"))
-        self.assertIn("D-ghost: not argued in the spec's research section", self.brief(1))
-
-    def test_out_dir_writes_one_brief_per_change_set_and_prints_each_path(self) -> None:
-        out_dir = self.plan.parent / "briefs"
-        result = run(BRIEF, str(self.plan), "1", "2", "--out-dir", str(out_dir))
-        self.assertEqual(result.returncode, 0, result.stderr)
-        for number in (1, 2):
-            written = out_dir / f"change-set-{number}.md"
-            self.assertIn(f"# Brief: change set {number} of coupons", written.read_text(encoding="utf-8"))
-            self.assertIn(str(written.resolve()), result.stdout)
-
-    def test_unknown_change_set_exits_2_naming_the_ones_that_exist(self) -> None:
-        result = run(BRIEF, str(self.plan), "9")
-        self.assertEqual(result.returncode, 2)
-        self.assertIn("no change set 9 (change sets: 1, 2)", result.stderr)
-
-    def test_several_change_sets_without_out_dir_exit_2(self) -> None:
-        self.assertEqual(run(BRIEF, str(self.plan), "1", "2").returncode, 2)
-
-    def test_missing_spec_exits_2(self) -> None:
-        self.assertEqual(run(BRIEF, str(self.plan.parent / "absent"), "1").returncode, 2)
-
-
 class TestNameWithCommaTest(PlanCase):
     """A test name is prose; a comma in it must not send the build back around the check loop."""
 
@@ -283,15 +212,6 @@ class RunAndFixupEntryTest(PlanCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("a fixup entry: a.test.ts contains no test named 'never written'", result.stdout)
 
-    def test_brief_carries_the_fixup_to_later_change_sets(self) -> None:
-        self.write_spec(change_set(1, "`src/a.ts`"), change_set(2, "`src/b.ts`"))
-        self.write_notes(
-            f"{self.RUN}## Change set 1: Change set 1\n- What was done: it\n\n"
-            "## Fixup: the built CLI printed no newline\n- What was done: print one\n"
-        )
-        out = run(BRIEF, str(self.plan), "2").stdout
-        self.assertIn("### Fixup: the built CLI printed no newline", out)
-        self.assertIn("- What was done: print one", out)
 
 
 if __name__ == "__main__":

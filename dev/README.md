@@ -29,7 +29,6 @@ Skills are explicitly invoked and recommend the next step; only `yolo` follows s
 - [Architecture](references/architecture.md) and [dependency rules](references/dependency-rules.md) describe existing boundaries when a project keeps them.
   A missing overview does not turn a small task into whole-system documentation work.
 - [CI parity](references/ci-parity.md) keeps every existing required repository check mandatory at the change's impact, with full PR follow-through when publication is authorized.
-- [Reports](references/reporting.md) are local HTML artifacts.
   Share only when requested; evidence records the actual capture and tested sources.
 
 Scope-review is optional; a settled spec can go directly to build.

@@ -8,7 +8,7 @@ description: Execute the change sets of a spec at .dev/{plan-name}/spec.md, prov
 Execute every change set of a spec, proving each `tests:` scenario with a real test at its tagged layer, until all change sets are committed and the e2e run is green.
 
 Input: `.dev/{plan-name}/spec.md`, located per [../../references/plan-layout.md](../../references/plan-layout.md). Without a spec or with an empty change plan, ask the user to run `scope` first.
-Follow [../../references/execution.md](../../references/execution.md) for branch, commit, and documentation actions; use the authorized current branch, or create `{plan-name}` when a new branch is permitted. Build never pushes or opens a PR - that is `ship`.
+Follow [../../references/execution.md](../../references/execution.md) for branch, commit, and documentation actions; use the authorized current branch, or create `dev/{plan-name}` when a new branch is permitted. Build never pushes or opens a PR - that is `ship`.
 Read [references/layers.md](references/layers.md), [references/tests.md](references/tests.md), and [references/mocking.md](references/mocking.md) before implementing, and [references/test-evidence.md](references/test-evidence.md) for runner receipts.
 
 ## Workflow

@@ -10,7 +10,7 @@
     {
       "name": "dev",
       "source": "./dev",
-      "description": "Development workflow skills: scope changes with argued decisions, build across unit/integration/e2e with every scenario proven by tests, ship with a deterministic quality gauntlet and an adversarially verified review, take a task to a pull request unattended with yolo, run build and ship in a fleet sandbox with remote, and create structured commits that feed a decision ledger."
+      "description": "Development workflow skills: scope changes with argued decisions, build across unit/integration/e2e with every scenario proven by tests, ship with a deterministic quality gauntlet and an adversarially verified review, take a task to a pull request unattended with yolo, run a task or plan to its pull request on a fleet instance of your choice with remote, and create structured commits that feed a decision ledger."
     },
     {
       "name": "bootstrap",

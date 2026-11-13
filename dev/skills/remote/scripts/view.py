@@ -2,14 +2,15 @@
 """Render a dev:remote run's Claude Code stream for people.
 
 Usage:
-  view.py RUN_DIR      follow a run live in a terminal (the sandbox desktop's viewer)
+  view.py RUN_DIR [RUN_ID]   follow a run live in a terminal (the instance desktop's viewer)
 
-runner.sh opens this in a terminal on the workspace desktop, so an operator
-watching over VNC sees each phase as it happens: what the agent says, the
-tools it calls, errors, retries, phase changes, and how the run ended. It
-only reads RUN_DIR (run.json, status.json, logs/*.jsonl) and never changes
-the run. It keeps the window open after the run ends; the next run on the
-workspace closes it.
+runner.sh opens this in a terminal on the instance's desktop, so anyone
+watching over VNC sees the run as it happens: what the agent says, the tools
+it calls, errors, retries, each new session and why the runner started it, and how the run ended. It only
+reads RUN_DIR (run.json, status.json, log.jsonl) and never changes the run.
+It keeps the window open after the run ends; the next run on the instance
+closes it. RUN_ID only labels the process, so the runner can tell this run's
+viewer from an earlier run's.
 
 remote.py imports parse() and render_event() from here for `logs`, so the
 laptop and the desktop read the stream the same way.
@@ -30,7 +31,7 @@ from typing import NamedTuple
 
 
 class Item(NamedTuple):
-    kind: str  # session, result, say, tool, error, retry, task
+    kind: str  # session, result, say, tool, error, retry, task, note
     text: str
     name: str = ""  # the tool name, for tool items
     detail: str = ""  # a tool's command or other full input
@@ -67,6 +68,8 @@ def parse(line: str) -> list[Item]:
         return []
     kind, subtype = event.get("type"), event.get("subtype")
     nested = bool(event.get("parent_tool_use_id"))
+    if kind == "runner":  # runner.sh's own line: why a session goes back to work
+        return [Item("note", str(event.get("text") or ""))]
     if kind == "system" and subtype == "init":
         return [Item("session", f"session {event.get('session_id')} started (model {event.get('model', '?')})")]
     if kind == "result":
@@ -98,7 +101,7 @@ def parse(line: str) -> list[Item]:
 
 
 LABELS = {"say": "say: ", "tool": "tool: ", "error": "tool error: ", "retry": "retry: ", "task": "",
-          "session": "", "result": "result: "}
+          "session": "", "result": "result: ", "note": "runner: "}
 
 
 def render_event(line: str) -> list[str]:
@@ -117,8 +120,9 @@ def render_event(line: str) -> list[str]:
 
 RESET, BOLD, DIM = "\033[0m", "\033[1m", "\033[2m"
 RED, GREEN, YELLOW, BLUE, MAGENTA, CYAN = (f"\033[{n}m" for n in (31, 32, 33, 34, 35, 36))
-STATE_COLOR = {"starting": BLUE, "running": BLUE, "done": GREEN, "failed": RED, "stopped": YELLOW, "lost": RED}
-ENDED = ("done", "failed", "stopped")
+STATE_COLOR = {"starting": BLUE, "running": BLUE, "done": GREEN, "blocked": YELLOW, "failed": RED,
+               "stopped": YELLOW, "lost": RED}
+ENDED = ("done", "blocked", "failed", "stopped")
 
 
 def width() -> int:
@@ -185,6 +189,9 @@ def show(item: Item, checkout: re.Pattern | None = None) -> None:
         emit(f"{bar}  {YELLOW}◦ {clip(item.text, width() - 6)}{RESET}")
     elif item.kind == "session":
         emit(f"{DIM}{item.text}{RESET}")
+    elif item.kind == "note":
+        emit()
+        wrapped(item.text, f"{YELLOW}{BOLD}↺{RESET} ", "  ", YELLOW, limit=6)
     elif item.kind == "result":
         emit()
         emit(f"{GREEN if item.ok else RED}{BOLD}result: {item.text}{RESET}")
@@ -209,29 +216,26 @@ def read_json(path: Path) -> dict:
     return data if isinstance(data, dict) else {}
 
 
-def unit_active(run: str) -> bool | None:
+def unit_active() -> bool | None:
     try:
-        done = subprocess.run(["systemctl", "is-active", "--quiet", f"dev-run-{run}"], check=False, timeout=5)
+        done = subprocess.run(["systemctl", "is-active", "--quiet", "dev-remote"], check=False, timeout=5)
     except (OSError, subprocess.SubprocessError):
         return None
     return done.returncode == 0
 
 
 class Follower:
-    """Prints a run's phase logs and state changes as they happen."""
+    """Prints a run's log and state changes as they happen."""
 
     def __init__(self, run_dir: Path):
         self.run_dir = run_dir
         self.cfg = read_json(run_dir / "run.json")
         self.run = str(self.cfg.get("id") or run_dir.name)
-        phases = self.cfg.get("phases")
-        self.phases = [str(p) for p in phases] if isinstance(phases, list) else []
-        self.offsets: dict[str, int] = {}
-        self.partial: dict[str, bytes] = {}
-        self.shown_phase = ""
+        self.offset = 0
+        self.partial = b""
+        self.sessions = 0
         self.state = ""
-        self.gate = ""
-        self.resumed: str | None = None  # None until the first status read, so a replay shows no resume
+        self.continued: str | None = None  # None until the first status read, so a replay shows no continue
         self.last_event = time.time()
         self.lost = False
         self.next_unit_check = 0.0
@@ -243,88 +247,72 @@ class Follower:
     def header(self) -> None:
         cfg = self.cfg
         emit(f"{BOLD}dev:remote{RESET} run {BOLD}{self.run}{RESET}")
-        emit(f"{DIM}plan {cfg.get('plan', '?')} · branch {cfg.get('branch', '?')} · "
-             f"phases {' → '.join(self.phases) or '?'} · publish {cfg.get('publish', '?')}{RESET}")
+        what = f"plan {cfg['plan']}" if cfg.get("plan") else "task"
+        emit(f"{DIM}{cfg.get('repo', '?')} · {what} · branch {cfg.get('branch', '?')}{RESET}")
 
-    def drain(self, phase: str, status: dict) -> None:
-        path = self.run_dir / "logs" / f"{phase}.jsonl"
+    def drain(self) -> None:
         try:
-            with path.open("rb") as handle:
-                handle.seek(self.offsets.get(phase, 0))
+            with (self.run_dir / "log.jsonl").open("rb") as handle:
+                handle.seek(self.offset)
                 chunk = handle.read()
-                self.offsets[phase] = handle.tell()
+                self.offset = handle.tell()
         except OSError:
             return
         if not chunk:
             return
         self.last_event = time.time()
-        data = self.partial.pop(phase, b"") + chunk
-        lines = data.split(b"\n")
-        if lines[-1]:
-            self.partial[phase] = lines[-1]  # an event still being written
+        lines = (self.partial + chunk).split(b"\n")
+        self.partial = lines[-1]  # an event still being written
         for raw in lines[:-1]:
-            items = parse(raw.decode("utf-8", errors="replace"))
-            if items and phase != self.shown_phase:
-                if self.shown_phase:
-                    self.show_gate(status)  # the gate ran between the phase before and this one
-                self.shown_phase = phase
-                rule(f"phase {phase}  {time.strftime('%H:%M')}", MAGENTA)
-            for item in items:
+            for item in parse(raw.decode("utf-8", errors="replace")):
+                if item.kind == "session":
+                    self.sessions += 1
+                    rule(f"session {self.sessions}  {time.strftime('%H:%M')}", MAGENTA)
                 show(item, self.checkout)
 
-    # One poll can see several steps at once (a resume, the end of a phase, its gate, the next
-    # phase), so each kind of change prints where it happened relative to the logs.
+    # One poll can see several steps at once (a continue, the end of a session, the check that
+    # sends it back to work), so each kind of change prints where it happened relative to the log.
 
     def show_opening(self, status: dict) -> None:
-        """Before the logs: a resume or a start, which precede what the poll's new events say."""
-        resumed = str(status.get("resumed") or "")
-        if resumed and self.resumed is not None and resumed != self.resumed:
+        """Before the log: a continue, which precedes what the poll's new events say."""
+        continued = str(status.get("continued") or "")
+        if continued and self.continued is not None and continued != self.continued:
             self.lost = False
-            rule(f"resumed  {time.strftime('%H:%M')}", BLUE)
-        self.resumed = resumed
-        if status.get("state") == "starting" and self.state != "starting" and not resumed:
-            self.state = "starting"
-            rule(f"starting  {time.strftime('%H:%M')}", BLUE)
-
-    def show_gate(self, status: dict) -> None:
-        gate = status.get("gate")
-        gate = str(gate.get("build", "")) if isinstance(gate, dict) else ""
-        if gate and gate != self.gate:
-            self.gate = gate
-            emit()
-            emit(f"{GREEN if gate == 'pass' else YELLOW}{BOLD}build gate: {gate}{RESET}")
+            self.state = ""
+            rule(f"continued  {time.strftime('%H:%M')}", BLUE)
+        self.continued = continued
 
     def show_closing(self, status: dict) -> None:
-        """After the logs: how the run ended, or that its runner vanished."""
+        """After the log: how the run ended, or that its runner vanished."""
         state = str(status.get("state") or "")
         if state and state != self.state:
             self.state = state
             if state in ENDED:
-                reason = status.get("reason")
-                rule(f"{state}{': ' + str(reason) if reason else ''}  {time.strftime('%H:%M')}",
+                reason = " ".join(str(status.get("reason") or "").split())
+                rule(f"{state}{': ' + clip(reason, 200) if reason else ''}  {time.strftime('%H:%M')}",
                      STATE_COLOR.get(state, BOLD))
+                pr = status.get("pr")
+                if isinstance(pr, dict) and pr.get("url"):
+                    emit(f"{BOLD}pull request{RESET} {pr['url']}{' (draft)' if pr.get('draft') == 'true' else ''}")
         if state in ("starting", "running") and time.time() >= self.next_unit_check:
             self.next_unit_check = time.time() + 10
-            active = unit_active(self.run)
+            active = unit_active()
             if active is False and not self.lost:
                 # status.json still says running, but the runner is gone: remote.py reports this as lost.
                 self.lost = True
-                rule(f"lost: the runner unit ended without recording an end  {time.strftime('%H:%M')}", RED)
+                rule(f"lost: the runner ended without recording an end  {time.strftime('%H:%M')}", RED)
             elif active:
                 self.lost = False
 
     def tick(self) -> None:
         status = read_json(self.run_dir / "status.json")
         self.show_opening(status)
-        for phase in self.phases:
-            self.drain(phase, status)
-        self.show_gate(status)
+        self.drain()
         self.show_closing(status)
-        state = "lost" if self.lost else (self.state or "waiting")
-        phase = str(status.get("phase") or "")
+        state = "lost" if self.lost else (self.state or str(status.get("state") or "waiting"))
         idle = int(time.time() - self.last_event)
         quiet = f" · idle {idle // 60}m" if state == "running" and idle >= 120 else ""
-        title(f"dev:remote {self.run} · {phase + ' · ' if phase else ''}{state}{quiet}")
+        title(f"dev:remote {self.run} · {state}{quiet}")
 
 
 def follow(run_dir: Path) -> None:
@@ -333,15 +321,15 @@ def follow(run_dir: Path) -> None:
     follower.header()
     while True:
         follower.tick()
-        if not run_dir.is_dir():
-            emit(f"{DIM}run directory removed; nothing left to follow{RESET}")
+        if read_json(run_dir / "run.json").get("id") != follower.cfg.get("id"):
+            emit(f"{DIM}this run left the instance; nothing left to follow{RESET}")
             while True:
                 time.sleep(3600)
         time.sleep(1)
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) != 1:
+    if len(argv) not in (1, 2):
         print(__doc__.strip().split("\n\n")[1], file=sys.stderr)
         return 2
     try:

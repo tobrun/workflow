@@ -73,8 +73,8 @@ PLUGINS = {
             ),
             "remote": (
                 "Remote",
-                "Build and ship a plan in a remote sandbox",
-                "Use $dev:remote to dispatch this plan's build and ship to a sandbox workspace and collect the result.",
+                "Run a task or plan on a fleet instance",
+                "Use $dev:remote 1 to run this plan to its pull request on the first fleet instance.",
             ),
         },
     ),

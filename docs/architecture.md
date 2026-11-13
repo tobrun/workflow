@@ -12,7 +12,7 @@ Captured: 2026-09-17 (full, scope) - Updated: 2026-11-13 (simplified to six skil
 | Component | Responsibility | Lives at | Talks to |
 | --------- | -------------- | -------- | -------- |
 | dev skills | the interactive workflow skills and the references and scripts they share | `dev/skills/`, `dev/references/`, `dev/scripts/` | nothing at runtime; read by Claude, Codex, opencode, and Pi hosts |
-| remote transport | `remote.py` dispatches a plan to a fleet sandbox, follows it, and collects it home; `runner.sh` runs each phase as a headless Claude Code session inside the sandbox, and `view.py` follows it in a terminal on the sandbox desktop | `dev/skills/remote/` | the fleet host over SSH (`fleet sync/fetch/view/start`, `incus exec/list`), git, `~/.dev-workflow/remote/` |
+| remote transport | `remote.py` starts a run on the fleet instance the user names, follows it, continues it, and pulls its branch and plan files home; `runner.sh` keeps one headless Claude Code yolo session going on the instance until its pull request is open, and `view.py` follows it in a terminal on the instance's desktop | `dev/skills/remote/` | the fleet host over SSH (`incus exec/list`, `fleet start/view`), git |
 | dev evals | comprehension evals for the skills | `dev/evals/` | nothing at runtime |
 | generated plugins | the Codex distributions built from each source plugin, with invocation policy in agents/openai.yaml | `plugins/` | Codex plugin marketplace |
 | repo scripts | validation of the whole repository, the plugin generator, and the Pi transport self-test | `scripts/` | every other component |
@@ -27,15 +27,12 @@ Captured: 2026-09-17 (full, scope) - Updated: 2026-11-13 (simplified to six skil
 2. The skill reads its SKILL.md and references, writes plan files under .dev/{plan-name}/ in the consuming repository, and recommends the next skill; skills never invoke each other.
 
 ### A remote run
-1. After `/dev:scope` settles a spec here, a person invokes `/dev:remote {plan}`; `remote.py dispatch` refuses an unsettled spec, unignored plan files, uncommitted tracked work, or a busy fleet.
-2. It claims a free workspace with an atomic lock directory, pushes the work branch into the host's exchange clone, runs `fleet sync`, probes whether the workspace's git credentials can push to `origin`, streams the run directory (plan, plugin copy, contract with the matching publication block, runner) in over `incus exec`, and starts `runner.sh` as the transient unit `dev-run-{run}`.
-3. In the sandbox, each phase (`build`, then `ship`) is a fresh `claude -p "/dev:{phase}"` session with the dispatched plugin and the unattended contract appended; `status.json` records the state machine.
-   Before ship starts, the runner re-runs build's `check-tests.py` gate and resumes the build session with its output when it fails.
-   When the probe passed, ship pushes the branch, opens the PR, and follows its checks; the runner reads the PR back with `gh pr view` into `status.json`.
-4. `remote.py collect` runs `fleet fetch`, fast-forwards the local branch from the exchange clone, merges plan files against the dispatch manifest, copies reports, logs, and every phase session's transcript home, releases the lock, and gives the branch a worktree.
-5. A PR the sandbox opened is checked against the collected run and drafted when they disagree; without sandbox publication, evidence images, push, PR, and CI follow-through run here, from that worktree, with this machine's credentials.
-6. `remote.py resume` starts a new round of any run that is not running: in place while it is uncollected, otherwise restored from this machine's branch and plan files, with the collected transcript of a session it continues.
-7. `remote.py local` brings a run home and installs the transcript of a session to continue into this machine's Claude Code, then prints the command that continues it in the worktree.
+1. A person invokes `/dev:remote {n} {plan or task}`; `remote.py start` refuses only a missing plan or an instance that is already running a run.
+2. It streams a git bundle of HEAD (without what the instance already has), the plan directory, the plugin, the contract, and the runner into `~/.dev-workflow/run/` on instance `{n}` over `incus exec`, moves the instance's earlier run to `~/.dev-workflow/history/`, and starts `runner.sh run` as the transient unit `dev-remote`.
+3. The runner checks out the work branch and starts one `claude -p "/dev:yolo ..."` session with the plugin and the unattended contract; that session builds, ships, pushes, and opens the pull request.
+4. Each time the session ends, the runner checks the deliverable (clean tree, a pull request for the branch whose head is the checkout's HEAD) and resumes the same session with what is missing; `status.json` ends as `done`, `blocked` (the session wrote `blocked.md`), or `failed` (attempts spent).
+5. `remote.py continue` restarts the runner on the same checkout and session, with an optional instruction; `remote.py pull` fetches the work branch as a bundle, fast-forwards the local branch, and merges plan files against the hashes both sides last agreed on.
+6. The laptop keeps no run record: state, logs, and history live on the instance and are addressed by its number.
 
 ### Building the Codex distribution
 1. `scripts/build_codex_plugin.py` copies skills/, references/, and `scripts/` of the source plugin into plugins/{name}/, strips Claude-only frontmatter, and writes agents/openai.yaml for invocable skills. It removes obsolete distributions identified by their generated README and plugin manifest.
@@ -58,7 +55,7 @@ Captured: 2026-09-17 (full, scope) - Updated: 2026-11-13 (simplified to six skil
 | -------- | ---- | -------- | ----- |
 | Claude Code, Codex, opencode, Pi | host | the skills | each reads the skills in its own format; the generated tree under `plugins/` serves Codex |
 | git and GitHub | external | the ship skill | branch state and `gh pr` calls made during a ship run |
-| fleet host and sandbox workspaces | remote compute | the remote skill | reached only over SSH with the user's key; workspaces hold only the git credentials the host allocates (push and PRs on the fleet's repositories), never the user's own; they receive commits through the exchange clone and files as tar streams, and return everything through `fleet fetch` and `runner.sh pack`; collected output is untrusted data |
+| fleet host and its instances | remote compute | the remote skill | reached only over SSH with the user's key; instances hold only the git credentials the host allocates (push and PRs on the fleet's repositories), never the user's own; commits cross as git bundles and files as tar streams over `incus exec`; what comes back is untrusted data |
 | consuming repository | store | the skills | `.dev/` plan files, `docs/` ledgers, shared config, and the root AGENTS.md bootstrap writes |
 
 ## Cross-cutting

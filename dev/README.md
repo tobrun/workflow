@@ -2,7 +2,7 @@
 
 Development workflow skills for Claude Code, Codex, opencode, and Pi.
 The durable handoff is the code, its tests, the active plan under `.dev/{plan-name}/`, and relevant project records.
-Skills are explicitly invoked and recommend the next step; only `yolo` follows scope, build, and ship inline in one session, and only `remote` runs build and ship elsewhere, in a fleet sandbox.
+Skills are explicitly invoked and recommend the next step; only `yolo` follows scope, build, and ship inline in one session, and only `remote` runs that same session elsewhere, on a fleet instance.
 
 ## Choose a skill
 
@@ -12,7 +12,7 @@ Skills are explicitly invoked and recommend the next step; only `yolo` follows s
 | [build](skills/build/SKILL.md) | A spec is ready to implement. | Code, tests, runner receipts, incremental notes, and actual application evidence. |
 | [ship](skills/ship/SKILL.md) | A change needs hardening, independent review, and an authorized PR. | Required checks, verified findings with explicit completeness, and current evidence. |
 | [yolo](skills/yolo/SKILL.md) | One task should run unattended. | The full scope/build/ship contracts, recorded assumptions, and a PR or local handoff within available authority. |
-| [remote](skills/remote/SKILL.md) | A scoped plan should build and ship in a sandbox on a fleet host, not on this machine. | The sandbox's commits, plan files, evidence, and session transcripts brought home, then a PR published from here. |
+| [remote](skills/remote/SKILL.md) | A task or a scoped plan should run to its pull request on a fleet instance you pick, not on this machine. | A pull request the instance opened, and its branch and plan files brought home on request. |
 | [commit](skills/commit/SKILL.md) | Requested work is ready for local commits. | Atomic commits with what/why messages; a push only when requested. |
 
 ## Shared contracts
@@ -37,39 +37,38 @@ Mutation testing retains the configured, focused survivor-triage policy; a kill-
 
 ## Remote execution
 
-`remote` splits the workflow across machines: `scope` runs here, with the user and the MCP servers; `build` and `ship` run unattended in a sandbox workspace on a fleet host, and the sandbox opens the PR with git credentials the host allocated to it.
+`/dev:remote 1 {plan or task}` runs the work on the first fleet instance, `2` on the second: the user assigns the instance, and an instance holds one run.
+A run is one unattended yolo session there, under [the unattended contract](skills/remote/references/unattended.md): it builds and ships a plan scoped here, or scopes a task itself first, and opens the pull request with git credentials the host allocated to the instance.
 
 ```text
-laptop: /dev:scope ──▶ /dev:remote ── git push ──▶ fleet host exchange clone ── fleet sync ──▶ ws-N: claude -p /dev:build, then /dev:ship ──▶ GitHub PR
-laptop: review     ◀── /dev:remote collect ◀── git fetch ◀── fleet fetch ◀────────────── commits, plan files, reports, sessions
+laptop: /dev:remote 1 {plan} ── HEAD (git bundle), plan files, plugin ──▶ ws-ws1: claude -p /dev:yolo ──▶ GitHub PR
+                                                                            ▲            │ session ended
+                                                                            └── resume ──┘ until committed, pushed, PR open
+laptop: /dev:remote 1 pull   ◀── work branch (git bundle), plan files ──────
 ```
 
-Each phase is a fresh headless Claude Code session in the sandbox, run as a transient systemd unit under [the unattended contract](skills/remote/references/unattended.md): yolo's no-question rules and hard stops, commit everything, push only the work and evidence branches.
-Dispatch probes the workspace first (a dry-run push to `origin` and `gh auth status`); a sandbox that passes runs ship's pull-request phase in full, and one that fails, or a dispatch with `--publish laptop`, stops at a prepared `pr.md` that is published from here after collect.
-Collect fetches the branch by fast-forward only, merges the plan files without overwriting local edits, brings every session's transcript home, reports the PR the sandbox opened, and opens a worktree of the branch here for publication or CI fixes.
-On the workspace desktop, a terminal follows the session live, so the noVNC view `fleet view` prints shows the run as it happens.
-Each workspace takes one run at a time, so three sandboxes build three plans in parallel while planning continues here.
-[The protocol](skills/remote/references/protocol.md) owns what crosses each boundary and the run states.
+The instance's runner decides when the run is finished, not the session: each time the session ends it checks that everything is committed, the branch is pushed, and the pull request is open at that commit, and resumes the same session with what is missing until it holds.
+A run ends as `done`, as `blocked` when the session recorded a hard stop, or as `failed` once the configured number of sessions is spent.
+`continue` puts a run that ended back to work in its own session and checkout, with an instruction when there is one: a CI failure, a resolved blocker, more work.
+`pull` brings the work branch (fast-forward only) and the plan files (never over a local edit) to this checkout, so work an instance cannot do is finished here with `build` or `ship`.
+This machine keeps no record of a run; everything about it lives on the instance and is addressed by the instance's number.
+On the instance's desktop, a terminal follows the session live, so the noVNC view `fleet view` prints shows the run as it happens.
 
 Set it up once with `~/.dev-workflow/remote.toml`:
 
 ```toml
-host = "user@fleet-host"            # ssh destination; key-based, BatchMode
-sources_root = "/srv/agent-sources" # the host's exchange clones (fleet sourcesRoot)
-workspaces = ["ws1", "ws2", "ws3"]  # fleet names to use; empty = every running ws-*
-phase_timeout_hours = 8
-model = ""                          # optional --model for the sandbox agent
-publish = "auto"                    # auto: the sandbox publishes when its credentials pass the probe; sandbox; laptop
-view = true                         # a terminal on the sandbox desktop follows the run, for watching over noVNC
+host = "user@fleet-host"      # ssh destination; key-based, BatchMode
+instances = []                # fleet names in order (1 is the first); empty = ws1, ws2, ...
+model = ""                    # optional --model for the instance's agent
+attempts = 6                  # sessions a run may take before it ends as failed
+attempt_timeout_hours = 8     # one session's time limit
+view = true                   # a terminal on the instance's desktop follows the run, for watching over noVNC
 ```
 
-The host contract is the Incus workspace fleet: a `fleet` CLI with `sync`, `fetch`, `start`, and `view`; `incus` for `exec` and `list`; workspaces running `ws-{name}` VMs with an `agent` user, Claude Code, Python 3, and systemd.
-For sandbox publication, the host also allocates git credentials: as the agent user, `git push` to the repository's `origin` URL and `gh` must work without a prompt.
-A fine-grained token scoped to the fleet's repositories with contents and pull-request write is the narrowest credential that does; how it reaches the workspace (a token file, a credential helper, a relay that adds it on the wire) is the host's choice.
-The sandbox agent runs on whatever model the fleet's gateway serves, so a remote run's quality follows that model, not this machine's.
-`python3 dev/skills/remote/scripts/remote.py doctor` checks the setup; `status`, `logs --follow`, `stop`, `resume`, and `release` work from any terminal, without a session.
-`local` brings a run home and prints the command that continues it on this machine, the same session included, for work a sandbox cannot finish.
-`resume` starts a new round of any run that is not running, collected or not: it continues a phase's own session or starts a phase fresh (`--continue` or `--from`), with an optional `--prompt`, in place or restored from this machine's branch and plan files.
+The host contract is the Incus workspace fleet: `incus` for `exec` and `list`, a `fleet` CLI for `start` and `view`, and `ws-{name}` VMs with an `agent` user, Claude Code, git, `gh`, Python 3, and systemd.
+As the agent user, `git push` to the repository's `origin` URL and `gh` must work without a prompt; how the credential reaches the instance (a token file, a credential helper, a relay that adds it on the wire) is the host's choice.
+The instance's agent runs on whatever model the fleet's gateway serves, so a remote run's quality follows that model, not this machine's.
+`python3 dev/skills/remote/scripts/remote.py doctor` checks the setup; `status`, `logs N --follow`, `stop N`, `continue N`, and `pull N` work from any terminal, without a session.
 
 ## Claude Code installation
 

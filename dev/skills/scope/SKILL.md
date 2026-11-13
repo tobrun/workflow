@@ -88,7 +88,7 @@ Commit the ledger files this run changed, and only those, so `build` and `remote
 Commit on the current work branch; on the default branch, create `dev/{plan-name}` from HEAD first, a branch change that waits for the user's consent where the repository requires it.
 Write the message per the commit skill's [message format](../commit/references/message-format.md), typed `docs`, such as `docs({plan-name}): record the spec's decisions and contracts`.
 
-Recommend `build`, or `remote` to run it on a sandbox; never launch either.
+Recommend `build`, or `remote` to run it on a fleet instance; never launch either.
 
 ## From review findings
 

@@ -9,6 +9,7 @@ Record any limitation in the run's existing notes or report.
 Do not create a separate approval checklist.
 
 - A request to commit authorizes local commits of the requested work, not a push.
+- A request to scope authorizes committing the ledger entries it records (`docs/decisions.md`, `docs/contracts.md`), not a push and not other pending work.
 - A request to ship can authorize a push and PR when that is the requested outcome and no higher-priority instruction restricts it.
 - A branch change requiring consent waits for that consent; meanwhile, prepare reviewable file changes on the current checkout.
 - Include only work owned by this task or explicitly included by the user.

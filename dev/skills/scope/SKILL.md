@@ -1,6 +1,6 @@
 ---
 name: scope
-description: Spec a change at .dev/{plan-name}/spec.md - interview for the real problem, argue each consequential decision against its alternatives, and write a self-contained spec with a layer-tagged change plan, then record the settled decisions in docs/decisions.md and boundary guarantees in docs/contracts.md. Use to plan work before implementation, for a quick plan of a small request or of accepted review findings, or for a deeper verified review of a large spec.
+description: Spec a change at .dev/{plan-name}/spec.md - interview for the real problem, argue each consequential decision against its alternatives, and write a self-contained spec with a layer-tagged change plan, then record the settled decisions in docs/decisions.md and boundary guarantees in docs/contracts.md and commit that ledger. Use to plan work before implementation, for a quick plan of a small request or of accepted review findings, or for a deeper verified review of a large spec.
 disable-model-invocation: true
 ---
 
@@ -84,7 +84,11 @@ Apply confirmed findings that stay within the settled decisions, ask the user ab
 Copy into `docs/decisions.md` every decision that passes the promotion test in [../../references/decision-ledger.md](../../references/decision-ledger.md), verbatim, dated, and sourced to this spec.
 Promote cross-boundary invariants to `docs/contracts.md`, phrased for the relying side; a planned invariant keeps its `? verify:` until enforcing code exists.
 
-Recommend `build`; never launch it.
+Commit the ledger files this run changed, and only those, so `build` and `remote` start from a clean tree; the plan directory stays out of git, because plan files travel with the run instead.
+Commit on the current work branch; on the default branch, create `dev/{plan-name}` from HEAD first, a branch change that waits for the user's consent where the repository requires it.
+Write the message per the commit skill's [message format](../commit/references/message-format.md), typed `docs`, such as `docs({plan-name}): record the spec's decisions and contracts`.
+
+Recommend `build`, or `remote` to run it on a sandbox; never launch either.
 
 ## From review findings
 
@@ -92,5 +96,5 @@ When the plan directory holds `review_N.md` files, the highest-numbered one is t
 On the small path, each accepted Blocker becomes one change set, and a Concern only when the user names it; on the full path, the accepted findings open the interview as decisions, and rejected or deferred ones land as `⊘` lines.
 Read the code each finding names before writing its change set.
 Append to the existing change plan with continued numbering - never renumber or rewrite what is there - and use the review's triggering scenario as the change set's test.
-Apply the review's Decision reconciliation section to `docs/decisions.md`.
+Apply the review's Decision reconciliation section to `docs/decisions.md`, and commit the ledger as in Record.
 For these change sets, recommend `build` followed by `ship` in quick mode.

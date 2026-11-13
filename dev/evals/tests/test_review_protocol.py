@@ -11,7 +11,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
 AGGREGATE = ROOT / 'dev/skills/ship/scripts/aggregate-findings.py'
-REFINE = ROOT / 'dev/skills/scope-review/scripts/apply-refinements.py'
 
 
 class ReviewProtocolTest(unittest.TestCase):
@@ -113,48 +112,3 @@ class ReviewProtocolTest(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertFalse(report['complete'])
 
-
-class RefinementWriterTest(unittest.TestCase):
-    def setUp(self):
-        temporary = tempfile.TemporaryDirectory()
-        self.addCleanup(temporary.cleanup)
-        self.root = Path(temporary.name)
-        self.spec = self.root / 'spec.md'
-        self.original = '# Spec\n\nInput: pending\nOutput: pending\n'
-        self.spec.write_text(self.original)
-
-    def proposal(self, name, old, new, digest=None):
-        path = self.root / f'{name}.json'
-        path.write_text(json.dumps({'baseSha256': digest or hashlib.sha256(self.original.encode()).hexdigest(),
-                                    'changes': [{'old': old, 'new': new}]}))
-        return path
-
-    def apply(self, *proposals):
-        return subprocess.run([sys.executable, str(REFINE), str(self.spec), *map(str, proposals)],
-                              capture_output=True, text=True)
-
-    def test_independent_changes_both_survive_one_write(self):
-        result = self.apply(self.proposal('a', 'Input: pending', 'Input: validated'),
-                            self.proposal('b', 'Output: pending', 'Output: accepted'))
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn('Input: validated', self.spec.read_text())
-        self.assertIn('Output: accepted', self.spec.read_text())
-
-    def test_stale_base_writes_nothing(self):
-        proposal = self.proposal('a', 'Input: pending', 'Input: validated')
-        self.spec.write_text(self.original + 'User correction\n')
-        before = self.spec.read_bytes()
-        result = self.apply(proposal)
-        self.assertEqual(result.returncode, 1)
-        self.assertEqual(self.spec.read_bytes(), before)
-
-    def test_overlapping_batch_writes_nothing(self):
-        result = self.apply(self.proposal('a', 'Input: pending', 'Input: validated'),
-                            self.proposal('b', 'Input: pending\nOutput: pending', 'Different scope'))
-        self.assertEqual(result.returncode, 1)
-        self.assertEqual(self.spec.read_text(), self.original)
-
-    def test_ambiguous_excerpt_writes_nothing(self):
-        result = self.apply(self.proposal('a', 'pending', 'accepted'))
-        self.assertEqual(result.returncode, 1)
-        self.assertEqual(self.spec.read_text(), self.original)

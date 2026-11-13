@@ -66,11 +66,6 @@ PLUGINS = {
                 "Write minimal change sets with no interview",
                 "Use $dev:scope-quick to turn the review findings or this small request into minimal change sets.",
             ),
-            "scope-review": (
-                "Scope Review",
-                "Review and auto-refine a settled spec",
-                "Use $dev:scope-review to review the settled spec with a verified agent panel and refine it in place before building.",
-            ),
             "ship": (
                 "Ship",
                 "Harden, review, then open a PR with proof",
@@ -90,21 +85,6 @@ PLUGINS = {
                 "Remote",
                 "Build and ship a plan in a remote sandbox",
                 "Use $dev:remote to dispatch this plan's build and ship to a sandbox workspace and collect the result.",
-            ),
-            "reflect": (
-                "Reflect",
-                "Turn run friction into cited skill fixes",
-                "Use $dev:reflect to consolidate the run journal into cited claims and pick the next skill improvement.",
-            ),
-            "to-pitch": (
-                "To Pitch",
-                "Turn finished work into a buy-in document",
-                "Use $dev:to-pitch to create a buy-in document for the completed change.",
-            ),
-            "to-quiz": (
-                "To Quiz",
-                "Create a graded change comprehension quiz",
-                "Use $dev:to-quiz to create a comprehension check for the completed change.",
             ),
         },
     ),

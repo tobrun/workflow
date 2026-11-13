@@ -11,7 +11,7 @@ Each `{skill}.json` gives realistic prompts, fixture requirements, and observabl
 - Policy comprehension prompts test routing and stated authority.
   They do not prove that an agent performs the workflow correctly under pressure.
 - Functional skill runs use isolated repositories, actual implementation and application execution, and outputs graded against the requested behavior.
-  Build has functional task definitions; ship and scope-review also include case-level functional protocol fixtures.
+  Build has functional task definitions; ship also includes case-level functional protocol fixtures.
 
 The default file-level `mode` applies to its ordinary prompts.
 A case-level `mode: functional` identifies a deterministic fixture inside an otherwise comprehension-oriented file.

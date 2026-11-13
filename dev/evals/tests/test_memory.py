@@ -1,6 +1,5 @@
 """Unit tests for the workflow's memory of its own runs: the friction signals and
-journal entry skill-metrics.py writes at the end of a run, and the claims.py
-store the reflect skill loops against.
+journal entry skill-metrics.py writes at the end of a run.
 
 Run from the repo root: python3 -m unittest discover -s dev/evals/tests -t .
 Each test builds a scratch git repository, a fake Claude Code transcript, and a
@@ -21,7 +20,6 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 METRICS = REPO_ROOT / "dev" / "scripts" / "skill-metrics.py"
-CLAIMS = REPO_ROOT / "dev" / "scripts" / "claims.py"
 
 
 def line(kind: str, stamp: str, content, **extra) -> dict:
@@ -90,10 +88,6 @@ class Sandbox:
         return subprocess.run([sys.executable, str(METRICS), *args], cwd=self.repo, env=self.env,
                               capture_output=True, text=True)
 
-    def claims(self, *args: str) -> subprocess.CompletedProcess:
-        return subprocess.run([sys.executable, str(CLAIMS), *args], cwd=self.repo, env=self.env,
-                              capture_output=True, text=True)
-
     def journal(self) -> list[dict]:
         return [json.loads(l) for p in sorted((self.memory / "journal").glob("*.jsonl"))
                 for l in p.read_text(encoding="utf-8").splitlines()]
@@ -107,10 +101,6 @@ class Sandbox:
         assert result.returncode == 0, result.stderr
         return self.journal()[-1]
 
-    def candidates(self, rows: list[dict]) -> Path:
-        path = self.repo / "candidates.jsonl"
-        path.write_text("".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
-        return path
 
 
 class JournalTest(unittest.TestCase):
@@ -163,118 +153,6 @@ class JournalTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0)
         self.assertNotIn("journal:", result.stdout)
         self.assertFalse(self.box.memory.exists())
-
-
-class ClaimsTest(unittest.TestCase):
-    def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.box = Sandbox(Path(self.tmp.name))
-        self.entry = self.box.run("the brief left out the Validation block")
-        self.run_id = self.entry["id"]
-
-    def tearDown(self):
-        self.tmp.cleanup()
-
-    def claim(self, **over) -> dict:
-        row = {"skill": "build", "thread": "build-validation-reruns", "kind": "friction",
-               "claim": "The user had to stop build from rerunning the full Validation block.",
-               "quote": "stop rerunning the whole validation block",
-               "source": {"run": self.run_id, "line": 13}, "salience": 2}
-        row.update(over)
-        return row
-
-    def add(self, *rows: dict) -> subprocess.CompletedProcess:
-        return self.box.claims("add", str(self.box.candidates(list(rows))))
-
-    def stored(self) -> list[dict]:
-        return [json.loads(l) for l in (self.box.memory / "claims.jsonl").read_text().splitlines()]
-
-    def test_pending_then_mark(self):
-        pending = json.loads(self.box.claims("pending").stdout)
-        self.assertEqual([r["id"] for r in pending], [self.run_id])
-        self.assertEqual(self.box.claims("mark", self.run_id).returncode, 0)
-        self.assertEqual(json.loads(self.box.claims("pending").stdout), [])
-        self.assertNotEqual(self.box.claims("mark", "r-nope").returncode, 0)
-
-    def test_quote_found_at_cited_line_is_added_and_derived(self):
-        result = self.add(self.claim())
-        self.assertEqual(result.returncode, 0, result.stdout)
-        [row] = self.stored()
-        self.assertEqual(row["id"], "c-0001")
-        self.assertEqual(row["observed_at"], "2026-01-05T10:00:02.000Z")
-        self.assertIn("[c-0001]", (self.box.memory / "skills" / "build.md").read_text())
-        self.assertIn("build-validation-reruns", (self.box.memory / "threads.yaml").read_text())
-        self.assertEqual(self.box.claims("check").returncode, 0)
-
-    def test_journal_quote_without_line_is_checked_against_the_entry(self):
-        self.assertEqual(self.add(self.claim(quote="the brief left out the Validation block",
-                                             source={"run": self.run_id})).returncode, 0)
-
-    def test_batch_is_all_or_nothing(self):
-        bad = self.claim(quote="words the user never typed", thread="other-thread")
-        result = self.add(self.claim(), bad)
-        self.assertEqual(result.returncode, 1)
-        self.assertIn("candidate 2: quote not found verbatim", result.stdout)
-        self.assertFalse((self.box.memory / "claims.jsonl").exists())
-
-    def test_shape_and_source_errors(self):
-        cases = {
-            "source.run 'r-missing' is not in the journal": self.claim(source={"run": "r-missing", "line": 13}),
-            "kind must be one of": self.claim(kind="vibe"),
-            "credential shape": self.claim(claim="Leaked token=abcdefghijklmnop in the run log."),
-            "has no readable line": self.claim(source={"run": self.run_id, "line": 999}),
-            "subagents": self.claim(source={"run": self.run_id, "line": 1, "transcript": "/etc/passwd"}),
-            "em dash": self.claim(claim="Build reran the block \u2014 twice in one wave."),
-        }
-        for message, row in cases.items():
-            with self.subTest(message):
-                result = self.add(row)
-                self.assertEqual(result.returncode, 1)
-                self.assertIn(message, result.stdout)
-
-    def test_supersede_and_duplicate(self):
-        self.add(self.claim())
-        self.assertIn("duplicates c-0001", self.add(self.claim()).stdout)
-        newer = self.claim(quote="the brief left out the Validation block", source={"run": self.run_id},
-                           supersedes="c-0001")
-        self.assertEqual(self.add(newer).returncode, 0)
-        self.assertEqual([r["status"] for r in self.stored()], ["superseded", "active"])
-
-    def test_retract_forgets_and_blocks_readding(self):
-        self.add(self.claim())
-        self.assertEqual(self.box.claims("retract", "c-0001", "--reason", "an interview answer").returncode, 0)
-        self.assertFalse((self.box.memory / "skills" / "build.md").exists())
-        self.assertNotIn("c-0001", (self.box.memory / "threads.yaml").read_text())
-        self.assertIn("was retracted as c-0001", self.add(self.claim()).stdout)
-
-    def test_resolution_reopens_on_a_later_claim(self):
-        self.add(self.claim())
-        self.assertEqual(self.box.claims("resolve", "build-validation-reruns", "--commit", "abc1234",
-                                         "--eval", "build-parallel-wave").returncode, 0)
-        self.assertIn("| build-validation-reruns |", (self.box.memory / "progression.md").read_text())
-        self.assertIn("no open threads", self.box.claims("top").stdout)
-        later = [dict(r, timestamp=r["timestamp"].replace("2026-01-05", "2030-01-01")) for r in TRANSCRIPT]
-        self.box.transcript.write_text("".join(json.dumps(r) + "\n" for r in TRANSCRIPT + later))
-        entry = self.box.run()
-        self.assertEqual(self.add(self.claim(source={"run": entry["id"], "line": len(TRANSCRIPT) + 13})).returncode, 0)
-        top = self.box.claims("top").stdout
-        self.assertIn("| build-validation-reruns | build | reopened |", top)
-
-    def test_check_flags_hand_edited_derived_files(self):
-        self.add(self.claim())
-        (self.box.memory / "skills" / "build.md").write_text("edited by hand\n")
-        result = self.box.claims("check")
-        self.assertEqual(result.returncode, 1)
-        self.assertIn("skills/build.md: stale", result.stdout)
-
-    def test_show_and_report(self):
-        self.add(self.claim())
-        shown = self.box.claims("show", "c-0001").stdout
-        self.assertIn('quote: "stop rerunning the whole validation block"', shown)
-        self.assertIn("context (session.jsonl:13)", shown)
-        out = self.box.repo / "report.html"
-        self.assertEqual(self.box.claims("report", str(out)).returncode, 0)
-        self.assertIn("build-validation-reruns", out.read_text())
 
 
 if __name__ == "__main__":

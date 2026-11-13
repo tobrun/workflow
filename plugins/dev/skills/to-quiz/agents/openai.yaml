@@ -1,6 +1,0 @@
-interface:
-  display_name: "To Quiz"
-  short_description: "Create a graded change comprehension quiz"
-  default_prompt: "Use $dev:to-quiz to create a comprehension check for the completed change."
-policy:
-  allow_implicit_invocation: false

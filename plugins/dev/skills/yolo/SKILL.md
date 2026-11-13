@@ -34,7 +34,7 @@ These rules replace only the moments where a stage would wait on the user:
 - **The ask is the scope.** Climb to the problem and pressure-test the premise as `scope` does, but a premise that does not hold is recorded as a `⊘` line with the evidence, and the task is still built as asked - the reviewer decides whether to merge it.
   Do not shrink the task to a first slice; split it into change sets instead.
   A `⊘` deferral is allowed only for work the task itself calls optional.
-- **The next step is the recommended one.** `scope` recommends `build`; when it would offer `scope-review` for a large change as a user choice, skip it, that is not the recommendation.
+- **The next step is the recommended one.** `scope` recommends `build`; skip any optional review it offers as a user choice, since that is not the recommendation.
   `build` ends by recommending `ship`, and `ship` runs its default flow, all three phases.
 - **Choose within authority.** Decide sizing, review scope, and safe launch details. Push, PR creation, branch changes, and hosting run only within the authorization resolved at preflight; a restriction remains a restriction.
 - **Human calls become open calls.** A gauntlet threshold, a suppression, an upgrade that breaks the build, an e2e scenario red three times on one root cause, a reviewer blocker that survives both remediation rounds, a `diverged` ledger classification: never change the threshold, the ledger, the spec, or a contract to clear it.

@@ -82,7 +82,7 @@ E2E scenarios are proven by running the actual application against the **determi
 ## Implementation notes
 
 Maintain `.dev/{plan-name}/implementation-notes.md` as the run goes, per [../../references/plan-layout.md](../../references/plan-layout.md), never written once at the end: the run entry before the first wave launches, a change set's entry when that change set completes, and a fixup entry each time the wave gate, the e2e loop, or the CI-parity gate makes you change code, written with the fix.
-It is the shared state across waves - parallel change-set agents can't see each other's conversation, only this file and the code - and the evidence `ship`, `to-pitch`, and `to-quiz` read later.
+It is the shared state across waves - parallel change-set agents can't see each other's conversation, only this file and the code - and the evidence `ship` reads later.
 
 ```markdown
 ## Build run {date}

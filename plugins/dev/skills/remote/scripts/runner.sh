@@ -114,13 +114,14 @@ with_timeout() {
   fi
 }
 
-# Ending state of a phase from its stream: "ok", or the reason it is not.
+# outcome LOG FROM - ending state of the session whose stream starts at line FROM of LOG
+# (earlier sessions of the phase precede it there): "ok", or the reason it is not.
 outcome() {
-  python3 - "$1" <<'PY'
+  python3 - "$1" "${2:-0}" <<'PY'
 import json, sys
 result, session = None, ""
 try:
-    lines = open(sys.argv[1], encoding="utf-8", errors="replace").read().splitlines()
+    lines = open(sys.argv[1], encoding="utf-8", errors="replace").read().splitlines()[int(sys.argv[2]):]
 except OSError:
     lines = []
 for line in lines:
@@ -235,7 +236,7 @@ continue_prompt() { # continue_prompt PHASE
 # run_phase PHASE [SESSION-TO-RESUME] [PROMPT] - a fresh session without a session id;
 # the phase's own command, or the continue prompt, without a prompt.
 run_phase() {
-  local phase=$1 resume=${2:-} sid prompt=${3:-} rc result session model
+  local phase=$1 resume=${2:-} sid prompt=${3:-} rc result session model from=0
   model=$(cfg model)
   cd "$WORK"
   archive_patch "$phase" >/dev/null
@@ -254,11 +255,12 @@ run_phase() {
     --output-format stream-json --verbose)
   if [ -n "$model" ]; then args+=(--model "$model"); fi
   if [ -n "$resume" ]; then args+=(--resume "$resume"); else args+=(--session-id "$sid"); fi
+  if [ -f "$LOGS/$phase.jsonl" ]; then from=$(wc -l <"$LOGS/$phase.jsonl"); fi
   set +e
   with_timeout claude "${args[@]}" >>"$LOGS/$phase.jsonl" 2>>"$LOGS/$phase.err" </dev/null
   rc=$?
   set -e
-  read -r result session <<<"$(outcome "$LOGS/$phase.jsonl")"
+  read -r result session <<<"$(outcome "$LOGS/$phase.jsonl" "$from")"
   if [ -n "$session" ]; then status running "session.$phase=$session"; fi
   # Every session the run ever had, so pack brings each transcript home.
   printf '%s %s\n' "$phase" "${session:-$sid}" >>"$RUN_DIR/sessions.txt"

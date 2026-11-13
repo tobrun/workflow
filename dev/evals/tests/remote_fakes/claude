@@ -15,6 +15,7 @@ transcript fails, as the real one does). Writes stream-json to stdout like `--ou
   edit-spec        build also rewrites spec.md
   skip-evidence    build never writes test-evidence.json (its gate keeps failing)
   skip-evidence-once  the first build session skips the evidence; a resumed one writes it
+  crash-ship-again  a ship session in a checkout that already shipped dies without a result
 
 Under a contract that authorizes publication, ship pushes the branch to
 origin and opens the PR with `gh pr create` (the fake gh records it).
@@ -130,6 +131,8 @@ def main() -> int:
         if MODE == "dirty":
             Path("stray.txt").write_text("left behind\n")
     elif phase in ("ship", "ship-quick"):
+        if MODE == "crash-ship-again" and Path("ship.txt").exists():
+            raise SystemExit("fake claude: crashed")
         with open("ship.txt", "a") as handle:  # appended, so every ship session has a change to commit
             handle.write("hardened\n")
         git("add", "ship.txt")

@@ -24,7 +24,7 @@ Report an unresolved requirement as an open call and keep the deliverable local 
 
 ## Durable records
 
-One authority rule applies to decisions, contracts, dependency rules, and architecture documentation.
+One authority rule applies to decisions and contracts.
 Promote settled choices already approved by the user or made within the authorized task.
 Keep proposed changes to scope or settled policy as candidates until resolved.
 Never turn an unimplemented spec invariant into a verified contract: retain `? verify:` until enforcing code and its behavior have been checked.

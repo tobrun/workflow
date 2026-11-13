@@ -1,101 +1,56 @@
 ---
 name: commit
-description: Group pending changes into granular commits with structured what/why bodies and metadata trailers, sync drifted docs, capture durable decisions and contracts into the project ledger, and push only when requested. Use when the user asks to commit, or signals implementation work is ready to be committed.
+description: Group pending changes into granular commits with structured what/why bodies and metadata trailers, fix documentation the changes made wrong, capture durable decisions and contracts into the project ledger, and push only when requested. Use when the user asks to commit, or signals implementation work is ready to be committed.
 disable-model-invocation: true
 ---
 
 # Commit
 
-You are helping a developer create clean, well-structured git commits.
-Analyze the requested changes, group them into logical commits, and create them.
-Follow [../../references/execution.md](../../references/execution.md): other pending work is excluded unless the user included it, and commit alone does not authorize a push.
+Turn the requested changes into clean, reviewable commits.
+Follow [../../references/execution.md](../../references/execution.md): other pending work is excluded unless the user included it, and a request to commit does not authorize a push.
 
-Batch independent reads and use explicit staging to preserve unrelated work.
+## 1. Read the state
 
-## Core principles
+Read `git status` (never `-uall`), `git diff HEAD`, and `git log --oneline -5` for the repository's message style.
+With no changes, say so and stop.
+Exclude and warn about anything that must not be committed, such as `.env` files, secrets, or large binaries.
 
-- **Understand before committing**: read the actual diff, not just file names.
-- **Autonomous grouping**: decide the grouping yourself - never ask the user.
-- **Meaningful messages**: commit messages must explain both "what" changed and "why" - without motivation, the commit history becomes useless for understanding decisions.
-- **Safety first**: never commit secrets, never amend without asking, never force anything.
+## 2. Group
 
-## Step 1: Gather state
+Decide the grouping yourself; never ask the user.
+Each commit is one reviewable idea, small enough that its subject line says what changed.
+Split within a file when it holds several logical changes (stage the hunks with a partial patch and `git apply --cached`), and across files when they serve different concerns.
+Keep together what is inseparable: a fix or feature with its test, a rename with all its call sites.
+Config, cleanup, formatting, and documentation are separate commits; order infrastructure first, then core changes, then dependents, then cleanup.
 
-Gather the state with these three commands:
+## 3. Commit
 
-- `git status` - staged, unstaged, and untracked files (never use `-uall`)
-- `git diff HEAD` - all changes (staged + unstaged) in one diff
-- `git log --oneline -5` - recent commit message style
-
-If there are no changes at all, inform the user and stop.
-Scan for files that should NOT be committed (`.env`, secrets, large binaries). Warn and exclude if found.
-
-## Step 2: Classify and plan
-
-Group changes into logical commits. **Each commit = one reviewable idea.** Split aggressively - even within a single file - so every change is discoverable in `git log`; buried changes are lost changes.
-If someone reading `git log --oneline` can't tell what changed from the subject line, the commit is too broad.
-
-Splitting rules (most granular first):
-
-1. **Split within a file** when it contains multiple logical changes - e.g. a new function AND a renamed variable. Use partial staging (Step 3) to commit each change separately.
-2. **Split across files** when files serve different concerns - e.g. a config change vs. a code change, or two unrelated modules edited in the same session.
-3. **Group together** only when changes are inseparable.
-
-Grouping heuristics: a bug fix or new feature groups with its test; a rename/refactor groups across all affected files (definition and call sites); a new export groups with the file that imports it; config, cleanup, formatting, and documentation are always separate commits.
-
-Ordering: infrastructure/config first -> core changes -> dependent changes -> cleanup last.
-
-Then classify each commit - its type, scope, and metadata trailers - per [references/message-format.md](references/message-format.md).
-
-## Step 3: Execute commits
-
-When all changes in a file belong to the same commit, stage and commit in a **single bash call**:
+Write each message per [references/message-format.md](references/message-format.md): a typed subject, a body that says what changed and why, and the trailers that apply.
 
 ```bash
-git add <file1> <file2> ... && git commit -m "$(cat <<'EOF'
+git add <file1> <file2> && git commit -m "$(cat <<'EOF'
 type(scope): subject line
 
-What: brief description of what changed.
+What: what changed.
 
-Why: the motivation - what problem this solves or what goal it serves.
+Why: the problem this solves or the goal it serves.
 
 Severity: value
-Refs: #123
 EOF
 )"
 ```
 
-The full body (What/Why/Considered/Constraint/Directive/Symptoms) and trailer rules are in [references/message-format.md](references/message-format.md).
+- Name files explicitly; never `git add -A` or `git add .`.
+- Never add a `Co-Authored-By` line: the user is the author.
+- Never amend without asking. When a pre-commit hook fails, fix the cause, re-stage, and make a new commit, up to three tries.
 
-When a single file contains changes for multiple commits, use patch-based staging to commit each piece separately:
+## 4. Sync documentation and the ledger
 
-1. **Extract the target hunks** - `git diff <file>` shows all hunks; identify which belong to this commit.
-2. **Create a patch file** with only those hunks (`git diff <file> > /tmp/full.patch`, then edit to keep the relevant hunks, preserving the diff header).
-3. **Apply the partial patch to the index**: `git apply --cached /tmp/partial.patch && git commit -m ...`
-4. **Repeat** for the remaining hunks in subsequent commits.
+Per [references/sync-checks.md](references/sync-checks.md): fix documentation the changes made wrong, and capture decisions and contracts the commits settled.
+Skip this when the changes are formatting, comments, or whitespace only.
 
-Execution rules:
+## 5. Confirm and push
 
-- Never use `git add -A` or `git add .` - always name specific files.
-- Never add a `Co-Authored-By` line - the user is the author, you are just writing the message.
-- If a pre-commit hook fails: fix the issue, re-stage, create a NEW commit (never amend). Retry up to 3 times.
-
-## Step 4: Documentation sync check
-
-Detect whether the code changes drifted from related documentation, and capture durable decisions and contracts, per [references/sync-checks.md](references/sync-checks.md): 4a spec sync, 4b documentation sync, 4c ledger capture, 4d architecture sync.
-Skip this step if the only changes are formatting, comments, or whitespace with no behavioral impact.
-
-## Step 5: Confirm
-
-After the last commit succeeds, run `git log --oneline -<N>` (N = commits created) and show the result.
-Only run `git status` if you excluded files earlier.
-
-## Step 6: Push
-
-Push only when the user requested it and the consuming instructions permit it.
-A request to commit ends with local commits; existing authorization to push need not be requested again.
-
-1. Run `git push` after all commits succeed.
-2. If the branch has no upstream, run `git push -u origin <branch>`.
-3. Never use `--force` or `--force-with-lease` unless the user explicitly asks.
-4. If the push fails (rejected, conflict, auth), report the error and stop - don't try to resolve it destructively.
+Show `git log --oneline -<N>` for the commits created.
+Push only when the user asked for it and nothing restricts it: `git push`, or `git push -u origin <branch>` without an upstream.
+Never force-push unless the user explicitly asks; when a push fails, report the error and stop.

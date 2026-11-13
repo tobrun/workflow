@@ -542,6 +542,13 @@ class RemoteCycleTest(unittest.TestCase):
         self.assertIsNone(last["resume"])
         self.assertEqual(last["prompt"], "/dev:ship plan .dev/greeting\n\nCI failed on lint; fix it.")
 
+    def test_a_later_session_is_judged_by_its_own_stream(self) -> None:
+        run = self.dispatch(mode="crash-ship-again")["run"]
+        self.assertEqual(self.wait(run), 0)
+        self.resume(run, "--from", "ship", mode="crash-ship-again")
+        self.assertEqual(self.wait(run), 1, "the first ship session's success is not the second one's")
+        self.assertEqual(self.status(run)["reason"], "ship ended with exit 1 (no-result)")
+
     def test_resume_refuses_a_live_run_and_a_point_it_cannot_reach(self) -> None:
         run = self.dispatch("--phases", "build", mode="sleep")["run"]
         for _ in range(100):

@@ -1,153 +1,98 @@
 ---
 name: scope
-description: Spec a change by interviewing for the real problem, arguing every design decision against alternatives, and writing a self-contained spec with a change plan at .dev/{plan-name}/spec.md. Use to plan work before implementation, to turn accepted review findings into new change sets, or to audit the decisions already embedded in existing code or commit history.
+description: Spec a change at .dev/{plan-name}/spec.md - interview for the real problem, argue each consequential decision against its alternatives, and write a self-contained spec with a layer-tagged change plan, then record the settled decisions in docs/decisions.md and boundary guarantees in docs/contracts.md. Use to plan work before implementation, for a quick plan of a small request or of accepted review findings, or for a deeper verified review of a large spec.
 disable-model-invocation: true
 ---
 
 # Scope
 
 The spec is the deliverable: do not implement anything.
-It is a fresh-context handoff - planning happens here, implementation happens in another session (often another model) that reads only the spec.
+Another session, often another model, builds from the spec alone, so everything it needs to know goes in the file.
+Paths follow [../../references/plan-layout.md](../../references/plan-layout.md), the decision notation follows [../../references/decision-ledger.md](../../references/decision-ledger.md), and authority and the confidence policy follow [../../references/execution.md](../../references/execution.md).
+First run `python3 {scope-skill-root}/../../scripts/skill-metrics.py start scope`.
 
-The numbered sections are an addressing scheme, not a march. Four orderings are load-bearing: catalog decisions before arguing them, argue them before reading the project's ledger, settle the spec before promoting anything out of it, and never let the change plan outrun an open decision. The rest is judgment - work it in whatever order the change calls for.
-Execution authority, durable-write ownership, and confidence policy follow [../../references/execution.md](../../references/execution.md).
-Before the interview, run `python3 {scope-skill-root}/../../scripts/skill-metrics.py start scope` so the retrospective can measure the run.
+## Choose the path
 
-## 1. Interview
+- **Full** is the default: interview, argued decisions, a reviewer, promotion to the ledger.
+- **Small** is for a small request with an obvious implementation, or for accepted review findings that are plain defects: no interview, no reviewer, at most one question and only when you cannot proceed without it, and a `D-` decision only where the code offered a real choice.
+  Switch to full when a finding needs a recorded decision flipped or user-visible scope changed, or when the request turns out not to be small.
 
-Interview the user until you understand what they want, one consequential question at a time, using the host's structured user-input tool when available.
-For a consequential recommendation, record the evidence, confidence, and the fact most likely to overturn it.
-Apply the shared 65% policy only within the requested scope; retain `auto-applied at Confidence: NN%` in the chosen line.
-List auto-applied recommendations together so the user can correct them before later decisions rely on them.
+Tell the user which path you took.
 
-The spec opens with the interview, not after it: once the first answers say what the change is about, pick a kebab-case `{plan-name}` naming the outcome and create `spec.md` in the plan directory ([../../references/plan-layout.md](../../references/plan-layout.md)) with its title, the date, what you understood, and empty `## Research`, `## Scope`, and `## Change plan` sections.
-From then on the file is the run's working state, written as the run goes per that reference: every answer, auto-applied recommendation, cataloged decision, and resolution reaches it when it happens, so the conversation never holds something the file lacks.
-Rename the directory when the problem climbs to a different outcome.
+## 1. Understand the problem
 
-The request often arrives one level too low: a solution ("add rate limiting with Redis") hides the problem it solves, a symptom hides the cause that picks the fix.
-Climb up before interviewing about the change itself - what led to this, what they observed, what would look different if it worked - then pressure-test the premise: what data shows the problem is real, and does it point where they think? Committing to a fix before the cause means speccing the wrong change well.
-Once the problem holds up, brainstorm alternatives at the problem level, including other layers entirely (rate limit at the ALB instead of in the app); the user's original ask becomes one alternative among them, and the whole question lands in the research section as the first decision.
-If the premise doesn't survive, that resolves as a `⊘` not-doing line, not as a failed interview.
+Create `spec.md` as soon as you know what the change is about, with its title, the date, what you understood, and empty `## Research`, `## Scope`, and `## Change plan` sections.
+From then on write each answer, decision, and resolution into the file when it happens, so the file never lags the conversation.
 
-The interview is latency-bound by the user, so hide machine work inside it: once the change's rough area is clear, launch background read-only subagents on phase 2's prior-art hunt - existing idioms, helpers, earlier attempts, the areas the change touches - so their results are waiting when the interview closes.
-Use `docs/architecture.md` when present ([../../references/architecture.md](../../references/architecture.md)); otherwise discover the affected components from code.
-Whole-system capture is a separate optional task, not a prerequisite to planning this change.
-These explorers never read `docs/decisions.md`: the ledger must stay out of context until the phase 5 reconcile, and phase 9 treats an early leak as contamination.
+A request often arrives one level too low: a solution hides the problem it solves, and a symptom hides its cause.
+Ask what led to the request and what would look different if it worked, and check the data behind the premise before speccing a fix.
+The user's original ask then becomes one alternative among others in the first decision; a premise that does not survive resolves as a `⊘` line.
 
-Then size the change: **small** - a handful of decisions, an area the user knows, limited blast radius - or **full**, everything else.
-Tell the user which you picked and why; they can override. Small changes run the lighter variants where marked below - the spec file, its argued decisions, scope, and change plan always happen.
+Interview one consequential question at a time, using the host's structured user-input tool when available, each with your recommendation and its confidence.
+Look at the code first so you ask only what the code cannot answer.
+List the recommendations you applied without asking in one block, so a single reply can overturn any of them before later decisions rely on them.
+Prefer the smallest spec that delivers observable behavior, but resolve any reduction of the requested scope with the user instead of deferring required work silently.
 
-**Iterate small.** Bias toward the smallest spec that delivers observable behavior - a slice implemented and looked at teaches more than a bigger plan.
-Propose a first slice when useful, but resolve a reduction of the requested scope with the user instead of silently deferring required work. The ledger carries the decisions across slices, so going small loses nothing argued.
+## 2. Argue the decisions
 
-## 2. Catalog the decisions
+Find every consequential decision: the overall approach, the choices that look simple but change how much work is done (where a file is stored, the retry strategy), and the small values that change observable behavior (timeouts, value domains, data shapes).
+How the change is verified is a decision too: which layer to test at, what needs a real dependency, what cannot be tested and why.
+Routine implementation choices need no entry.
 
-Look at the code, starting from the phase 1 explorers' results - prior art first: existing idioms, helpers, and earlier attempts - so decisions get argued against what the codebase already does, not from scratch. Identify all the design decisions involved:
+Each decision gets a stable `D-` slug, is phrased as a question, and lists at least two alternatives with because clauses, argued against what the codebase already does.
+Write it as `[open]` when you find it and settle it in the file as the talk-through goes; `⚑` marks a line waiting on the user.
+Talk the big and medium decisions through with the user, highest impact first; sketch taste-driven alternatives concretely instead of describing them.
 
-- **Big** - overall approach.
-- **Medium** - things that seem simple but can cause big shifts in how much work is done (store a file on S3 or locally, retry strategy). The trickiest tier - make sure you catch all of them.
-- **Small but consequential** - timeouts, value domains, or data shapes that change observable behavior or boundary guarantees.
-Routine implementation choices need no separate decision entry.
+Argue each decision on its merits before reading `docs/decisions.md`, then compare: a collision with a recorded entry is raised with the user and marked `⚑` until resolved, never silently overridden.
 
-Pay special attention to edge cases and error handling. How the change gets verified is a decision too: what level to test at, what needs a real dependency versus a fake, what can't be tested and why.
-Each decision enters the research section as an `[open]` entry the moment it is cataloged, and its marks change in the file as the talk-through settles it.
+## 3. Write the spec
 
-**Blind spot pass** (full-size only): don't grade your own catalog - you'll reread it the way you wrote it. Get a second one from something that hasn't seen your reasoning, reliably a subagent handed only the user's original request and the relevant code - not the conversation, not your catalog, and told to stay out of `.dev/`, where that catalog is being written.
-Both of its inputs are settled when the interview ends, so launch it before you start cataloging; it hunts while you do, and the fold-in is the sync point.
-Fold the diff in: what it found and you didn't are blind spots, what you found and it didn't deserves a second look.
-Then tell the user what their framing didn't account for: constraints already in the code, behavior the change would break, second-order work, and what a mature solution handles in this domain that they wouldn't know to ask about.
+**Research**: one entry per decision, by impact.
+When a later section references a decision, echo the chosen line's leading label in parentheses - `D-file-storage (✓ S3)`, `(open)`, `(⊘ not doing)` - so lead each chosen line with the short label you will echo.
 
-Between the catalog and the talk, gather each big and medium decision's evidence - call sites, existing constraints, what the code already does - in one parallel subagent batch, one agent per decision area, so each discussion starts armed instead of pausing to grep.
-Talk through the big and medium decisions with the user, highest-impact first; when a decision's criteria are taste-driven, sketch the alternatives concretely instead of describing them in prose.
+**Scope**: inputs, outputs, invariants, and error handling.
+An invariant another module will rely on without seeing the enforcing code is written in the notation of [../../references/contracts.md](../../references/contracts.md).
+Second-order work becomes nested sub-efforts with their own decisions; weighed and cut options become `⊘` non-goals with a because clause.
+End with a `### Validation` block of the repository's real typecheck, test, lint, and build commands, discovered from its manifests and CI config, never guessed.
+List each once, and mark `(end of build)` the ones a build wave does not need, such as the e2e suite, benchmarks, or a coverage run that repeats the suite.
 
-## 3. Research section
-
-`spec.md`, open since the interview, holds three sections under its dated title: `## Research`, `## Scope`, `## Change plan`.
-Research comes first, one entry per decision, ordered by impact.
-Every decision gets a stable ID: `D-` plus a short kebab slug (`D-file-storage`); keep a slug once assigned.
-
-Each entry: the decision phrased as a question, then one line per alternative in the mark and because-clause notation of [../../references/decision-ledger.md](../../references/decision-ledger.md), which owns it.
-Evidence marks apply from phase 1 onward, so the premise pressure-test data lands here cited or marked.
-A decision still being argued is marked `[open]`; one that resolves to not doing it gets `✗` on every alternative and a closing `⊘`.
-`⚑` marks a line waiting on the user. It may stay open in research and scope, but the change plan never links a decision that is `[open]` or carries one.
-
-
-
-When a later section references a decision, echo the resolution in parentheses - `D-file-storage (✓ S3)`, `(open)`, `(⊘ not doing)` - so the reader only jumps back for the why. The lint requires the text after `✓` to be copied from the chosen line before its ` - `, so lead each chosen line with the short label you will echo.
-
-## 4. Scope section
-
-Record the scope: inputs, outputs, invariants, and error handling.
-An invariant that crosses a boundary - another module will rely on it without seeing the enforcing code - gets drafted in contract notation ([../../references/contracts.md](../../references/contracts.md)) so phase 8 can promote it.
-A change that adds a module or dependency edge, or collides with `docs/dependencies.md`, is a decision with the alternatives named in [../../references/dependency-rules.md](../../references/dependency-rules.md); the chosen resolution edits that file inside a change set, never implicitly.
-Name the components and flows the change adds, removes, or reshapes, in the overview's terms, so build knows what in `docs/architecture.md` its change sets must update.
-Efforts have second-order effects - capture them as nested sub-efforts, each carrying its own decisions back into the research section (rate limiting in scope means Redis setup, which carries config and deploy decisions).
-Record considered non-goals as `⊘` lines with a because clause - things someone weighed and cut, not mere omissions.
-End the scope with a `### Validation` block listing the repo's real typecheck/test/lint/build commands, discovered from `package.json`, a `Makefile`, CI config, or equivalent - never guess `npm test` into a `pytest` repo; ask if you cannot determine them.
-`build` runs this block once per wave, so list each check once and mark every command a wave does not need - the e2e suite, a benchmark, a coverage or complexity run that repeats the suite - `(end of build)`: build runs those once, on the final tree.
-Writing style for the spec: ELI12, no similes or metaphors.
-
-## 5. Review and research
-
-1. Spawn a subagent reviewer with the spec file only - not the conversation, not your reasoning - before starting any of the work below, so it hunts while you research. Give it a hunting job, not a checklist: find the decisions this spec makes without realizing it, the alternatives rejected without a stated reason, and the chosen options whose downsides the spec doesn't admit. Report concrete defects or say which areas were checked without finding one; never manufacture a finding to satisfy the task. For small changes, run this hunt yourself against the spec file.
-2. While it runs, research how to implement everything: exact call sites, APIs, the idioms from the phase 2 prior-art hunt. Ask the user when you hit weird stuff.
-3. Also while it runs, reconcile the drafted decisions against the project's `docs/decisions.md`, if it keeps one, per the recommender contract in [../../references/decision-ledger.md](../../references/decision-ledger.md). The decisions were argued fresh, so this diff means something; a `diverged` classification is raised with the user and marked `⚑` until resolved.
-4. When the reviewer returns, ask remaining questions and update the doc. Anything still unanswerable stays a `⚑` line.
-
-## 6. Change plan
-
-Short fragmented sentences. Link decisions by ID wherever one applies, echoing the choice.
-Each change set ends with one `;`-separated `tests:` line - concrete scenarios as input -> expected outcome, each tagged `[unit]`, `[integration]`, or `[e2e]`, covering happy path, edge cases, and failure paths; a set with nothing to test says `tests: none - {reason}`.
-Specific enough that whoever writes the tests invents nothing; the author tags layers here because a fresh implementation session can't recover that intent.
-Order change sets so each builds only on the ones before it, and shape the plan wide: `build` runs change sets in parallel only while their file lists are disjoint, so a file three change sets edit makes them queue.
-Land what several change sets share - a port, a schema, a registry, the composition root, a regenerated artifact - in one change set, and let the ones building on it own disjoint files.
-Size each change set for one agent: past 25 scenarios it is several change sets, split along a seam.
+**Change plan**: short fragments, linking decisions by ID with their echo.
+Each change set ends with exactly one `tests:` line of concrete scenarios, input -> expected outcome, each tagged `[unit]`, `[integration]`, or `[e2e]` and covering the happy path, edge cases, and failure paths; a set with nothing to test says `tests: none - {reason}`.
+Order change sets so each builds only on earlier ones, keep their file lists disjoint so build can run them in parallel, and gather edits to a shared file into one change set.
+Past 25 scenarios a change set is several, split along a seam.
 
 ```
 1. Change set 1
    a. file 1 - describe changes - decisions: D-input-validation (✓ custom)
    b. file 2 - describe changes
    tests: [unit] payload missing name -> 400 naming the field; [integration] valid payload -> 200 and row written; [e2e] 11MB upload -> rejected before the transfer starts
-
-2. Change set 2
-   a. file 3 - describe changes
-   tests: none - deploy config only, verified by the deploy itself
 ```
 
-Then loop `python3 {scope-skill-root}/scripts/lint-spec.py .dev/{plan-name}/spec.md` until it exits clean.
-It owns the mechanics above; the spec is not final while it reports anything.
-Once clean it prints the build waves the file lists allow and the files that make a change set wait; where change sets queue behind a shared file, move that file's edits into one change set and lint again.
+Write the spec plainly: no similes or metaphors.
+Loop `python3 {scope-skill-root}/scripts/lint-spec.py .dev/{plan-name}/spec.md` until it exits clean; it prints the build waves the file lists allow, and a change set queued behind a shared file is a hint to regroup.
 
-## 7. Visualize
+## 4. Review (full path)
 
-Full-size changes only. Map the settled spec onto `SPEC_DATA` per [references/data-schema.md](references/data-schema.md) and render [templates/spec.html](templates/spec.html) to `/tmp/{project-slug}/reports/{plan-name}-spec.html`, opening and publishing per [../../references/reporting.md](../../references/reporting.md).
-Once the spec is settled, this phase and the phase 8 promotion have no ordering between them - overlap them rather than running a march.
+Hand a fresh-context subagent the spec file and the repository, not the conversation.
+Its job: find decisions the spec makes without saying so, alternatives rejected without a reason, downsides it does not admit, and claims about the repo that are false.
+Check each finding against the code yourself, fold in what holds, and ask the user about any that would change scope or a settled decision.
 
-## 8. Promote to the ledger
+For a large or risky change, offer the user a deeper pass before finishing: four reviewers in parallel - feasibility against the repo, completeness of scenarios for every invariant and failure path, consistency between decisions and change sets, testability at each tagged layer - then a separate verifier per finding that tries to refute it against the repo.
+Apply confirmed findings that stay within the settled decisions, ask the user about the rest, and lint again.
 
-Copy into `docs/decisions.md` every decision that passes the promotion test in [../../references/decision-ledger.md](../../references/decision-ledger.md).
-Entries go in verbatim, dated, sourced to this spec, evidence marks included; a `? verify:` never gets silently dropped, and promotion is the cheapest moment to check what's checkable now.
-Promote recurring rationales to `P-` principles per the ledger's bar.
-Cross-boundary invariants from phase 4 promote to `docs/contracts.md` under the same test, phrased for the relying side.
+## 5. Record
 
-## 9. Run retrospective
+Copy into `docs/decisions.md` every decision that passes the promotion test in [../../references/decision-ledger.md](../../references/decision-ledger.md), verbatim, dated, and sourced to this spec.
+Promote cross-boundary invariants to `docs/contracts.md`, phrased for the relying side; a planned invariant keeps its `? verify:` until enforcing code exists.
 
-Audit the run itself. Three checks, each reported as a typed line - silence reads as "never ran":
+Close with `python3 {scope-skill-root}/../../scripts/skill-metrics.py end scope --count decisions=N --count change_sets=N --count scenarios=N`, pasting its table verbatim, plus any `--friction` lines per [../../references/run-journal.md](../../references/run-journal.md).
+Then recommend `build`; never launch it.
 
-- **Contamination** - `clean | contaminated`. Did the ledger enter context before the phase 5 reconcile? If so, name the decisions drafted after exposure: their reconcile outcomes are inherited, and a `still-holds` on them proves nothing.
-- **Sizing** - `held | mis-sized`. Did the small/full call survive? Name the evidence when it didn't.
-- **Catalog gaps** - `none | gap`. What did the reviewer or blind-spot pass find that phase 2 should have caught? A missed *category* is a proposed edit to the phase 2 list - propose it to the user, never apply it silently.
+## From review findings
 
-Then print the measured run metrics with `python3 {scope-skill-root}/../../scripts/skill-metrics.py end scope --count decisions=N --count change_sets=N --count scenarios=N`, plus any `--friction` lines per [../../references/run-journal.md](../../references/run-journal.md), pasting its table verbatim.
-Then recommend the next step, never launching it: `build`, which implements the spec as written and needs no review first.
-
-## Starting from review findings
-
-When the plan directory ([../../references/plan-layout.md](../../references/plan-layout.md)) holds `review_N.md` files, the highest-numbered review's accepted Blockers and Concerns are the interview's opening agenda: each becomes an open decision, and rejected or deferred findings land as `⊘` lines so they are visibly not dropped.
-Append new change sets to the existing `spec.md` with continued numbering - never renumber - and apply the review's Decision reconciliation section to `docs/decisions.md`.
-A defect change set includes the review's triggering scenario as its reproduction.
-
-## Reverse mode
-
-When the user points at existing code instead of a planned change ("audit the decisions in the sync layer"), follow [references/reverse-mode.md](references/reverse-mode.md): inventory the decisions already embedded in the code, reconcile them against the ledger, and write ratified entries and unexamined defaults out - no spec file is produced.
-To seed a ledger from commit history instead of code, follow [references/bootstrap.md](references/bootstrap.md).
+When the plan directory holds `review_N.md` files, the highest-numbered one is the input.
+On the small path, each accepted Blocker becomes one change set, and a Concern only when the user names it; on the full path, the accepted findings open the interview as decisions, and rejected or deferred ones land as `⊘` lines.
+Read the code each finding names before writing its change set.
+Append to the existing change plan with continued numbering - never renumber or rewrite what is there - and use the review's triggering scenario as the change set's test.
+Apply the review's Decision reconciliation section to `docs/decisions.md`.
+For these change sets, recommend `build` followed by `ship-quick` rather than `ship`.

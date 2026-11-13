@@ -50,5 +50,5 @@ What to fix first and why.
 ```
 
 `scope` reads this file when the user accepts findings that need real work: its Blockers and Concerns open that run's interview, and its Decision reconciliation section is what gets applied to `docs/decisions.md`.
-`scope-quick` reads the same Blockers to write one fix change set each, and `ship-quick` diffs from the `head` on the Base line to review only what changed since.
+`scope`'s small path reads the same Blockers to write one fix change set each, and `ship-quick` diffs from the `head` on the Base line to review only what changed since.
 Write it for that reader - a finding with no triggering scenario cannot become a decision.

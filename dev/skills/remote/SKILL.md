@@ -21,7 +21,7 @@ Dispatching `ship` or `ship-quick` is a request to ship, pull-request phase incl
 | ------------- | ---- |
 | a plan name, "run it remotely", "build and ship on a sandbox" | Dispatch with `build,ship` |
 | "build only remotely" | Dispatch with `build` |
-| accepted review fixes are scoped with `scope-quick` | Dispatch with `build,ship-quick` |
+| accepted review fixes are scoped on `scope`'s small path | Dispatch with `build,ship-quick` |
 | "status", "how is it going", "logs" | Follow |
 | "collect", "bring it back", a finished run | Collect and publish |
 | "resume", "stop", "release" | the matching command on the named run |
@@ -71,7 +71,7 @@ Up to one run per workspace runs at a time; dispatching several plans in a row f
    Open it as a draft when the run did not end `done`, the verdict is not PASS or CONCERNS, `pr.md` lists open calls, or a check was deferred or remote-only.
    Without push or PR authorization, stop at the prepared body and the worktree path, and say what is left.
 7. Follow the PR's required checks to green per [../../references/ci-parity.md](../../references/ci-parity.md), fixing in the worktree.
-   A failure that needs more than a contained fix goes back through `scope-quick` here and a `build,ship-quick` dispatch.
+   A failure that needs more than a contained fix goes back through `scope`'s small path here and a `build,ship-quick` dispatch.
 
 ## Wrap up
 

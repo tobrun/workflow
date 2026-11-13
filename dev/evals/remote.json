@@ -32,7 +32,7 @@
         "Answer 1: from the worktree collect printed (the existing checkout of the branch, or ~/.dev-workflow/remote/worktrees/{run}/{repo} with .dev/{plan} linked to the canonical plan directory); the user's own checkout is never switched",
         "Answer 2: pr-evidence.py check on .dev/{plan-name}/pr.md with --require-current and --repo-root set to the worktree; a failure is a refreshed-evidence task",
         "Answer 3: when the run did not end done, the verdict is not PASS or CONCERNS, pr.md lists open calls, or a check was deferred or remote-only",
-        "Answer 4: a contained fix happens in the worktree; anything larger goes through scope-quick here and a build,ship-quick dispatch"
+        "Answer 4: a contained fix happens in the worktree; anything larger goes through scope's small path here and a build,ship-quick dispatch"
       ]
     }
   ]

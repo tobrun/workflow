@@ -1,7 +1,7 @@
 # Architecture
 
 Purpose: this repository is a monorepo of agent skills and the tooling that ships them.
-Two plugins live here: `dev`, the hand-invoked development workflow (scope, build, ship, the lighter scope-quick and ship-quick, yolo, remote, and commit); and `bootstrap`, whose `agents-md` skill writes a consuming repository's root AGENTS.md from the workflow's lessons.
+Two plugins live here: `dev`, the hand-invoked development workflow (scope, build, ship, the lighter ship-quick, yolo, remote, and commit); and `bootstrap`, whose `agents-md` skill writes a consuming repository's root AGENTS.md from the workflow's lessons.
 A person invokes each `dev` skill by hand; skills never invoke each other, and each one recommends the next step instead. The `dev` `yolo` skill is not an invoker: it reads the scope, build, and ship bodies by path and follows them inline in one session, answering each of their user questions with the stage's own recommendation.
 The generated Codex distributions under `plugins/` are built from their source plugin and never edited by hand.
 

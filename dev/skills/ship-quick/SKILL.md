@@ -34,7 +34,7 @@ Confirm a new blocker by reading the code yourself before it counts; drop what y
 Write `.dev/{plan-name}/review_N.md` at the next free index in the shape of [../ship/references/report-format.md](../ship/references/report-format.md), with `Panel: quick` and the Previous findings section filled.
 The verdict is BLOCK when a blocker stands, CONCERNS when only concerns remain open, and PASS otherwise.
 A missing or malformed reviewer result is INCOMPLETE, not PASS; stop the ready/approval path and report the missing assurance.
-On BLOCK, stop here: report the standing blockers and recommend `scope-quick`, then `build`, then this skill again.
+On BLOCK, stop here: report the standing blockers and recommend `scope` on its small path, then `build`, then this skill again.
 
 ## 4. Pull request
 

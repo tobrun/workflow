@@ -9,7 +9,6 @@ Skills are explicitly invoked and recommend the next step; only `yolo` follows s
 | Skill | Use when | Deliverable |
 | --- | --- | --- |
 | [scope](skills/scope/SKILL.md) | The problem or consequential choices need planning. | A settled spec with invariants, argued choices, and layer-tagged scenarios. |
-| [scope-quick](skills/scope-quick/SKILL.md) | A small request or accepted review defect needs a minimal plan. | Change sets in the same spec format. |
 | [build](skills/build/SKILL.md) | A spec is ready to implement. | Code, tests, runner receipts, incremental notes, and actual application evidence. |
 | [ship](skills/ship/SKILL.md) | A change needs hardening, independent review, and an authorized PR. | Required checks, verified findings with explicit completeness, and current evidence. |
 | [ship-quick](skills/ship-quick/SKILL.md) | Small fixes from a prior review need rechecking. | One reviewer, refreshed affected evidence, and an authorized PR update. |
@@ -42,7 +41,7 @@ Whole-system architecture capture, ledger seeding, and reverse audits are condit
 
 ## Run metrics
 
-`scope`, `scope-review`, `build`, `ship`, `scope-quick`, `ship-quick`, and `yolo` each start by snapshotting the run with `scripts/skill-metrics.py start` and end by printing what it measured: wall time, tokens split between the orchestrator and its subagents, agents dispatched, tool calls, the git delta since the snapshot, and any counters the skill tallied from tool output.
+`scope`, `build`, `ship`, `ship-quick`, and `yolo` each start by snapshotting the run with `scripts/skill-metrics.py start` and end by printing what it measured: wall time, tokens split between the orchestrator and its subagents, agents dispatched, tool calls, the git delta since the snapshot, and any counters the skill tallied from tool output.
 The numbers come from git and from the session store of whichever harness ran the skill, never from the model's recollection.
 Claude Code, Codex, opencode, and Pi each name the running session to the shell tool (`CLAUDE_CODE_SESSION_ID`, `CODEX_THREAD_ID`, `OPENCODE_SESSION_ID`, `PI_SESSION_FILE`), and the script anchors on its own `start` call inside that session, so a nested harness or a phase run inside a subagent is measured where it ran.
 A value a harness does not record prints as `n/a`, never as zero: Pi's review panel runs with `--no-session`, so Pi runs show subagent tokens and agents as `n/a`, and a run outside any of the four shows every session-derived value as `n/a`.
@@ -128,7 +127,6 @@ Preserve the explicit-invocation policy with a permission rule in `~/.config/ope
     "skill": {
       "*": "allow",
       "scope": "ask",
-      "scope-quick": "ask",
       "commit": "ask",
       "build": "ask",
       "ship": "ask",

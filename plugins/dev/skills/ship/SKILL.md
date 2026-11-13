@@ -148,4 +148,4 @@ For the pull request: its URL, draft or ready, what the Evidence section shows a
 Recommend next steps, never invoking them:
 
 - `commit` for the gauntlet's accumulated fixes, only when phase 3 did not run.
-- `scope-quick`, then `build`, then `ship-quick` when the user accepts findings that are plain defects; `scope` on this plan directory only when a finding needs a decision or a scope change - both work even when no spec exists.
+- `scope` on its small path, then `build`, then `ship-quick` when the user accepts findings that are plain defects; `scope` on this plan directory only when a finding needs a decision or a scope change - both work even when no spec exists.

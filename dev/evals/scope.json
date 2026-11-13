@@ -9,7 +9,7 @@
       "assertions": [
         "The interview climbs above the stated solution: it asks what was observed and pressure-tests the premise before speccing rate limiting",
         "The stated solution becomes one alternative among others in the research section, as the first decision",
-        "The change is sized small or full, the choice is told to the user with a reason, and the user can override",
+        "The run takes the full path, tells the user so, and the user can switch it",
         "The spec is written to .dev/{plan-name}/spec.md with a research section of D- slugged decisions using the marks (chosen, rejected, open, accepted downside, not doing)",
         "The scope section ends with a Validation block listing the repo's real commands, discovered rather than guessed",
         "The Validation block lists each check once, and any e2e suite, benchmark, or coverage re-run in it is marked (end of build)",
@@ -25,10 +25,10 @@
       "prompt": "We want to add rate limiting to our public API to stop abuse. Spec this change.",
       "fixture": "the same repo, with docs/decisions.md containing a not-doing entry for rate limiting whose reopen condition mentions abuse volume",
       "assertions": [
-        "A subagent reviewer receives the spec file only, not the conversation, with a hunting job rather than a checklist",
-        "The drafted decisions are reconciled against docs/decisions.md only in phase 5, after they were argued fresh",
-        "The collision with the recorded not-doing entry is classified (still-holds, diverged, or reopened) and raised rather than silently overridden",
-        "The retrospective reports the three typed lines: contamination, sizing, catalog gaps"
+        "A fresh-context subagent reviewer receives the spec file and the repository, not the conversation, with a hunting job rather than a checklist",
+        "The drafted decisions are compared against docs/decisions.md only after they were argued on their merits",
+        "The collision with the recorded not-doing entry is raised with the user and marked as waiting on them rather than silently overridden",
+        "Settled decisions that pass the promotion test are copied into docs/decisions.md, dated and sourced to the spec"
       ]
     },
     {
@@ -46,43 +46,31 @@
       ]
     },
     {
-      "id": "reverse-mode-audit",
-      "prompt": "Audit the decisions embedded in the sync layer.",
-      "fixture": "a repo with src/sync/ containing hardcoded timeouts, a retry count, and a page size, and a docs/decisions.md with one recorded entry about sync retries",
-      "assertions": [
-        "No spec.md is written; reverse mode produces ledger entries, not a spec",
-        "The catalog pass inventories embedded decisions before judging any of them, including values that look fine",
-        "Each entry gets the problem it was solving, or is recorded as an unexamined default with no known problem",
-        "The recorded retry entry is verified against the current code and a mismatch is raised as diverged rather than silently overwritten",
-        "A decision worth changing is recommended as a normal scope run and never launched directly"
-      ]
-    },
-    {
       "id": "scope-confidence-threshold",
       "prompt": "Answer briefly, from the skill text only. During the interview you recommend storing the dedup keys in a database table over Redis at Confidence: 82%, and separately recommend a 30-day retention window at Confidence: 55%. Later a finding suggests the real problem is not duplicate deliveries but a missing retry, at Confidence: 90%. (0) Do you ask about the store, and how is that decision recorded? (1) Do you ask about the retention window? (2) Do you ask about the retry finding, and why? (3) When does the user see the recommendations you applied without asking?",
       "assertions": [
         "Answer 0: no question; the table is applied and its chosen line carries `auto-applied at Confidence: 82%` in its because clause",
         "Answer 1: yes, 55% is below the 65% threshold, so the user is asked",
         "Answer 2: yes, whatever the score, because it changes what was asked for (a different problem than the request names)",
-        "Answer 3: once, in one block at the end of the interview, so a single reply can overturn any of them before the catalog builds on them"
+        "Answer 3: in one block, so a single reply can overturn any of them before later decisions rely on them"
       ]
     },
     {
       "id": "scope-written-as-the-run-goes",
-      "prompt": "Answer briefly, from the skill text and the references it links only. (1) At what point in a run is spec.md created, and what does it hold at that moment? (2) You have just cataloged nine decisions and are about to talk the big ones through with the user. Where are those nine decisions right now? (3) The user answers a question that settles D-file-storage. When does the spec change? (4) The blind spot subagent is hunting through the repo while you catalog. What keeps it from reading your catalog? (5) The session dies halfway through the decision talk-through. What does the next scope run find, and how does it treat it?",
+      "prompt": "Answer briefly, from the skill text and the references it links only. (1) At what point in a run is spec.md created, and what does it hold at that moment? (2) You have just cataloged nine decisions and are about to talk the big ones through with the user. Where are those nine decisions right now? (3) The user answers a question that settles D-file-storage. When does the spec change? (4) What does the fresh-context reviewer receive, and what does it not receive? (5) The session dies halfway through the decision talk-through. What does the next scope run find, and how does it treat it?",
       "assertions": [
-        "Answer 1: during the interview, once the first answers say what the change is about - not after the interview or the catalog; it holds the title, the date, what was understood so far, and empty Research, Scope, and Change plan sections",
+        "Answer 1: during the interview, as soon as the change's subject is known - not after the interview or the catalog; it holds the title, the date, what was understood so far, and empty Research, Scope, and Change plan sections",
         "Answer 2: in the research section of spec.md, each written as an [open] entry the moment it was cataloged - not only in the conversation",
         "Answer 3: at once, when the answer lands - the decision's marks change in the file as the talk-through settles it, not in a later write-up",
-        "Answer 4: it is handed only the original request and the relevant code, and is told to stay out of .dev/, where the catalog is being written",
+        "Answer 4: the spec file and the repository; never the conversation",
         "Answer 5: a spec.md that lint-spec.py does not pass, holding everything established before the session died; it is a draft that scope picks up where it stopped, and no other skill builds on it"
       ]
     },
     {
       "id": "scope-echo-matches-chosen",
-      "prompt": "Answer briefly, from the skill text and the references it links only. A decision's chosen line reads `\u2713 S3 bucket in us-east-1 - durable across redeploys`. (1) Write the echo a later section should use for it. (2) You were about to write `(\u2713 cloud storage)` instead. Will lint-spec.py accept that, and what does the skill tell you to do when writing the chosen line so the echo passes the first time?",
+      "prompt": "Answer briefly, from the skill text and the references it links only. A decision's chosen line reads `✓ S3 bucket in us-east-1 - durable across redeploys`. (1) Write the echo a later section should use for it. (2) You were about to write `(✓ cloud storage)` instead. Will lint-spec.py accept that, and what does the skill tell you to do when writing the chosen line so the echo passes the first time?",
       "assertions": [
-        "Answer 1: `D-slug (\u2713 S3 bucket)` or a shorter prefix such as `(\u2713 S3)` - text taken from the chosen line before its ` - `, not from the because clause",
+        "Answer 1: `D-slug (✓ S3 bucket)` or a shorter prefix such as `(✓ S3)` - text taken from the chosen line before its ` - `, not from the because clause",
         "Answer 2: no, lint-spec.py rejects it because the echo is not found in the chosen line's text before ` - `; lead the chosen line with the short label that will be echoed, and copy the echo from it"
       ]
     },
@@ -94,6 +82,28 @@
         "Apply the in-scope 70% recommendation under the 65% rule and record it as auto-applied",
         "Resolve a dropped requirement with the user regardless of confidence",
         "Confidence expresses judgment, not a measured probability or authorization"
+      ]
+    },
+    {
+      "id": "scope-small-from-review",
+      "prompt": "Answer briefly, from the skill text only. The plan directory holds spec.md with change sets 1 to 4, all built, and review_2.md with two Blockers and three Concerns. The user runs scope on its small path with no other request. (1) How many change sets does it write, and how are they numbered? (2) What is each one's test? (3) Does it interview the user, argue decisions, or launch subagents? (4) What does it loop against before finishing? (5) What does it recommend next?",
+      "fixture": "none - the answers come from the skill text",
+      "assertions": [
+        "Answer 1: two, one per Blocker, appended as change sets 5 and 6 with nothing renumbered or rewritten; Concerns are left out unless the user names them",
+        "Answer 2: the review's triggering scenario, on a single tests: line tagged at the lowest layer that proves it",
+        "Answer 3: no to all three; it asks at most one question and only when it cannot proceed",
+        "Answer 4: scope's lint-spec.py against spec.md, until it exits clean",
+        "Answer 5: build, then ship-quick, recommended and never launched"
+      ]
+    },
+    {
+      "id": "scope-small-escalates",
+      "prompt": "Answer briefly, from the skill text only. (1) A Blocker can only be fixed by reversing a decision the spec recorded. What does scope do on its small path? (2) A small request has one obvious implementation. How many D- decisions does the spec record, and which sections must it still have? (3) Name three things the full path does that the small path skips.",
+      "fixture": "none - the answers come from the skill text",
+      "assertions": [
+        "Answer 1: it switches to the full path instead of guessing",
+        "Answer 2: none; the spec still has Research, Scope with a Validation block of the repo's real commands, and a Change plan",
+        "Answer 3: any three of the interview, the decisions talked through with the user, the fresh-context reviewer, and the promotion to docs/decisions.md and docs/contracts.md"
       ]
     }
   ]

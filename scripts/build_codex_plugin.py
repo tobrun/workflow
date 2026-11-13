@@ -61,11 +61,6 @@ PLUGINS = {
                 "Spec a change by arguing its decisions",
                 "Use $dev:scope to spec this change with argued decisions and a change plan.",
             ),
-            "scope-quick": (
-                "Scope Quick",
-                "Write minimal change sets with no interview",
-                "Use $dev:scope-quick to turn the review findings or this small request into minimal change sets.",
-            ),
             "ship": (
                 "Ship",
                 "Harden, review, then open a PR with proof",

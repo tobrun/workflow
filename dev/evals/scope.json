@@ -93,7 +93,7 @@
         "Answer 2: the review's triggering scenario, on a single tests: line tagged at the lowest layer that proves it",
         "Answer 3: no to all three; it asks at most one question and only when it cannot proceed",
         "Answer 4: scope's lint-spec.py against spec.md, until it exits clean",
-        "Answer 5: build, then ship-quick, recommended and never launched"
+        "Answer 5: build, then ship in quick mode, recommended and never launched"
       ]
     },
     {

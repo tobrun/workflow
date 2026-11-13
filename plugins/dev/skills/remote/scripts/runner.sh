@@ -74,7 +74,7 @@ prompt_for() {
   case $1 in
     build) printf '/dev:build %s' "$PLAN" ;;
     ship) printf '/dev:ship plan .dev/%s' "$PLAN" ;;
-    ship-quick) printf '/dev:ship-quick plan .dev/%s' "$PLAN" ;;
+    ship-quick) printf '/dev:ship quick plan .dev/%s' "$PLAN" ;;
     *) return 1 ;;
   esac
 }

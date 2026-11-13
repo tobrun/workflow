@@ -93,7 +93,7 @@ def main() -> int:
     emit({"type": "system", "subtype": "init", "session_id": session, "model": "fake"})
     phase = prompt.split()[0].removeprefix("/dev:") if prompt.startswith("/dev:") else None
     if phase is None and resume:
-        phase = next(w for w in ("ship-quick", "build", "ship") if f"/dev:{w}" in prompt)
+        phase = next(w for w in ("build", "ship") if f"/dev:{w}" in prompt)
     plan = next(p for p in Path(".dev").iterdir() if p.is_dir()).name
     marker = VM / "failed-once"
     if phase == "build" and MODE == "fail-build-once" and not marker.exists():

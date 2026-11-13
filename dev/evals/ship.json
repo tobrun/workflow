@@ -5,11 +5,11 @@
   "evals": [
     {
       "id": "gauntlet-policy",
-      "prompt": "Answer briefly, from the skill text only: (1) A mutation run leaves three surviving mutants and fixing them is tedious. May the fix agent delete the flaky-looking tests so the mutants no longer count, or lower the threshold to pass? (2) docs/dependencies.md forbids ui -> infra but the change needs data from infra. What are the legitimate fixes, and who may edit the rules file? (3) The repo has no mutation framework. Do you skip mutation testing, hand-roll a full harness, or something else? (4) The complexity threshold of 6 seems too strict for this codebase and the user agrees to 8. What must happen besides using 8? (5) What is the default scope of a run, and when does it widen? (6) A violation has survived two fix rounds on the same root cause. What happens next? (7) After the gauntlet passes, is the change verified? What happens next? (8) The spec E2E is green, but a required PR screenshot workflow is red and the same scenario was previously called flaky. Can ship proceed to review or call the diff PR-ready? (9) The diff edits only packages/api of an npm-workspaces repo, and pr.yml runs every workspace's tests. Which of those does the CI-parity exit run locally, what happens to the rest, and how does phase 3 open the PR? What changes if the diff also touched package-lock.json, or if the user asked for no PR?",
+      "prompt": "Answer briefly, from the skill text only: (1) A mutation run leaves three surviving mutants and fixing them is tedious. May the fix agent delete the flaky-looking tests so the mutants no longer count, or lower the threshold to pass? (2) Which analyzers scan together as one parallel batch, and why may they? (3) The repo has no mutation framework. Do you skip mutation testing, hand-roll a full harness, or something else? (4) The complexity threshold of 6 seems too strict for this codebase and the user agrees to 8. What must happen besides using 8? (5) What is the default scope of a run, and when does it widen? (6) A violation has survived two fix rounds on the same root cause. What happens next? (7) After the gauntlet passes, is the change verified? What happens next? (8) The spec E2E is green, but a required PR screenshot workflow is red and the same scenario was previously called flaky. Can ship proceed to review or call the diff PR-ready? (9) The diff edits only packages/api of an npm-workspaces repo, and pr.yml runs every workspace's tests. Which of those does the CI-parity exit run locally, what happens to the rest, and how does phase 3 open the PR? What changes if the diff also touched package-lock.json, or if the user asked for no PR?",
       "fixture": "none - policy questions answered from the skill text",
       "assertions": [
         "Answer 1: no on both; agents never delete tests to moot a mutant, never weaken a check or edit thresholds to pass",
-        "Answer 2: invert the dependency, insert an interface, or split the module; the rules file is edited only through a scope change set, never by a fix agent",
+        "Answer 2: static analysis, security, dead code, and duplication; their initial runs mutate nothing, so they scan concurrently and re-run together until clean",
         "Answer 3: neither skip nor a full hand-rolled harness first; follow the acquisition ladder - repo tooling, then the ecosystem's established framework, then a small repo-fitted script committed under tools/harden/",
         "Answer 4: the accepted threshold is recorded as a D- entry in docs/decisions.md, dated and sourced to this run, so the next run reads it instead of re-arguing; never adjusted silently",
         "Answer 5: the branch diff against the default branch; full-repo only when the user asks",
@@ -37,9 +37,9 @@
     },
     {
       "id": "ship-files-as-the-run-goes",
-      "prompt": "Answer briefly, from the skill text and the references it links only: (1) In a default run, when is pr.md created, and what is in it after the five read-only analyzers have finished but before the complexity check starts? (2) The user asked for a gauntlet only run. Is pr.md written? (3) When is review_N.md created, and what does it hold while the lens agents are still working? (4) Batch 1 has returned eleven findings and the verifiers have not run yet. Do those findings go into review_N.md's Blockers and Concerns now? (5) The gauntlet has finished and phase 2 has not; someone opens pr.md and sees no Evidence section and no review line. Is that a defect? (6) Remediation round 1 has ended with one blocker still standing. Where and when is that attempt recorded?",
+      "prompt": "Answer briefly, from the skill text and the references it links only: (1) In a default run, when is pr.md created, and what is in it after the four read-only analyzers have finished but before the complexity check starts? (2) The user asked for a gauntlet only run. Is pr.md written? (3) When is review_N.md created, and what does it hold while the lens agents are still working? (4) Batch 1 has returned eleven findings and the verifiers have not run yet. Do those findings go into review_N.md's Blockers and Concerns now? (5) The gauntlet has finished and phase 2 has not; someone opens pr.md and sees no Evidence section and no review line. Is that a defect? (6) Remediation round 1 has ended with one blocker still standing. Where and when is that attempt recorded?",
       "assertions": [
-        "Answer 1: before the first check, by a run that will reach phase 3; it holds the Summary and one Quality row per check of the batched five, each with its found, fixed, and surviving counts, plus any human call raised so far under Open calls - no Evidence, no review line",
+        "Answer 1: before the first check, by a run that will reach phase 3; it holds the Summary and one Quality row per check of the batched four, each with its found, fixed, and surviving counts, plus any human call raised so far under Open calls - no Evidence, no review line",
         "Answer 2: no - only a run that will reach phase 3 keeps a pr.md, so a partial run cannot overwrite the body an open PR was proposed with",
         "Answer 3: when the panel is selected, at the next free index; Verdict: IN PROGRESS, the panel, the base, the brief's summary, and on a re-review the previous findings as open verification items",
         "Answer 4: no - only verified findings reach the report; they are written when the aggregate script returns them, together with the verdict",
@@ -86,6 +86,29 @@
         "Incomplete output has exit 1 and verdict INCOMPLETE with retained useful findings",
         "Exact valid result enums and finding fields are required",
         "Complete results with no surviving findings produce PASS"
+      ]
+    },
+    {
+      "id": "ship-quick-mode-after-fixes",
+      "prompt": "Answer briefly, from the skill text only. review_1.md ended in BLOCK with two Blockers and one Concern and records a head commit; build has since committed two fix change sets, and a draft pull request exists. The user runs ship in quick mode. (1) Which gauntlet tools run? (2) How many review agents launch, and what do they read? (3) What kinds of new finding may the reviewer raise? (4) Both Blockers are fixed and the Concern is still open: what is the verdict and where is it written? (5) What happens to the pull request body?",
+      "fixture": "none - the answers come from the skill text",
+      "assertions": [
+        "Answer 1: none; only the repository's required pull-request commands run, once, at the diff's impact",
+        "Answer 2: one fresh-context read-only agent; it checks each previous Blocker and Concern as fixed or still open and reads the diff since the recorded head",
+        "Answer 3: blockers only, each with a triggering scenario, and each confirmed by the orchestrator reading the code; no concerns, nits, or simplifications",
+        "Answer 4: CONCERNS, in review_2.md at the next free index with Panel: quick and the Previous findings section filled",
+        "Answer 5: pr.md is edited in place - the review line and Open calls - keeping the earlier Evidence and Quality sections, then pr-evidence.py check passes before the body is updated and the checks are followed to green"
+      ]
+    },
+    {
+      "id": "ship-quick-mode-limits",
+      "prompt": "Answer briefly, from the skill text only. (1) The reviewer reports one Blocker still open. Does quick mode fix it and re-review? What does it do? (2) There is no earlier review_N.md. What does the reviewer read? (3) May it force-push? (4) What must the wrap-up say about what this run did not do, and when does it recommend the full ship?",
+      "fixture": "none - the answers come from the skill text",
+      "assertions": [
+        "Answer 1: no - there is no remediation loop; it writes the BLOCK verdict, stops before the pull request step, and recommends scope on its small path, then build, then quick mode again",
+        "Answer 2: the whole branch diff",
+        "Answer 3: no - never force-push, never rebase",
+        "Answer 4: that the gauntlet and the panel were skipped; a full ship is recommended when the change has grown beyond the findings it set out to fix"
       ]
     }
   ]

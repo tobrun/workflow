@@ -12,13 +12,13 @@ Nobody watches it and nobody can answer a question; the operator reads the commi
   Stay on `{branch}`; never fetch, pull, rebase, or merge.
 <!-- publish: sandbox -->
 - Publication is authorized: git and `gh` in this workspace reach `origin` with credentials the operator allocated, and the dispatch is the operator's go-ahead to push `{branch}` and open its pull request.
-  When the invoked skill is `ship` or `ship-quick`, run its pull-request phase as written, against `{default}`: push `{branch}`, publish evidence images with `pr-evidence.py publish`, create or update the pull request with the draft rules, and follow its required checks per the CI parity reference.
+  When the invoked skill is `ship`, in either mode,, run its pull-request phase as written, against `{default}`: push `{branch}`, publish evidence images with `pr-evidence.py publish`, create or update the pull request with the draft rules, and follow its required checks per the CI parity reference.
   `build` never pushes.
   Push only `{branch}` and the evidence branch, never force-push, and never change how git or `gh` authenticate (`gh auth`, credential helpers, remote URLs); a rejected push or an authentication failure is a blocker to record, not a problem to work around.
 <!-- publish: laptop -->
 - Publication is withheld: the operator publishes this run from their own machine.
   Never push, open or edit a pull request, publish evidence images, or try to authenticate `gh` or git.
-  When the invoked skill is `ship` or `ship-quick`, it runs its default flow and its pull-request phase ends at the committed branch, a complete `pr.md` whose Evidence comes from `pr-evidence.py extract`, and a passing `pr-evidence.py check`; on the CI parity line, write `publication deferred to the operator` and list each check only the pull request can verify as remote-only.
+  When the invoked skill is `ship`, in either mode,, it runs its default flow and its pull-request phase ends at the committed branch, a complete `pr.md` whose Evidence comes from `pr-evidence.py extract`, and a passing `pr-evidence.py check`; on the CI parity line, write `publication deferred to the operator` and list each check only the pull request can verify as remote-only.
 <!-- publish: end -->
 - Commit every change you keep on `{branch}` before the session ends.
   Only commits leave this workspace; uncommitted work is treated as abandoned.

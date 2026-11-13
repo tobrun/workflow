@@ -23,10 +23,6 @@ a fresh spawn has none of the original context and its output must not be used.
 3. **Unavailable:** if neither transport exists, stop. The orchestrator must
    not impersonate the panel or review the code itself.
 
-No dynamic workflows are involved by default. A Workflow-tool variant for
-explicitly requested heavyweight runs only lives in
-[orchestration-heavy.md](orchestration-heavy.md); do not read it otherwise.
-
 ## Native transport
 
 Use the host's plain subagent tool exactly as provided (the Agent tool on

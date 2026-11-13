@@ -9,8 +9,8 @@ This reference owns the layout, the locating convention, and the diff scope; ski
 | ---- | ---------- | ------- |
 | `spec.md` | `scope` (from the interview on; on its small path, minimal change sets appended when a spec exists) | everyone downstream |
 | `implementation-notes.md` | `build` (append-only) | `ship` |
-| `review_N.md` | `ship` (next free index, opened when the panel is selected); `ship-quick` (next free index) | `scope` (remediation), re-reviews |
-| `pr.md` | `ship` (opened at the start of a run that reaches phase 3, overwritten per run); `ship-quick` (review line and Open calls only) | the PR tool via `--body-file`; re-runs |
+| `review_N.md` | `ship` (next free index, opened when the panel is selected, or by quick mode) | `scope` (remediation), re-reviews |
+| `pr.md` | `ship` (opened at the start of a run that reaches phase 3, overwritten per run); quick mode updates only the review line and Open calls | the PR tool via `--body-file`; re-runs |
 | `.dev/config.json` | the user | `skill-metrics.py` (run journal opt-out, per [run-journal.md](run-journal.md)) |
 | `.dev/config.yaml` | the user (repo-tracked settings) | `ship`, including YOLO (mutation testing) |
 

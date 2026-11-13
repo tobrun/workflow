@@ -575,8 +575,15 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
         lint = subprocess.run([sys.executable, str(LINT_SPEC), str(spec)], capture_output=True, text=True, check=False)
         if lint.returncode != 0:
             raise Refused(f"the spec is not settled; lint-spec.py reports:\n{lint.stdout.strip()}")
-    if not git_ok("check-ignore", "--no-index", "-q", f".dev/{args.plan}/spec.md", cwd=root):
-        raise Refused("plan files are not git-ignored here; repair .gitignore per plan-layout.md's ignore policy")
+    tracked = git("ls-files", f".dev/{args.plan}", cwd=root, check=False)
+    if tracked or not git_ok("check-ignore", "--no-index", "-q", f".dev/{args.plan}/spec.md", cwd=root):
+        # The plan reaches the sandbox inside the run's tarball and comes home through collect's merge;
+        # a tracked copy would also travel through git, and the sandbox's `git add -A` commits it into the PR.
+        fix = (f"untrack it with `git rm -r --cached .dev/{args.plan}` and commit that (the files stay on disk)"
+               if tracked else "add `/.dev/*` and `!/.dev/config.yaml` to .gitignore and commit that")
+        raise Refused(f".dev/{args.plan} is {'committed' if tracked else 'not git-ignored'}; plan files never go "
+                      "through git: dispatch sends the plan directory to the sandbox with the run and collect brings "
+                      f"it home, so it must stay out of commits - {fix} (plan-layout.md's ignore policy)")
     current = git("symbolic-ref", "-q", "--short", "HEAD", cwd=root, check=False)
     if not current:
         raise Refused("HEAD is detached; check out the branch to dispatch from")

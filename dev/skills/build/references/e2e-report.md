@@ -8,6 +8,11 @@ const E2E_DATA = {
   title: "string - the spec's title",
   planName: "string - the .dev/{plan-name} slug",
   generatedAt: "string - ISO date of the run this report captures",
+  provenance: {
+    revision: "actual tested commit SHA; note uncommitted capture when applicable",
+    command: ["actual", "launch-or-test", "command"],
+    sources: { "repo/relative/source.ts": "sha256 of tested bytes" }
+  },
 
   // Decides how each scenario renders: a screenshot gallery, or a data-model-state table.
   kind: "frontend" | "non-frontend",

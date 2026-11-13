@@ -14,19 +14,20 @@ Replace a dependency only when it crosses a boundary you don't control in the te
 Everything inside the application - services, repositories wired to a test database, domain objects - should be real.
 If the internal wiring is wrong, a test full of internal mocks will still pass, which makes it worse than no test.
 
-## Never mock internal collaborators
+## Keep internal wiring real
 
 If you feel the need to mock a class your own codebase owns, that is a design signal, not a testing problem.
 Either test at a higher seam where the collaborator can just run, or the collaborator itself is a seam worth agreeing on with the user.
 
-The tell that a mock is wrong: the test asserts *that* a method was called (`toHaveBeenCalledWith`) instead of *what the outcome was*.
-Interaction assertions couple the test to the implementation; state and output assertions couple it to behavior.
+Prefer state and output assertions.
+An interaction assertion is appropriate when the interaction itself is the contract: no outbound payment on rejection, exactly one delivery, or a required ordering.
+Name that boundary promise; do not assert private calls as a substitute for behavior.
 
 ## Prefer fakes over mocks at the boundary
 
 When you do replace a boundary dependency, prefer a small working fake over a per-test stub:
 
-- An in-memory repository instead of stubbing each query
+- A recording external adapter instead of stubbing each call; use a real isolated database for repository integration tests
 - A fake clock you can advance instead of freezing time per test
 - A recording fake for outbound calls (a fake mail sender with a `sent` list) instead of call-count assertions
 
@@ -45,6 +46,10 @@ The application under test is the real built artifact with its real internal wir
 Never point an e2e run at production or a shared staging environment.
 A live run makes the scenario unrepeatable, its before/after state unreliable as evidence, and its side effects real.
 If the mocked environment for a dependency doesn't exist yet, building it is part of the work, not a reason to fall back to the real one.
+
+These deterministic journeys prove application behavior with controlled external responses.
+They do not prove a real provider speaks the expected protocol.
+When a provider boundary changes, add a contract fixture from authoritative protocol data or a separate authorized sandbox compatibility test; label it separately and retain the production/shared-staging restriction.
 
 ## Determinism
 

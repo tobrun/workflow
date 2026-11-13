@@ -48,6 +48,7 @@ Work in the smallest slice that shows observable behavior, one reviewable idea p
 Commit subjects are `type(scope): subject` in the imperative, with a `What:` and a `Why:` body; scopes are <<fill: the scopes history uses, or the areas commits touch when history has none>>.
 Never add an AI co-author trailer; a person is accountable for every commit.
 Plan and scratch files live under `.dev/` and are never committed.
+Shared workflow settings in `.dev/config.yaml` are repo-tracked.
 Every pull request carries evidence from a real run, and a bug fix shows its test failing on the merge base and passing on the branch.
 
 ## Open items

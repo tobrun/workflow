@@ -9,11 +9,15 @@ Phase 3 runs in the default flow, after the review report is written and the rem
 It is skipped in "gauntlet only" and "review only" runs and when the user says "no PR" or "local only"; a review-only run on someone else's PR never pushes anything.
 Never force-push, never rebase, and never touch a branch other than the work branch and the evidence branch.
 
+Follow [../../../references/execution.md](../../../references/execution.md).
+A missing remote or unapproved hosting action leaves a prepared body and local evidence; do not publish or create a branch to bypass a restriction.
+An INCOMPLETE review stays local or draft and never becomes ready.
+
 ## Commit and push
 
 1. Fixes the gauntlet left uncommitted are committed now, one commit per tool, in `commit`'s `type(scope): subject` plus What/Why shape.
    Name files explicitly; never `git add -A`, never a `Co-Authored-By` line.
-2. On the default branch, create the work branch first: `{plan-name}`.
+2. Use the already authorized work branch and PR base; create a branch only when permitted. An explicitly stacked base stays stacked.
 3. `git push -u {remote} {branch}`; a rejected push is reported and stops the phase.
 
 ## Evidence
@@ -31,10 +35,14 @@ The Evidence section is the PR's proof of the feature or fix, captured from a re
 - **No e2e report** (no spec, no e2e suite): capture the evidence in this phase, the same way build would.
   A system with a UI: launch it in the mocked environment via the `run` skill or the repo's documented command, drive the changed behavior with browser automation, save one screenshot per step that shows the change under the evidence directory, then publish them.
   Anything else: the observable effect before and after, as a labeled pair of fenced blocks - a CLI transcript, an API response, a table row, a rendered file.
-- **A bug fix** always adds the reproducing test as a labeled pair: `**On merge base**` shows it failing in an isolated worktree at `git merge-base HEAD origin/{default}`, `**On this branch**` shows the same test passing.
-  Red on base is what proves the bug was real; green on the branch is what proves it is gone.
+- **A bug fix** adds the same reproducing test on a known-bad and corrected revision.
+  For a pre-existing defect, use `**On merge base**` and `**On this branch**`, naming the actual SHAs.
+  For a defect introduced within this feature branch, use `**On known-bad revision**` and `**On corrected revision**`, naming the feature commits and why the merge base cannot demonstrate it.
+  A missing API, import failure, or absent dependency does not reproduce the reported behavior; the red must be the defect's triggering assertion.
 - A screenshot proves the UI; when the real effect is a data change the screen does not show, add the Before/After pair for it as well.
 - Never fabricate, reuse a screenshot from another run, or paste a data URI; a scenario that failed stays marked failed in the evidence.
+- Keep capture provenance: revision, command, time, and SHA-256 of the test and implementation sources covered. Extraction copies the E2E report's `provenance` into a `<!-- dev-evidence: {...} -->` marker. For hand-captured evidence, write that same marker from the actual run.
+  Run `pr-evidence.py check --require-current --repo-root {repo-root}` before publishing or updating. Source changes invalidate that evidence; refresh affected scenarios, including on quick re-ship. The format/hash gate does not judge assertion quality or authenticate a remote image.
 
 Evidence files live under `/tmp/{project-slug}/pr-evidence/`; the `pr-evidence` branch is an orphan branch that only ever receives images, one commit per run.
 On a non-GitHub remote pass `--url-template` with wherever the images are hosted.
@@ -59,7 +67,9 @@ Plan `.dev/{plan-name}` | Review {N}: {verdict}
 
 | Check | Found | Fixed | Surviving |
 | ----- | ----- | ----- | --------- |
-{one row per gauntlet tool; for disabled mutation testing, write skipped (disabled in .dev/config.yaml), with no counts}
+{one row per gauntlet tool; for skipped mutation testing, write skipped (disabled in .dev/config.yaml) or skipped (no changed decision-heavy logic), with no counts}
+
+Mutation testing: {selected targets, command, runtime, killed/survived/uncovered counts, regression tests added or strengthened, and reasons for remaining survivors; omit when skipped}.
 
 Review panel: {lenses}; {blockers} blockers, {concerns} concerns ({review_N.md path}).
 CI parity ({impact verdict and packages}): {each reproducible required command, the scope it ran at, and its result}; deferred to CI: {commands outside the impact, or "none"}; remote-only: {checks verified by the PR itself, or "none"}.
@@ -73,7 +83,7 @@ Title: the change in imperative mood, under 70 characters.
 
 ## Create or update
 
-- No PR for the branch: `gh pr create --title ... --body-file .dev/{plan-name}/pr.md` (`--draft` on BLOCK or a deferred check), base = the default branch.
+- No PR for the branch: `gh pr create --title ... --body-file .dev/{plan-name}/pr.md` (`--draft` on BLOCK or a deferred check), base = the authorized intended base, defaulting to the default branch only when none was specified.
 - A PR already exists (build opened it on request, or a re-review): `gh pr edit --body-file ...`; `gh pr ready` once no BLOCK verdict stands and its required checks are green, never the reverse.
 - No `gh` and no equivalent host CLI: push, keep `pr.md`, print the compare URL, and say the PR must be opened by hand.
 

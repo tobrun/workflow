@@ -16,7 +16,7 @@ If related specs are found:
 1. Read each related spec file.
 2. Compare the diff against the spec content - look for: function signatures or behavior that changed but the spec still describes the old version; new parameters, fields, or flows not reflected in the spec; removed functionality still documented.
 3. If the spec is still accurate, move on.
-4. If drift is detected, update the spec file directly: minimal, targeted edits to bring it in sync; only change sections that are factually wrong - don't rewrite or reorganize. Stage and commit the spec update with the logical commit it relates to (amend if already committed, otherwise a new commit).
+4. If drift is detected, update the spec file directly: minimal, targeted edits to bring it in sync; only change sections that are factually wrong - don't rewrite or reorganize. Stage and commit the spec update with the logical commit it relates to (a new commit if the related change is already committed; never amend without authorization).
 
 ## 4b: Documentation sync
 
@@ -63,7 +63,7 @@ The system overview, `docs/architecture.md` ([../../../references/architecture.m
 python3 {commit-skill-root}/../../scripts/architecture-check.py docs/architecture.md --touched {every file in this batch's commits}
 ```
 
-- Exit 2 (no overview): run the reference's initial capture - the full system, not the files just committed - and commit it as `docs(architecture): capture the system overview`.
+- Exit 2 (no overview): note its absence and orient from the touched code. Offer whole-system capture separately rather than extending this commit task.
 - Exit 1: fix each violation with a targeted edit - an uncharted file gets its component row (or joins an existing one), a stale path is corrected - and re-run until clean.
 - Exit 0: still read the batch's diff for what the checker cannot see: a flow whose steps changed order or hops, a boundary added or dropped (a new external client, store, or queue), a component whose responsibility moved. Edit the affected step, row, or cell only, and refresh the `Updated` line.
 

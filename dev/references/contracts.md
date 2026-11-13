@@ -54,7 +54,9 @@ Module-internal behavior doesn't qualify - it has no second side to mislead.
 
 ## Who writes entries
 
-Contract writes are candidates until the user approves them, like every other durable write in this toolkit.
+Use [execution.md](execution.md) for durable-write authority.
+Settled guarantees may be recorded within the authorized task; proposed changes to a recorded boundary remain candidates until resolved.
+A planned invariant gets `? verify: implementation and behavior after build` until enforcing code is checked, so it cannot refute a finding as a fact.
 
 - **Commit capture and maintenance.**
   The commit skill captures new guarantees a commit establishes and re-checks recorded contracts whose guarantee sites the diff touches, with typed verdicts per the ledger-capture step of its sync-checks reference.

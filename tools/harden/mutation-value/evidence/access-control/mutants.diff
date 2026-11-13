@@ -1,0 +1,24 @@
+To apply a mutant on disk:
+    mutmut apply <id>
+
+To show a mutant:
+    mutmut show <id>
+
+
+Survived 🙁 (1)
+
+---- app.py (1) ----
+
+# mutant 2
+--- app.py
++++ app.py
+@@ -1,7 +1,7 @@
+ def allowed(role, owner, locked, expires, now):
+     if locked:
+         return False
+-    if expires <= now:
++    if expires < now:
+         return False
+     if role == "admin":
+         return True
+

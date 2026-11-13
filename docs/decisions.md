@@ -18,7 +18,51 @@ D-mutation-threshold: Does the gauntlet's mutation-testing check gate shipping, 
   ✗ a percentage floor (e.g. 70%) - still an absolute line a run can fail on for coverage debt the diff did not create, just a more forgiving one; rejected for the same reason as zero, at a different number
   ✗ zero-tolerance narrowed to only the diff's added lines - still a hard gate, and a diff that changes existing (not just new) lines still inherits their prior coverage debt
 
+D-mutation-focused: Where should mutation testing run, and what should survivors change? (2026-10-31, user follow-up to tools/harden/mutation-value/README.md)
+  ✓ run incrementally on changed decision-heavy logic such as pricing, permissions, and validation; skip glue code, select targets before tool acquisition, and combine explicit diff/file/function/class selectors with incremental history - survivors guide contract review and regression tests, including nearby boundaries and policy combinations (user, 2026-10-31); the two-project demonstration caught 16/16 seeded defects with guided additions versus 10/16 with equally many requirements-based additions (tools/harden/mutation-value/evidence/first.json, reproduced in repeat.json) ⚠ synthetic, same-author examples do not establish production ROI or equal developer effort
+  ✓ triage meaningful, equivalent, duplicate, and out-of-contract survivors; report scope, runtime, counts, test improvements, and reasons for survivors - this refines D-mutation-threshold's survivor-chasing policy while preserving its no-score-gate decision
+  ✗ mutate all source or glue just to populate incremental history - pays for unrelated findings instead of reviewing the changed decisions
+  ✗ treat a perfect mutation score as adequate testing - the access-control score-only ablation killed 11/11 mutants but missed five of eight seeded faults (tools/harden/mutation-value/evidence/ablation.json)
+
+## Remote execution
+
+risk: moderate - domains: remote compute, unattended agent output crossing into the user's repository (2026-11-09)
+
+D-remote-split: Which phases run in a sandbox and which stay on the laptop? (2026-11-09, user) publication moved to the sandbox by D-remote-publication (2026-11-12)
+  ✓ scope and publication on the laptop, build and ship in a fleet sandbox - scope is an interview that needs the user and the laptop's MCP servers, publication needs the GitHub credentials the sandboxes are built never to hold, and build and ship are the long unattended stretches (user, 2026-11-09)
+  ✗ everything remote, yolo-style - the sandbox has no user to interview and only the MCP servers the credential relay admits
+  ✗ build remote, ship local - ship's gauntlet, panel, and remediation rounds are the heaviest part and need no laptop resource until phase 3
+
+D-remote-transport: How do code and files cross to the sandbox and back? (2026-11-09)
+  ✓ commits through the host's exchange clone with the fleet's own `fleet sync` and `fleet fetch` bundles, everything else as tar streams over `incus exec`, all driven by `remote.py` - the fleet already owns the bundle exchange and keeps host git out of agent-writable trees; one script owning every transfer is the deterministic guard (P-deterministic-guards-over-prose) (auto-applied at Confidence: 85%)
+  ✗ SSH or git straight into the workspace - the egress ACLs and the tailnet boundary forbid it by design
+  ✗ shared mounts - the fleet retired them for bundles
+
+D-remote-phase-sessions: How does a phase run in the sandbox? (2026-11-09)
+  ✓ one fresh headless `claude -p "/dev:{phase}"` session per phase, with the dispatched plugin loaded by `--plugin-dir`, the unattended contract appended, permissions bypassed inside the VM, and `AskUserQuestion` removed, run as a transient systemd unit - a spike in ws1 on 2026-11-09 proved a `disable-model-invocation` skill runs from a `-p` slash prompt; a fresh context per phase suits the gateway's 131k window and makes each phase resumable on its own session (auto-applied at Confidence: 85%) ⚠ the sandbox agent runs on the gateway's model, not the laptop's, so a remote run's quality follows that model
+  ✗ build and ship in one session - one context for both phases loses the middle on a 131k window
+  ✗ skill bodies read by path, as yolo does - native invocation resolves `{skill-root}` and metrics anchoring without prose
+
+D-remote-collect: How does sandbox output reach the user's repository? (2026-11-09)
+  ✓ fast-forward-only branch updates from `refs/dev-remote/{run}`, plan files merged against a dispatch-time SHA-256 manifest with both-sides edits kept as `{name}.remote`, tarballs extracted with the `data` filter, and a worktree for publication so the user's checkout never switches - the sandbox's output is untrusted data and the laptop may have moved on meanwhile (auto-applied at Confidence: 80%)
+  ✗ reset the local branch to the sandbox's - silently drops commits made here during the run
+  ✗ publish from the fleet host - puts GitHub credentials next to agent output and bypasses the laptop session's authority
+
+D-remote-build-gate: How does an unwatched build prove it finished? (2026-11-12)
+  ✓ the runner re-runs build's own `check-tests.py` gate after the build session and resumes that session with the checker's output, at most twice, before ship may start - the first Bedrock run on 2026-11-12 skipped build's steps 1 and 6 on a one-file plan and still ended "success", so the session's own account is not evidence (P-deterministic-guards-over-prose) (auto-applied at Confidence: 85%) ⚠ two resumes is a guess
+  ✗ a stronger contract line - the contract already says to run the skill as written; prose is what was skipped
+  ✗ fail the run at once - a resume with the checker's output is usually enough, and the session keeps its context
+
+D-remote-publication: Who pushes the branch and opens the PR for a remote run? (2026-11-12, user)
+  ✓ the sandbox, with git credentials the host allocates, when a dispatch-time probe (a dry-run push of a nonexistent ref to `origin`, then `gh auth status`) passes; otherwise the laptop after collect, with the reason recorded - sandboxes should be allocated git credentials even where other systems stay credential-free (user, 2026-11-12); the probe tests access, not how it is supplied, so a token file, a credential helper, and a wire-substituting relay all qualify; publishing in the sandbox lets ship's pull-request phase and CI follow-through run unattended like the rest of ship (auto-applied at Confidence: 85%) ⚠ the sandbox agent can push to every repository the credential reaches, so its scope is the host's to keep narrow; the desktop fleet relays the host's own `gh` session (dotfiles "Credential relay" -> GitHub, 2026-11-12), so a sandbox acts with the operator's full account rights, and the contract allows only the work and evidence branches, no force-push, and no change to git or `gh` authentication
+  ✗ always publish from the laptop - leaves a finished ship waiting on the laptop for a step the sandbox can do
+  ✗ require the credential, refuse without it - a workspace without one still builds and ships to a prepared `pr.md`, and `--publish sandbox` is there when the user wants the refusal
+
 ## Removed
+
+D-retire-factory-for-yolo: Which unattended development workflow remains? (2026-10-31, user)
+  ✓ remove the Factory source plugin, generated distribution, marketplace entries, phase tooling, fixtures, and dedicated validation checks; use dev:yolo for unattended scope-build-ship runs - the user replaced Factory with dev:yolo (user, 2026-10-31); supersedes the active Factory decisions and contracts below without changing their historical record
+  ✗ keep a second configurable pipeline alongside dev:yolo - duplicates the unattended workflow the user selected
 
 D-remove-factory: The factory plugin and its runner are removed from this repository (2026-09-20)
   ✓ delete `factory/`, `plugins/factory/`, the runner end-to-end test, and the F01 through F04 validator checks - the implementation was not working out (user, 2026-09-20); the repository goes back to shipping `dev` alone ⚠ superseded the same day for the plugin, not the runner: factory-plugin/spec.md brings `factory/` back as skills only (D-orchestrator-form); the runner and its gates stay removed

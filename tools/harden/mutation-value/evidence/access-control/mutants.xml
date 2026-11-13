@@ -1,0 +1,51 @@
+<?xml version="1.0" ?>
+<testsuites disabled="0" errors="0" failures="1" tests="11" time="0.0">
+	<testsuite disabled="0" errors="0" failures="1" name="mutmut" skipped="0" tests="11" time="0">
+		<testcase name="Mutant #1" file="app.py" line="3">
+			<system-out>        return False</system-out>
+		</testcase>
+		<testcase name="Mutant #2" file="app.py" line="4">
+			<failure type="failure" message="bad_survived">--- app.py
++++ app.py
+@@ -1,7 +1,7 @@
+ def allowed(role, owner, locked, expires, now):
+     if locked:
+         return False
+-    if expires &lt;= now:
++    if expires &lt; now:
+         return False
+     if role == "admin":
+         return True
+</failure>
+			<system-out>    if expires &lt;= now:</system-out>
+		</testcase>
+		<testcase name="Mutant #3" file="app.py" line="5">
+			<system-out>        return False</system-out>
+		</testcase>
+		<testcase name="Mutant #4" file="app.py" line="6">
+			<system-out>    if role == "admin":</system-out>
+		</testcase>
+		<testcase name="Mutant #5" file="app.py" line="6">
+			<system-out>    if role == "admin":</system-out>
+		</testcase>
+		<testcase name="Mutant #6" file="app.py" line="7">
+			<system-out>        return True</system-out>
+		</testcase>
+		<testcase name="Mutant #7" file="app.py" line="8">
+			<system-out>    if role == "editor" and owner:</system-out>
+		</testcase>
+		<testcase name="Mutant #8" file="app.py" line="8">
+			<system-out>    if role == "editor" and owner:</system-out>
+		</testcase>
+		<testcase name="Mutant #9" file="app.py" line="8">
+			<system-out>    if role == "editor" and owner:</system-out>
+		</testcase>
+		<testcase name="Mutant #10" file="app.py" line="9">
+			<system-out>        return True</system-out>
+		</testcase>
+		<testcase name="Mutant #11" file="app.py" line="10">
+			<system-out>    return False</system-out>
+		</testcase>
+	</testsuite>
+</testsuites>
+

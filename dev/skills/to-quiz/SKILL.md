@@ -8,11 +8,8 @@ disable-model-invocation: true
 
 Turn finished work into a comprehension check: enough context to understand the change, then a quiz the reader must actually pass.
 
-## What this skill can and can't do
-
-**It cannot enforce a merge gate.** The generated document has no hook into a PR's merge button or branch protection rules - nothing this skill produces can physically block a merge.
-What it can do honestly is render a clear "do not merge until this is genuinely green" artifact, with a visible banner saying so, and suggest - never configure - real external enforcement if the user wants one: a required PR checklist item, a manually-applied label, a branch protection rule.
-That wiring is out of this skill's scope; never write or imply language suggesting this skill gates anything by itself.
+This is a client-side comprehension check, not an enforced merge gate.
+Say so visibly; suggest external enforcement only if requested, and do not configure it here.
 
 ## Workflow
 

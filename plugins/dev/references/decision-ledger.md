@@ -8,6 +8,7 @@ It is what stops a settled question from being re-litigated every run.
 
 The marks, used identically here and in a spec's research section: `✓` chosen, `✗` rejected, `?` open, `⚠` accepted downside, `⊘` not doing (with the condition that would reopen it), each line with a short "because" clause.
 This file is the canonical definition; consumers cite it rather than restating it.
+A not-doing decision carries no chosen `✓` alternative; mark rejected options `✗` and close with `⊘`.
 Every entry keeps its `D-` slug and adds a date and a source - the spec file (`{plan-name}/spec.md`) or audit that produced it.
 
 ### Evidence marks
@@ -77,6 +78,8 @@ A `P-` entry names a rationale that has recurred.
 When the same because-clause logic picks or rejects alternatives in a third decision, promote it: kebab slug, one-line statement, the decisions it recurred in.
 Never author a principle ahead of recurrence - three citations is the bar.
 Once named, cite it by ID (`✗ Redis - P-no-new-infra`); "violates P-no-new-infra" replaces re-deriving the argument in reviews and audits.
+
+Durable-write authority follows [execution.md](execution.md). A settled choice can carry an unverified factual premise; preserve its `? verify:` rather than promoting the premise to a fact.
 
 ## What gets promoted
 

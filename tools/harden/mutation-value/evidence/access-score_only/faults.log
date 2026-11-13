@@ -1,0 +1,74 @@
+=== fault-admin_requires_owner.log ===
+F
+=================================== FAILURES ===================================
+__________________________________ test_admin __________________________________
+
+    def test_admin():
+>       assert allowed("admin", False, False, 200, 100)
+E       AssertionError: assert False
+E        +  where False = allowed('admin', False, False, 200, 100)
+
+test_baseline.py:5: AssertionError
+=========================== short test summary info ============================
+FAILED test_baseline.py::test_admin - AssertionError: assert False
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed in 0.01s
+
+
+=== fault-all_editors.log ===
+......F
+=================================== FAILURES ===================================
+________________________ test_editor_without_ownership _________________________
+
+    def test_editor_without_ownership():
+>       assert not allowed("editor", False, False, 200, 100)
+E       AssertionError: assert not True
+E        +  where True = allowed('editor', False, False, 200, 100)
+
+test_extra.py:10: AssertionError
+=========================== short test summary info ============================
+FAILED test_extra.py::test_editor_without_ownership - AssertionError: assert ...
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed, 6 passed in 0.01s
+
+
+=== fault-expiry_bypass_editor.log ===
+.......                                                                  [100%]
+7 passed in 0.01s
+
+
+=== fault-expiry_clock_skew.log ===
+.......                                                                  [100%]
+7 passed in 0.01s
+
+
+=== fault-expiry_equality.log ===
+.....F
+=================================== FAILURES ===================================
+_____________________________ test_admin_at_expiry _____________________________
+
+    def test_admin_at_expiry():
+>       assert not allowed("admin", False, False, 100, 100)
+E       AssertionError: assert not True
+E        +  where True = allowed('admin', False, False, 100, 100)
+
+test_extra.py:6: AssertionError
+=========================== short test summary info ============================
+FAILED test_extra.py::test_admin_at_expiry - AssertionError: assert not True
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed, 5 passed in 0.01s
+
+
+=== fault-lock_bypass_admin.log ===
+.......                                                                  [100%]
+7 passed in 0.01s
+
+
+=== fault-owner_any_role.log ===
+.......                                                                  [100%]
+7 passed in 0.01s
+
+
+=== fault-viewer_edit.log ===
+.......                                                                  [100%]
+7 passed in 0.01s

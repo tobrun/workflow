@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import hashlib
 import json
 import os
 import re
@@ -44,9 +45,11 @@ PAIR_LABELS = {
     "before": "before", "after": "after",
     "on merge base": "base", "on the merge base": "base", "merge base": "base",
     "on this branch": "branch", "on the branch": "branch", "this branch": "branch",
+    "on known-bad revision": "base", "on corrected revision": "branch",
 }
 LABEL_LINE = re.compile(r"^\s*\*\*([^*]+?)\*\*", re.IGNORECASE)
-FENCE_OPEN = re.compile(r"^\s*```")
+FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
+PROVENANCE = re.compile(r"<!-- dev-evidence:\s*(\{.*?\})\s*-->", re.DOTALL)
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
 
 
@@ -196,6 +199,10 @@ def extract(args: argparse.Namespace) -> None:
     lines = ["## Evidence", "",
              f"Captured from the e2e run of `{plan}` at {data.get('generatedAt', 'unknown time')}: "
              + f"{summary.get('passed', 0)}/{summary.get('total', len(scenarios))} scenarios passed.", ""]
+    provenance = data.get("provenance")
+    if provenance:
+        lines += [f"<!-- dev-evidence: {json.dumps(provenance, ensure_ascii=False)} -->", "",
+                  f"Tested revision: `{provenance.get('revision', 'unknown')}`.", ""]
     written: list[str] = []
     for index, scenario in enumerate(scenarios, 1):
         scenario_id = slug(str(scenario.get("id") or scenario.get("title") or index), f"scenario-{index}")
@@ -250,22 +257,79 @@ def publish(args: argparse.Namespace) -> None:
 
 
 def evidence_section(body: str) -> str | None:
-    match = re.search(r"^##\s+Evidence\s*$(.*?)(?=^##\s|\Z)", body, re.MULTILINE | re.DOTALL)
-    return match.group(1) if match else None
+    """Top-level headings inside captured code are evidence, not delimiters."""
+    collected = []
+    inside, fence = False, None
+    for line in body.splitlines(keepends=True):
+        match = FENCE.match(line)
+        if match:
+            token, suffix = match.groups()
+            if fence is None:
+                fence = token
+            elif token[0] == fence[0] and len(token) >= len(fence) and not suffix.strip():
+                fence = None
+        elif fence is None and re.match(r"^##\s+", line):
+            if inside:
+                break
+            inside = bool(re.match(r"^##\s+Evidence\s*$", line))
+            continue
+        if inside:
+            collected.append(line)
+    return "".join(collected) if inside else None
 
 
 def labeled_pairs(section: str) -> set[str]:
     """Labels (before/after/base/branch) that head a fenced block within the next two lines."""
     found: set[str] = set()
     lines = section.splitlines()
-    for i, line in enumerate(lines):
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        i += 1
         match = LABEL_LINE.match(line)
         if not match:
             continue
         label = PAIR_LABELS.get(match.group(1).strip().lower())
-        if label and any(FENCE_OPEN.match(nxt) for nxt in lines[i + 1:i + 3]):
-            found.add(label)
+        if not label:
+            continue
+        opening = next((j for j in range(i, min(i + 2, len(lines))) if FENCE.match(lines[j])), None)
+        if opening is None:
+            continue
+        token = FENCE.match(lines[opening]).group(1)
+        for end in range(opening + 1, len(lines)):
+            closing = FENCE.match(lines[end])
+            if closing and closing.group(1)[0] == token[0] and len(closing.group(1)) >= len(token) and not closing.group(2).strip():
+                if any(line.strip() for line in lines[opening + 1:end]):
+                    found.add(label)
+                i = end + 1
+                break
+        else:
+            break
     return found
+
+
+def check_provenance(section: str, repo_root: Path, problems: list[str]) -> None:
+    marker = PROVENANCE.search(section)
+    if marker is None:
+        problems.append("missing dev-evidence provenance marker; capture revision, command, and source hashes")
+        return
+    try:
+        data = json.loads(marker.group(1))
+        if not isinstance(data, dict) or not isinstance(data.get("revision"), str) or not data["revision"].strip():
+            raise ValueError("provenance requires the actual tested revision")
+        command = data.get("command")
+        if not isinstance(command, list) or not command or any(not isinstance(x, str) or not x for x in command):
+            raise ValueError("provenance requires the capture command")
+        sources = data.get("sources")
+        if not isinstance(sources, dict) or not sources:
+            raise ValueError("provenance requires tested source hashes")
+        for path, digest in sources.items():
+            target = (repo_root / path).resolve()
+            target.relative_to(repo_root.resolve())
+            if hashlib.sha256(target.read_bytes()).hexdigest() != digest:
+                raise ValueError(f"evidence is stale for {path}; rerun affected scenarios")
+    except (OSError, ValueError, TypeError) as error:
+        problems.append(str(error))
 
 
 def check(args: argparse.Namespace) -> None:
@@ -286,6 +350,8 @@ def check(args: argparse.Namespace) -> None:
         problems.append("non-frontend change but no labeled Before/After or merge-base/branch pair in Evidence")
     if not images and not pair:
         problems.append("Evidence holds neither an http(s) image nor a labeled before/after pair")
+    if args.require_current:
+        check_provenance(section, Path(args.repo_root), problems)
     if problems:
         fail("PR body rejected:\n  - " + "\n  - ".join(problems))
     print(f"pr-evidence: ok ({len(images)} images, pairs: {', '.join(sorted(labels)) or 'none'})")
@@ -311,6 +377,8 @@ def main() -> None:
     ck = sub.add_parser("check")
     ck.add_argument("body")
     ck.add_argument("--kind", choices=["frontend", "non-frontend"])
+    ck.add_argument("--require-current", action="store_true", help="require provenance matching current tested sources")
+    ck.add_argument("--repo-root", default=".")
     ck.set_defaults(run=check)
     args = parser.parse_args()
     args.run(args)

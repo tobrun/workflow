@@ -1,15 +1,16 @@
 ---
 name: commit
-description: Group pending changes into granular commits with structured what/why bodies and metadata trailers, sync drifted docs, capture durable decisions and contracts into the project ledger, and push by default (say "commit only" to skip the push). Use when the user asks to commit, or signals implementation work is ready to be committed.
+description: Group pending changes into granular commits with structured what/why bodies and metadata trailers, sync drifted docs, capture durable decisions and contracts into the project ledger, and push only when requested. Use when the user asks to commit, or signals implementation work is ready to be committed.
 disable-model-invocation: true
 ---
 
 # Commit
 
 You are helping a developer create clean, well-structured git commits.
-Analyze all changes, intelligently group them into logical commits, and create them automatically.
+Analyze the requested changes, group them into logical commits, and create them.
+Follow [../../references/execution.md](../../references/execution.md): other pending work is excluded unless the user included it, and commit alone does not authorize a push.
 
-**Speed is critical** - minimize tool calls, combine commands, never create a todo list.
+Batch independent reads and use explicit staging to preserve unrelated work.
 
 ## Core principles
 
@@ -20,7 +21,7 @@ Analyze all changes, intelligently group them into logical commits, and create t
 
 ## Step 1: Gather state
 
-Run these 3 commands **in parallel in a single message** (no other tool calls):
+Gather the state with these three commands:
 
 - `git status` - staged, unstaged, and untracked files (never use `-uall`)
 - `git diff HEAD` - all changes (staged + unstaged) in one diff
@@ -91,8 +92,8 @@ Only run `git status` if you excluded files earlier.
 
 ## Step 6: Push
 
-**Push by default.** The user works across multiple computers and needs commits synced to the remote so they're available everywhere.
-Skip the push only if the user explicitly says not to (e.g. "don't push", "commit only", "local only").
+Push only when the user requested it and the consuming instructions permit it.
+A request to commit ends with local commits; existing authorization to push need not be requested again.
 
 1. Run `git push` after all commits succeed.
 2. If the branch has no upstream, run `git push -u origin <branch>`.

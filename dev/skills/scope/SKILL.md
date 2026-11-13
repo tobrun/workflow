@@ -10,16 +10,15 @@ The spec is the deliverable: do not implement anything.
 It is a fresh-context handoff - planning happens here, implementation happens in another session (often another model) that reads only the spec.
 
 The numbered sections are an addressing scheme, not a march. Four orderings are load-bearing: catalog decisions before arguing them, argue them before reading the project's ledger, settle the spec before promoting anything out of it, and never let the change plan outrun an open decision. The rest is judgment - work it in whatever order the change calls for.
+Execution authority, durable-write ownership, and confidence policy follow [../../references/execution.md](../../references/execution.md).
 Before the interview, run `python3 {scope-skill-root}/../../scripts/skill-metrics.py start scope` so the retrospective can measure the run.
 
 ## 1. Interview
 
 Interview the user until you understand what they want, one consequential question at a time, using the host's structured user-input tool when available.
-Whenever you recommend an option - here, in the decision talk-through, or in follow-up questions - put a confidence score next to it (`Confidence: 70%`) with the one fact that would most change it.
-Score how likely it is the right solution given the evidence, not how strongly you prefer it: a taste call, an unverified premise, or an option chosen without having read the relevant code scores low.
-A recommendation at `Confidence: 75%` or above is not a question: apply it and keep going, and write `auto-applied at Confidence: NN%` into the chosen line's because clause so the ledger shows who decided.
-Ask only below 75%, and, whatever the score, when the recommendation changes what was asked for: a different problem than the request names, a requirement dropped, or a new non-goal.
-At the end of the interview, list every auto-applied recommendation once, in one block, so a single reply can overturn any of them before the catalog builds on them.
+For a consequential recommendation, record the evidence, confidence, and the fact most likely to overturn it.
+Apply the shared 65% policy only within the requested scope; retain `auto-applied at Confidence: NN%` in the chosen line.
+List auto-applied recommendations together so the user can correct them before later decisions rely on them.
 
 The spec opens with the interview, not after it: once the first answers say what the change is about, pick a kebab-case `{plan-name}` naming the outcome and create `spec.md` in the plan directory ([../../references/plan-layout.md](../../references/plan-layout.md)) with its title, the date, what you understood, and empty `## Research`, `## Scope`, and `## Change plan` sections.
 From then on the file is the run's working state, written as the run goes per that reference: every answer, auto-applied recommendation, cataloged decision, and resolution reaches it when it happens, so the conversation never holds something the file lacks.
@@ -31,14 +30,15 @@ Once the problem holds up, brainstorm alternatives at the problem level, includi
 If the premise doesn't survive, that resolves as a `⊘` not-doing line, not as a failed interview.
 
 The interview is latency-bound by the user, so hide machine work inside it: once the change's rough area is clear, launch background read-only subagents on phase 2's prior-art hunt - existing idioms, helpers, earlier attempts, the areas the change touches - so their results are waiting when the interview closes.
-They start from `docs/architecture.md` ([../../references/architecture.md](../../references/architecture.md)), the high-level overview of the system; when the project has none, the same explorers run its initial capture first, so the spec is argued against an overview instead of a file tree.
+Use `docs/architecture.md` when present ([../../references/architecture.md](../../references/architecture.md)); otherwise discover the affected components from code.
+Whole-system capture is a separate optional task, not a prerequisite to planning this change.
 These explorers never read `docs/decisions.md`: the ledger must stay out of context until the phase 5 reconcile, and phase 9 treats an early leak as contamination.
 
 Then size the change: **small** - a handful of decisions, an area the user knows, limited blast radius - or **full**, everything else.
 Tell the user which you picked and why; they can override. Small changes run the lighter variants where marked below - the spec file, its argued decisions, scope, and change plan always happen.
 
 **Iterate small.** Bias toward the smallest spec that delivers observable behavior - a slice implemented and looked at teaches more than a bigger plan.
-A big request becomes a first slice specced now, with later slices as `⊘` lines naming what reopens them; reopen the spec per "Starting from review findings" once build and ship land. The ledger carries the decisions across slices, so going small loses nothing argued.
+Propose a first slice when useful, but resolve a reduction of the requested scope with the user instead of silently deferring required work. The ledger carries the decisions across slices, so going small loses nothing argued.
 
 ## 2. Catalog the decisions
 
@@ -46,7 +46,8 @@ Look at the code, starting from the phase 1 explorers' results - prior art first
 
 - **Big** - overall approach.
 - **Medium** - things that seem simple but can cause big shifts in how much work is done (store a file on S3 or locally, retry strategy). The trickiest tier - make sure you catch all of them.
-- **Small** - timeout lengths, shapes of data structures.
+- **Small but consequential** - timeouts, value domains, or data shapes that change observable behavior or boundary guarantees.
+Routine implementation choices need no separate decision entry.
 
 Pay special attention to edge cases and error handling. How the change gets verified is a decision too: what level to test at, what needs a real dependency versus a fake, what can't be tested and why.
 Each decision enters the research section as an `[open]` entry the moment it is cataloged, and its marks change in the file as the talk-through settles it.
@@ -70,19 +71,7 @@ Evidence marks apply from phase 1 onward, so the premise pressure-test data land
 A decision still being argued is marked `[open]`; one that resolves to not doing it gets `✗` on every alternative and a closing `⊘`.
 `⚑` marks a line waiting on the user. It may stay open in research and scope, but the change plan never links a decision that is `[open]` or carries one.
 
-```
-D-input-validation: How should input be validated?
-  ✓ custom validation - rules fit in ~20 lines, no new dependency ⚠ we maintain edge cases ourselves
-  ✗ validation library - adds a dependency for one call site
 
-D-file-storage: Where do uploaded files live? [open]
-  ? S3 - survives redeploys, needs bucket + IAM work
-  ⚑ ask: expected file sizes and retention?
-
-D-response-caching: Should responses be cached?
-  ✗ Redis - operational burden for an unproven need
-  ⊘ not doing - no measured latency problem ? verify: p95 from prod metrics; reopen if p95 exceeds 500ms
-```
 
 When a later section references a decision, echo the resolution in parentheses - `D-file-storage (✓ S3)`, `(open)`, `(⊘ not doing)` - so the reader only jumps back for the why. The lint requires the text after `✓` to be copied from the chosen line before its ` - `, so lead each chosen line with the short label you will echo.
 
@@ -100,7 +89,7 @@ Writing style for the spec: ELI12, no similes or metaphors.
 
 ## 5. Review and research
 
-1. Spawn a subagent reviewer with the spec file only - not the conversation, not your reasoning - before starting any of the work below, so it hunts while you research. Give it a hunting job, not a checklist: find the decisions this spec makes without realizing it, the alternatives rejected without a stated reason, and the chosen options whose downsides the spec doesn't admit. It succeeds by finding problems; "looks complete" is a failed review. For small changes, run this hunt yourself against the spec file.
+1. Spawn a subagent reviewer with the spec file only - not the conversation, not your reasoning - before starting any of the work below, so it hunts while you research. Give it a hunting job, not a checklist: find the decisions this spec makes without realizing it, the alternatives rejected without a stated reason, and the chosen options whose downsides the spec doesn't admit. Report concrete defects or say which areas were checked without finding one; never manufacture a finding to satisfy the task. For small changes, run this hunt yourself against the spec file.
 2. While it runs, research how to implement everything: exact call sites, APIs, the idioms from the phase 2 prior-art hunt. Ask the user when you hit weird stuff.
 3. Also while it runs, reconcile the drafted decisions against the project's `docs/decisions.md`, if it keeps one, per the recommender contract in [../../references/decision-ledger.md](../../references/decision-ledger.md). The decisions were argued fresh, so this diff means something; a `diverged` classification is raised with the user and marked `⚑` until resolved.
 4. When the reviewer returns, ask remaining questions and update the doc. Anything still unanswerable stays a `⚑` line.

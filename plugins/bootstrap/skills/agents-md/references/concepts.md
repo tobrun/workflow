@@ -21,7 +21,7 @@ The source column names the file in the workflow repository the lesson was disti
 | `contracts` | `docs/contracts.md` | Architecture: where cross-boundary guarantees live, and that a change must keep them or say which it breaks | covered by the absence sentence | `dev/references/contracts.md` |
 | `dependencies` | `docs/dependencies.md`, dependency-cruiser, import-linter, ArchUnit config | Architecture: where the allowed module edges are declared and what enforces them | covered by the absence sentence | `dev/references/dependency-rules.md` |
 | `commits` | conventional subjects in `git log`, existing trailers | Contributions: the commit format and the real scope list | the format is adopted from now on, and scopes are the areas commits touch (see the probe) | `dev/skills/commit/references/message-format.md` |
-| `plans` | whether `.gitignore` covers `.dev/` | Contributions: plan and scratch files live under `.dev/` and are never committed | an open item: `.dev/` is not gitignored | `dev/references/plan-layout.md` |
+| `plans` | `.dev/` plan and scratch files are ignored while `.dev/config.yaml` is trackable | Contributions: plan and scratch files live under `.dev/` and are never committed; `.dev/config.yaml` holds repo-tracked settings | an open item naming unignored artifacts or an ignored shared config | `dev/references/plan-layout.md` |
 | `pr` | PR templates, a GitHub remote | Contributions: every PR carries evidence from a real run | always stated | `dev/skills/ship/references/pull-request.md` |
 | `branch` | `origin/HEAD`, CI branch filters | intro: "Default branch is `x`." | ask | `dev/references/plan-layout.md` |
 

@@ -11,4 +11,8 @@ The one thing it cannot measure is where the run fought the skill's own instruct
 - About the skill's text, never the repository's code: "step 3 assumes one Validation block; this repo has two, so the wave gate ran neither" is friction, "the tests are slow" is not.
 - None when the run went as the skill describes; an empty journal entry is the common and good case.
 
+Elapsed time includes user waits, interruptions, host limits, and varying task sizes.
+Compare runs only after identifying task scope, host, completion state, and waiting time where recorded; do not rank skill quality by an unqualified median.
+A friction entry is an observation to investigate, not an automatically verified root cause.
+
 Set `DEV_MEMORY_DIR=off`, or `"memory": {"enabled": false}` in `.dev/config.json`, to keep a repository's runs out of the journal.

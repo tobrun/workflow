@@ -1,0 +1,181 @@
+<?xml version="1.0" ?>
+<testsuites disabled="0" errors="0" failures="8" tests="28" time="0.0">
+	<testsuite disabled="0" errors="0" failures="8" name="mutmut" skipped="0" tests="28" time="0">
+		<testcase name="Mutant #1" file="app.py" line="2">
+			<failure type="failure" message="bad_survived">--- app.py
++++ app.py
+@@ -1,5 +1,5 @@
+ def total(subtotal, member, coupon):
+-    if subtotal &lt; 0:
++    if subtotal &lt;= 0:
+         raise ValueError("negative subtotal")
+     if coupon not in ("", "SAVE10"):
+         raise ValueError("unknown coupon")
+</failure>
+			<system-out>    if subtotal &lt; 0:</system-out>
+		</testcase>
+		<testcase name="Mutant #2" file="app.py" line="2">
+			<failure type="failure" message="bad_survived">--- app.py
++++ app.py
+@@ -1,5 +1,5 @@
+ def total(subtotal, member, coupon):
+-    if subtotal &lt; 0:
++    if subtotal &lt; 1:
+         raise ValueError("negative subtotal")
+     if coupon not in ("", "SAVE10"):
+         raise ValueError("unknown coupon")
+</failure>
+			<system-out>    if subtotal &lt; 0:</system-out>
+		</testcase>
+		<testcase name="Mutant #3" file="app.py" line="3">
+			<failure type="failure" message="bad_survived">--- app.py
++++ app.py
+@@ -1,6 +1,6 @@
+ def total(subtotal, member, coupon):
+     if subtotal &lt; 0:
+-        raise ValueError("negative subtotal")
++        raise ValueError("XXnegative subtotalXX")
+     if coupon not in ("", "SAVE10"):
+         raise ValueError("unknown coupon")
+     discount = 0
+</failure>
+			<system-out>        raise ValueError("negative subtotal")</system-out>
+		</testcase>
+		<testcase name="Mutant #4" file="app.py" line="4">
+			<system-out>    if coupon not in ("", "SAVE10"):</system-out>
+		</testcase>
+		<testcase name="Mutant #5" file="app.py" line="4">
+			<system-out>    if coupon not in ("", "SAVE10"):</system-out>
+		</testcase>
+		<testcase name="Mutant #6" file="app.py" line="4">
+			<system-out>    if coupon not in ("", "SAVE10"):</system-out>
+		</testcase>
+		<testcase name="Mutant #7" file="app.py" line="5">
+			<failure type="failure" message="bad_survived">--- app.py
++++ app.py
+@@ -2,7 +2,7 @@
+     if subtotal &lt; 0:
+         raise ValueError("negative subtotal")
+     if coupon not in ("", "SAVE10"):
+-        raise ValueError("unknown coupon")
++        raise ValueError("XXunknown couponXX")
+     discount = 0
+     if member and subtotal &gt;= 100:
+         discount = 20
+</failure>
+			<system-out>        raise ValueError("unknown coupon")</system-out>
+		</testcase>
+		<testcase name="Mutant #8" file="app.py" line="6">
+			<system-out>    discount = 0</system-out>
+		</testcase>
+		<testcase name="Mutant #9" file="app.py" line="6">
+			<system-out>    discount = 0</system-out>
+		</testcase>
+		<testcase name="Mutant #10" file="app.py" line="7">
+			<failure type="failure" message="bad_survived">--- app.py
++++ app.py
+@@ -4,7 +4,7 @@
+     if coupon not in ("", "SAVE10"):
+         raise ValueError("unknown coupon")
+     discount = 0
+-    if member and subtotal &gt;= 100:
++    if member and subtotal &gt; 100:
+         discount = 20
+     if coupon == "SAVE10":
+         discount += 10
+</failure>
+			<system-out>    if member and subtotal &gt;= 100:</system-out>
+		</testcase>
+		<testcase name="Mutant #11" file="app.py" line="7">
+			<failure type="failure" message="bad_survived">--- app.py
++++ app.py
+@@ -4,7 +4,7 @@
+     if coupon not in ("", "SAVE10"):
+         raise ValueError("unknown coupon")
+     discount = 0
+-    if member and subtotal &gt;= 100:
++    if member and subtotal &gt;= 101:
+         discount = 20
+     if coupon == "SAVE10":
+         discount += 10
+</failure>
+			<system-out>    if member and subtotal &gt;= 100:</system-out>
+		</testcase>
+		<testcase name="Mutant #12" file="app.py" line="7">
+			<system-out>    if member and subtotal &gt;= 100:</system-out>
+		</testcase>
+		<testcase name="Mutant #13" file="app.py" line="8">
+			<system-out>        discount = 20</system-out>
+		</testcase>
+		<testcase name="Mutant #14" file="app.py" line="8">
+			<system-out>        discount = 20</system-out>
+		</testcase>
+		<testcase name="Mutant #15" file="app.py" line="9">
+			<system-out>    if coupon == "SAVE10":</system-out>
+		</testcase>
+		<testcase name="Mutant #16" file="app.py" line="9">
+			<system-out>    if coupon == "SAVE10":</system-out>
+		</testcase>
+		<testcase name="Mutant #17" file="app.py" line="10">
+			<system-out>        discount += 10</system-out>
+		</testcase>
+		<testcase name="Mutant #18" file="app.py" line="10">
+			<system-out>        discount += 10</system-out>
+		</testcase>
+		<testcase name="Mutant #19" file="app.py" line="10">
+			<system-out>        discount += 10</system-out>
+		</testcase>
+		<testcase name="Mutant #20" file="app.py" line="11">
+			<system-out>    shipping = 5</system-out>
+		</testcase>
+		<testcase name="Mutant #21" file="app.py" line="11">
+			<system-out>    shipping = 5</system-out>
+		</testcase>
+		<testcase name="Mutant #22" file="app.py" line="12">
+			<failure type="failure" message="bad_survived">--- app.py
++++ app.py
+@@ -9,7 +9,7 @@
+     if coupon == "SAVE10":
+         discount += 10
+     shipping = 5
+-    if subtotal &gt;= 100:
++    if subtotal &gt; 100:
+         shipping = 0
+     return max(0, subtotal - discount) + shipping
+ 
+</failure>
+			<system-out>    if subtotal &gt;= 100:</system-out>
+		</testcase>
+		<testcase name="Mutant #23" file="app.py" line="12">
+			<failure type="failure" message="bad_survived">--- app.py
++++ app.py
+@@ -9,7 +9,7 @@
+     if coupon == "SAVE10":
+         discount += 10
+     shipping = 5
+-    if subtotal &gt;= 100:
++    if subtotal &gt;= 101:
+         shipping = 0
+     return max(0, subtotal - discount) + shipping
+ 
+</failure>
+			<system-out>    if subtotal &gt;= 100:</system-out>
+		</testcase>
+		<testcase name="Mutant #24" file="app.py" line="13">
+			<system-out>        shipping = 0</system-out>
+		</testcase>
+		<testcase name="Mutant #25" file="app.py" line="13">
+			<system-out>        shipping = 0</system-out>
+		</testcase>
+		<testcase name="Mutant #26" file="app.py" line="14">
+			<system-out>    return max(0, subtotal - discount) + shipping</system-out>
+		</testcase>
+		<testcase name="Mutant #27" file="app.py" line="14">
+			<system-out>    return max(0, subtotal - discount) + shipping</system-out>
+		</testcase>
+		<testcase name="Mutant #28" file="app.py" line="14">
+			<system-out>    return max(0, subtotal - discount) + shipping</system-out>
+		</testcase>
+	</testsuite>
+</testsuites>
+

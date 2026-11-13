@@ -102,6 +102,33 @@ class CheckerTest(unittest.TestCase):
         self.assertIn(fragment, result.stdout)
 
 
+class DevIgnoreTest(CheckerTest):
+    def test_dev_policy_allows_shared_config_and_ignores_artifacts(self) -> None:
+        self.git("init", "-q")
+        self.write(".gitignore", "/.dev/*\n!/.dev/config.yaml\n")
+        text = CLEAN.replace("## Contributions\n", "## Contributions\n\nPlan files live under `.dev/`.\n")
+        self.assert_clean(text)
+
+    def test_blanket_ignore_is_rejected_even_when_config_is_already_tracked(self) -> None:
+        self.git("init", "-q")
+        self.write(".dev/config.yaml", "mutation_testing: false\n")
+        self.git("add", ".dev/config.yaml")
+        self.write(".gitignore", ".dev/\n")
+        text = CLEAN.replace("## Contributions\n", "## Contributions\n\nPlan files live under `.dev/`.\n")
+        result = self.run_checker(text)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("`.dev/config.yaml` must be trackable", result.stdout)
+
+    def test_unignored_plans_can_be_recorded_as_an_open_item(self) -> None:
+        self.git("init", "-q")
+        text = CLEAN.replace("## Contributions\n", "## Contributions\n\nPlan files live under `.dev/`.\n")
+        result = self.run_checker(text)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("`.dev/ignore-policy-probe/spec.md` must be ignored", result.stdout)
+        text = text.replace("## Open items\n", "## Open items\n\n- [ ] plans: configure artifact ignores and allow shared configuration.\n")
+        self.assert_clean(text)
+
+
 class ContractTest(CheckerTest):
     def test_a_clean_file_passes(self) -> None:
         result = self.assert_clean(CLEAN)
@@ -244,6 +271,8 @@ class PathTest(CheckerTest):
         self.assert_violation(CLEAN.replace("Unit tests live", "See [the guide](docs/guide.md).\nUnit tests live"), "link 'docs/guide.md'")
 
     def test_the_plan_directory_is_exempt(self) -> None:
+        self.git("init", "-q")
+        self.write(".gitignore", "/.dev/*\n!/.dev/config.yaml\n")
         self.assert_clean(CLEAN.replace("with a What: and Why: body.", "with a What: and Why: body.\nPlans live under `.dev/`."))
 
 

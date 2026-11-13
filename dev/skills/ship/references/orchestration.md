@@ -12,7 +12,7 @@ waiting for relayed replies, or re-spawning an agent that already finished;
 a fresh spawn has none of the original context and its output must not be used.
 
 1. **Native transport (preferred):** when the host provides a multi-agent
-   facility, launch all agents in a batch in one native parallel call. This is
+   facility, schedule independent agents up to the host's available child capacity. This is
    the existing Claude Code, Codex, and opencode behavior; do not route those
    hosts through subprocesses.
 2. **Pi transport:** when `PI_CODING_AGENT=true` and `pi` is available, write
@@ -30,10 +30,9 @@ explicitly requested heavyweight runs only lives in
 ## Native transport
 
 Use the host's plain subagent tool exactly as provided (the Agent tool on
-Claude Code, `spawn_agent` on Codex, the `task` tool on opencode). Launch all
-agents of a batch in a single parallel call: on opencode that means issuing
-every `task` call of the batch in one message with the default general
-subagent. Native subagents receive the prompt contracts below directly.
+Claude Code, `spawn_agent` on Codex, the `task` tool on opencode). Launch independent agents with bounded concurrency; queue the rest of the batch and preserve the barrier before verifiers.
+Use opencode's default general subagent. Native subagents receive the prompt contracts below directly.
+Give each a fresh context with only its role, source paths, brief, and result contract; on Codex use `fork_turns="none"` so it does not inherit the orchestrator's conclusions.
 
 Result delivery is file-based, because on some hosts subagents run in the
 background and their final message never reaches the orchestrator:
@@ -45,8 +44,8 @@ background and their final message never reaches the orchestrator:
    the deliverable; the final message is not.
 3. When the host signals that the batch's agents have finished, read the
    result files.
-4. A missing or unparseable file after one re-read marks only that agent as
-   failed, same as a crashed agent.
+4. Validate every result against the schema. A missing or malformed file marks that agent failed; retry it at most once. The final review remains INCOMPLETE if assurance is missing.
+5. Give each batch a deadline appropriate to the diff (default 15 minutes per agent without progress). A written result plus host completion ends an agent; a file alone does not prove it stopped accessing the repo. On a deadline, stop the overdue worker with the host tool, confirm termination, and preserve its scratch output for diagnosis. Never wait indefinitely for a completion notice.
 
 Agents stay read-only in the repository; their only write is their own result
 file under the scratch root.
@@ -80,7 +79,8 @@ inspect the diff, surrounding code, and tests independently. Do not add
 
 ## Batch 1: lens agents
 
-Launch one agent per selected lens, all in a single message so they run concurrently.
+Launch one agent per selected lens within available child capacity.
+All lenses complete or are explicitly marked failed before verification begins.
 Each lens prompt is assembled from:
 
 1. A role line: `You are the "{key}" voice on a code-review panel; other lenses cover other concerns.`
@@ -113,7 +113,9 @@ Output contract (the JSON every lens agent must produce):
 }
 ```
 
-If an agent errors or returns something unparseable, record it as a failed lens and continue.
+A parseable object still must satisfy the contract: exact enums, non-empty finding fields, positive line numbers, and a triggering scenario for BLOCK.
+Unknown severity values are protocol errors, never silently dropped.
+If an agent errors or returns invalid output, record it as a failed lens and continue collecting useful findings, with completeness marked separately.
 Never retry a failed lens more than once.
 
 ## Batch 2: verifiers
@@ -122,8 +124,8 @@ Never retry a failed lens more than once.
 lens results and numbers them (`f1`, `f2`, ...) so verdicts map back. NITs skip
 verification. Duplicates are not merged yet: two lenses that flagged the same
 line get refuted independently, and the merge happens after their verdicts.
-Launch one verifier per finding, again all in a single message.
-If that would exceed 10 verifiers, group the findings by file into at most 10
+Launch one verifier per finding within the same capacity bound.
+If the finding count exceeds 10, group the findings by file into at most 10
 shards and give each verifier its shard; each finding is still verified
 independently, one verdict object per finding.
 Verifier prompt:

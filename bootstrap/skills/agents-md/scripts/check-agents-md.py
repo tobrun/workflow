@@ -14,7 +14,8 @@ over --max-lines; an em dash or a leftover <<fill placeholder; a Commands slot
 missing or malformed, or "none" without an open item; a malformed or unknown
 open item; a backticked path or relative link that does not exist under --root;
 a command whose script, target, recipe, or file does not exist; a default
-branch that disagrees with origin/HEAD; and a line repeated verbatim.
+branch that disagrees with origin/HEAD; a line repeated verbatim; and a claimed
+plan-artifact ignore policy that excludes shared config or exposes scratch files.
 """
 
 from __future__ import annotations
@@ -508,6 +509,24 @@ def check_duplicates(doc: Doc, violations: list[str]) -> None:
             seen[normal] = number
 
 
+def check_dev_ignore(root: Path, doc: Doc, item_slugs: set[str], violations: list[str]) -> None:
+    """Verify the plan/config distinction when Contributions claims the policy is in place."""
+    if "plans" in item_slugs or not any(".dev/" in line for _, line in doc.section("Contributions")):
+        return
+    probes = {
+        ".dev/config.yaml": 1,
+        ".dev/ignore-policy-probe/spec.md": 0,
+        ".dev/ignore-policy-probe/results/build-1.json": 0,
+        ".dev/metrics.jsonl": 0,
+        ".dev/config.json": 0,
+    }
+    for relative, expected in probes.items():
+        result = git(root, "check-ignore", "--no-index", "-q", relative)
+        if result.returncode != expected:
+            outcome = "trackable" if expected == 1 else "ignored"
+            violations.append(f"plans: `{relative}` must be {outcome}; repair the ignore policy or record a plans open item")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("agents_md")
@@ -538,6 +557,7 @@ def main() -> int:
     resolved = check_commands(root, doc, violations, notes)
     check_branch(root, doc, violations, notes)
     check_duplicates(doc, violations)
+    check_dev_ignore(root, doc, item_slugs, violations)
 
     for note in dict.fromkeys(notes):
         print(note)

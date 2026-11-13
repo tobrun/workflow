@@ -8,14 +8,16 @@ Only a blocker that survives two rounds on the same root cause is presented as a
 
 After phase 2 writes `review_N.md` with verdict BLOCK, in the default flow.
 Never in "review only" mode: that mode exists for diffs whose owner did not ask for mutations.
+INCOMPLETE stops the approval path; report missing assurance rather than treating it as a clean round.
 CONCERNS and PASS skip straight to phase 3; concerns stay in the report and the PR's Open calls, they never trigger a round.
 
 ## A round
 
 1. **Fix.** Take every Blocker from the current `review_N.md` - each carries a `file:line`, a title, and the triggering scenario verification confirmed.
-   Group blockers by independent area and dispatch one fresh-context fix agent per group, launched in a single message.
+   Group blockers by independent area and dispatch one fresh-context fix agent per group, scheduled within available host capacity.
    Each agent gets only its blockers, the relevant file paths, the brief phase 2 built (spec excerpts, contracts, decision rationale), and the fix vocabulary below.
-   Agents commit their fix on the work branch in `commit`'s message shape, naming the review index and finding in the Why.
+   Agents report their changes and leave git state alone; the orchestrator verifies and commits authorized fixes on the work branch, naming the review index and finding in the Why.
+   Schedule within available child capacity and keep file ownership disjoint.
 2. **Re-harden.** Run phase 1's five read-only analyzers over the files the round touched, plus the flakiness check over the tests it added; dispatch fixes and loop per [gauntlet.md](gauntlet.md) as usual.
    Then run the spec's Validation block (or the repo's test suite) at the round's impact per [../../../references/ci-parity.md](../../../references/ci-parity.md) and re-run the `[e2e]` scenarios when the round touched anything an e2e scenario exercises, overwriting the e2e report.
 3. **Re-review.** Run phase 2 again as a re-review: `review_{N+1}.md`, same lenses, previous findings carried as verification items so the panel states whether each blocker is fixed or still open.

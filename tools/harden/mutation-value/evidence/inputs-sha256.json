@@ -1,0 +1,20 @@
+{
+  "run.py": "be9088d06027af627cbabbeb1aa9c22d563f3008c5f0e7a3bf927082da3bd398",
+  "requirements.txt": "e4f038a1a77e653cc9e6938cac797dd21503bff3f3e1f552911675c2918a06de",
+  "README.md": "07ac30b14cb69a39148f0a14ef3574cb606e60cee023df50cb27191439dd1645",
+  "faults.json": "5c60fa4265f23464c6e198d1f5cc5edbc1252f4f996b49e830146df3ed0f9763",
+  "render_report.py": "f2a78c7a523b04497dedb8b7c19814a5c815c1536f86372c7fe59e95cba984a3",
+  "report.html": "8f292aee3594dedcda3d6400ec79dd6f7160f4338e33426b9f84eaac62b45b1a",
+  "requirements-lock.txt": "8333eb2a4322573e97fcf1f3ab131f1b07e743afa101c32fc138c68fe85e84b5",
+  "projects/access/baseline.py": "64b6e4a6451a1cbb70b022aae332f1a98bb231414e05e0b7a7c9b893da795926",
+  "projects/access/control.py": "eb6de838f4e6bfa7380f70e1563ab7665151a707d5b4590986b47251739bd54f",
+  "projects/access/guided.py": "29990e5253df2212763cac3b6eaa8b339002d50ddc8ce7a313d139fb087585c9",
+  "projects/access/score_only.py": "cbacc9839b1ba4b4363225958ee0f83fe60be1b3730ebb6f831cecda460ff3dc",
+  "projects/access/app.py": "5d9b0d9bbbd1cfe3c94587478c6f5992da41a8c08e19da678ee74afd36433d89",
+  "projects/access/spec.md": "ae1989f39c7bac78c91e77cf50d35f8e249b09de9aecac5c42dd77f59643cbbc",
+  "projects/checkout/baseline.py": "985820e34f93f72548e0d66bc5f5aea6bd55dc3a8eef77ea90cddde79bf0ae87",
+  "projects/checkout/control.py": "678aecfe33959c9ba92eee8b0be1f2828e7af9a84ca2dfe7adfd1b0d7338b7af",
+  "projects/checkout/guided.py": "4f26ec8325e14074b26c2690c03856209bf851d88fd32128ebde12a9ef5d4d60",
+  "projects/checkout/app.py": "ca75caaec52f1d666890ed199d0b4a38bbe7d76677a8b8bb6e7802bccf9cba38",
+  "projects/checkout/spec.md": "04d96dc4eddfb16728dea1126a7b6835ca90ba0bceb0d787c3c3f14ee2cea187"
+}

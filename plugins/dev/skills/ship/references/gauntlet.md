@@ -8,10 +8,10 @@ The check definitions and their acquisition ladder live in [tools.md](tools.md);
 The five read-only analyzers - static analysis, security, dead code, duplication, dependency rules - scan as one parallel batch: their initial runs mutate nothing, so collect all five violation lists concurrently, dispatch fix agents grouped by independent area across the combined lists, and re-run all five together until clean.
 The expensive three - complexity x coverage, flakiness, mutation - stay sequential, cheapest first: they contend for the test runner, and each one's input shifts with every fix the previous one landed.
 
-For each enabled tool (the batched five count as one), in order; skip mutation entirely when disabled by `.dev/config.yaml` as specified in ship:
+For each enabled tool (the batched five count as one), in order; skip mutation when disabled by `.dev/config.yaml` or when no changed decision-heavy logic qualifies per tools.md. For mutation, triage survivors before dispatching fixes and apply the reporting exception below:
 
 1. Run it; collect the violations.
-2. Dispatch fixes: one fresh-context agent per independent area, launched in a single message, each given only the violation list for its area, the relevant file paths, and the fix vocabulary below.
+2. Dispatch fixes: one fresh-context agent per independent area, scheduled within available host capacity, each given only the violation list for its area, the relevant file paths, and the fix vocabulary below.
 3. Re-run the tool until clean, then run the spec's Validation block (or the repo's test suite) at the fixes' impact - `python3 {ship-skill-root}/../../scripts/impact-scope.py --base HEAD`, read per [../../../references/ci-parity.md](../../../references/ci-parity.md) - to prove the fixes broke nothing; skip that run when the tool dispatched no fixes.
 4. A violation that resists two fix rounds on the same root cause, or that the change seems to legitimately require, is a human call: stop and present it - it is either a real defect, a threshold worth changing, or a rule the spec should have amended.
 5. When the run keeps a `pr.md` ([pull-request.md](pull-request.md)), write the tool's Quality row - found, fixed, surviving, one row per check for the batched five - and any human call under Open calls before starting the next tool; the wrap-up reads its tallies from there.
@@ -44,22 +44,24 @@ proves the rest.
 - Resolve a static analysis finding by fixing the code it points at, never by suppressing it inline or loosening the tool's config; a finding worth suppressing is a human call.
 - Resolve a vulnerable dependency by upgrading it; an upgrade that breaks the build is a human call. A found secret is always an immediate escalation, never a quiet fix.
 - Delete dead code outright; never comment it out or exclude it from the detector.
-- Collapse a clone by extracting one shared helper or calling the one that already exists.
+- Inspect a clone for shared meaning. Reuse a helper when the duplicated behavior has one contract; do not couple unrelated concepts merely because token sequences match. A deliberate exception is recorded with its rationale, not hidden by changing thresholds.
 - Cut a complexity-coverage score by splitting the function or covering its paths.
 - Resolve a dependency violation by inverting the dependency, inserting an interface, or splitting the module.
 - De-flake a test by removing its nondeterminism (time, ordering, shared state, network), never by adding retries, sleeps, or looser assertions.
-- Kill a mutant by adding the test that catches it.
+- Address a meaningful mutation survivor by strengthening or adding a regression test for the promised behavior, including nearby boundaries and rule combinations.
 
 Fix agents never edit thresholds, rules files, or the tools themselves, and never delete a test to make a mutant moot.
 
 ## Thresholds are decisions
 
 Defaults: zero static analysis findings in scope; zero security findings; zero dead symbols in scope; no new clones over the 50-token threshold; zero dependency violations; complexity-coverage score at most 6 per function; zero flaky tests among those the diff touched.
-Agent-written code tolerates a higher complexity threshold than the human default of 4 - agents hold more paths in working memory - but where the line sits is a decision, not a config value.
+These are fallback heuristics, not calibrated safety guarantees.
+Use a repository's recorded justified thresholds when present; the same maintainability bar applies to human- and agent-written code.
+Five clean flakiness repetitions are observations, not proof that a test can never flake.
 When the user accepts a different threshold, record it in `docs/decisions.md` as a `D-` entry (notation in [../../../references/decision-ledger.md](../../../references/decision-ledger.md)), dated and sourced to this run; the next run reads it from there instead of re-arguing.
 Never adjust a threshold silently to make a run pass.
 
 ## Mutation testing is reported, not a threshold
 
 When enabled, the other seven checks above judge whether this run may ship; mutation testing does not, and it is the one check with no default threshold at all. A codebase's baseline kill rate depends on how much test coverage the diff's area already had going in, which this run did not choose - failing the run over that inherited debt would make ordinary changes to weakly-tested code unshippable regardless of what the diff itself does.
-Fix agents still chase survivors under the loop above and the fix vocabulary's "kill a mutant" entry, and equivalent mutants still get marked and left, exactly as before. When a survivor resists two fix rounds (item 4 of the loop), present it and move on rather than treating it as a blocker. The ship report's counts - killed, survived, uncovered, with the reason recorded against each stubborn survivor - are the evidence a person reads; there is no score below which the run fails.
+Triage survivors against the contract before dispatching fixes: meaningful gaps get regression tests under the loop above; equivalent, duplicate, and out-of-contract findings are recorded with reasons and left. A perfect score does not replace boundary and policy review. When a meaningful survivor resists two fix rounds (item 4 of the loop), present it and move on rather than treating it as a blocker. Report scoped killed, survived, and uncovered counts, runtime, useful test changes, and each survivor's disposition; there is no score below which the run fails.

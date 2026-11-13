@@ -1,0 +1,73 @@
+=== fault-coupon_validation_removed.log ===
+...F
+=================================== FAILURES ===================================
+_____________________________ test_unknown_coupon ______________________________
+
+    def test_unknown_coupon():
+>       with pytest.raises(ValueError):
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+test_baseline.py:19: Failed
+=========================== short test summary info ============================
+FAILED test_baseline.py::test_unknown_coupon - Failed: DID NOT RAISE <class '...
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed, 3 passed in 0.01s
+
+
+=== fault-discount_after_shipping.log ===
+....F
+=================================== FAILURES ===================================
+__________________________________ test_floor __________________________________
+
+    def test_floor():
+>       assert total(5, False, "SAVE10") == 5
+E       AssertionError: assert 0 == 5
+E        +  where 0 = total(5, False, 'SAVE10')
+
+test_baseline.py:24: AssertionError
+=========================== short test summary info ============================
+FAILED test_baseline.py::test_floor - AssertionError: assert 0 == 5
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed, 4 passed in 0.01s
+
+
+=== fault-discount_stack_overwritten.log ===
+.....                                                                    [100%]
+5 passed in 0.00s
+
+
+=== fault-member_discount_10.log ===
+.....                                                                    [100%]
+5 passed in 0.00s
+
+
+=== fault-post_discount_shipping.log ===
+.....                                                                    [100%]
+5 passed in 0.00s
+
+
+=== fault-shipping_7.log ===
+F
+=================================== FAILURES ===================================
+_________________________________ test_regular _________________________________
+
+    def test_regular():
+>       assert total(50, False, "") == 55
+E       AssertionError: assert 57 == 55
+E        +  where 57 = total(50, False, '')
+
+test_baseline.py:6: AssertionError
+=========================== short test summary info ============================
+FAILED test_baseline.py::test_regular - AssertionError: assert 57 == 55
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed in 0.01s
+
+
+=== fault-thresholds_101.log ===
+.....                                                                    [100%]
+5 passed in 0.00s
+
+
+=== fault-zero_rejected.log ===
+.....                                                                    [100%]
+5 passed in 0.00s

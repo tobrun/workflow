@@ -1,16 +1,20 @@
 #!/usr/bin/env bash
 # runner.sh - one dev:remote run inside a sandbox workspace.
 #
-#   runner.sh run              prepare the checkout, then run each phase
-#   runner.sh resume           continue the phase that failed or stopped, then the rest
+#   runner.sh run              one round of the run, as round.json describes it: the
+#                              checkout to prepare, then the phases from its first one
+#   runner.sh queued ROUND     mark a new round as starting before its unit starts, so no one
+#                              reads the last round's ending as this round's
 #   runner.sh state            status.json, unit liveness and idle time, as JSON
 #   runner.sh log OFFSET TAIL  the current phase's stream-json log after line OFFSET
 #                              (OFFSET 0: the last TAIL lines); first line "# offset N"
 #   runner.sh pack             tar.gz on stdout of everything collect brings home
 #
 # remote.py pushes this file into ~/.dev-workflow/runs/<id>/ with run.json,
-# contract.md, plan/ and the dev plugin under dev/, and starts `run` as the
-# transient unit dev-run-<id>. On a workspace desktop, open_view puts a terminal
+# round.json, contract.md, plan/ and the dev plugin under dev/, and starts `run`
+# as the transient unit dev-run-<id>. Dispatch is round 1; every resume is a
+# new round that refreshes these files and names where to start: a phase's own
+# session continued, or a phase started fresh. On a workspace desktop, open_view puts a terminal
 # that follows the run (view.py) in front of anyone watching over VNC.
 # status.json is the run's state machine
 # (starting -> running -> done | failed | stopped); references/protocol.md
@@ -33,6 +37,8 @@ REPO=$(cfg repo)
 PLAN=$(cfg plan)
 WORK="$HOME/work/$REPO"
 TMP_ROOT="${DEV_REMOTE_TMP:-/tmp}"
+# Where Claude Code keeps the transcripts of sessions run in $WORK, which --resume reads.
+PROJECTS="$HOME/.claude/projects/$(printf %s "$WORK" | sed 's/[^A-Za-z0-9]/-/g')"
 
 # status STATE [key=value ...] - merge into status.json atomically; a dotted
 # key nests one level (session.build=...).
@@ -70,6 +76,18 @@ v = d.get(sys.argv[2], "")
 if len(sys.argv) > 3:
     v = v.get(sys.argv[3], "") if isinstance(v, dict) else ""
 print(v)' "$STATUS" "$@"
+}
+
+rnd() { # rnd KEY [INNER] - read round.json
+  python3 -c 'import json, sys
+try:
+    d = json.load(open(sys.argv[1]))
+except (OSError, ValueError):
+    d = {}
+v = d.get(sys.argv[2])
+if len(sys.argv) > 3:
+    v = v.get(sys.argv[3]) if isinstance(v, dict) else None
+print("" if v is None else v)' "$RUN_DIR/round.json" "$@"
 }
 
 prompt_for() {
@@ -125,17 +143,26 @@ else:
 PY
 }
 
+# prepare CHECKOUT - fresh: the sent branch, clean; sync: the sent branch, keeping the
+# working tree when it already stands on the sent commit (a session continued where it
+# stopped); as-is: the checkout and plan files untouched (a round on uncollected work).
 prepare() {
   local branch base default origin
+  [ "$1" = as-is ] && return 0
   branch=$(cfg branch); base=$(cfg base); default=$(cfg default_branch); origin=$(cfg origin_url)
   [ -d "$WORK/.git" ] || { status failed reason="no checkout at $WORK (fleet sync did not run)"; exit 1; }
   cd "$WORK"
-  if [ -n "$(git status --porcelain)" ]; then
-    git diff HEAD >"$RUN_DIR/pre-existing.patch" 2>/dev/null || true
+  if [ "$1" = sync ] && [ "$(git branch --show-current)" = "$branch" ] \
+    && [ "$(git rev-parse -q --verify HEAD)" = "$(git rev-parse -q --verify "refs/remotes/origin/$branch")" ]; then
+    : # the tree the session left, uncommitted work included
+  else
+    if [ -n "$(git status --porcelain)" ]; then
+      git diff HEAD >"$RUN_DIR/pre-existing.patch" 2>/dev/null || true
+    fi
+    git checkout -q -f -B "$branch" "refs/remotes/origin/$branch"
+    git reset -q --hard
+    git clean -q -fd
   fi
-  git checkout -q -f -B "$branch" "refs/remotes/origin/$branch"
-  git reset -q --hard
-  git clean -q -fd
   # The merge base the operator dispatched from: ship's diff scope reads origin/<default>.
   git update-ref "refs/remotes/origin/$default" "$base"
   git symbolic-ref refs/remotes/origin/HEAD "refs/remotes/origin/$default"
@@ -147,6 +174,34 @@ prepare() {
     mkdir -p "$TMP_ROOT/$REPO"
     cp -R "$RUN_DIR/tmp/." "$TMP_ROOT/$REPO/"
   fi
+}
+
+# restore_sessions - transcripts remote.py sent with the round (sessions-in/) go where
+# Claude Code looks for them, never over a transcript this workspace already has.
+restore_sessions() {
+  [ -d "$RUN_DIR/sessions-in" ] || return 0
+  python3 - "$RUN_DIR/sessions-in" "$PROJECTS" <<'PY'
+import os, shutil, sys
+src, dst = sys.argv[1:]
+for root, _dirs, files in os.walk(src):
+    for name in files:
+        rel = os.path.relpath(os.path.join(root, name), src)
+        target = os.path.join(dst, rel)
+        if not os.path.exists(target):
+            os.makedirs(os.path.dirname(target), exist_ok=True)
+            shutil.copy2(os.path.join(root, name), target)
+PY
+}
+
+# archive_patch PHASE - move an earlier session's uncommitted-PHASE.patch out of collect's
+# way before PHASE runs again; prints where it went.
+archive_patch() {
+  local patch="$RUN_DIR/uncommitted-$1.patch" kept
+  [ -f "$patch" ] || return 0
+  mkdir -p "$RUN_DIR/history"
+  kept="$RUN_DIR/history/uncommitted-$1-$(date -u +%Y%m%dT%H%M%SZ).patch"
+  mv "$patch" "$kept"
+  printf '%s' "$kept"
 }
 
 # save_dirty PHASE - keep a dirty tree's diff beside the logs; true when there was one.
@@ -172,21 +227,26 @@ print(" ".join("pr.%s=%s" % (key, pr.get(field, "")) for key, field in
   status running $pairs
 }
 
-# run_phase PHASE [SESSION-TO-RESUME [PROMPT]]
+continue_prompt() { # continue_prompt PHASE
+  printf 'Continue the %s run from where it stopped. The plan directory .dev/%s holds what was already recorded; check the working tree and the plan files before acting.' \
+    "$(prompt_for "$1")" "$PLAN"
+}
+
+# run_phase PHASE [SESSION-TO-RESUME] [PROMPT] - a fresh session without a session id;
+# the phase's own command, or the continue prompt, without a prompt.
 run_phase() {
   local phase=$1 resume=${2:-} sid prompt=${3:-} rc result session model
   model=$(cfg model)
   cd "$WORK"
-  if [ -n "$resume" ] && [ -n "$prompt" ]; then
+  archive_patch "$phase" >/dev/null
+  if [ -n "$resume" ]; then
     sid=$resume
-  elif [ -n "$resume" ]; then
-    sid=$resume
-    prompt="Continue the $(prompt_for "$phase") run from where it stopped. The plan directory .dev/$PLAN holds what was already recorded; check the working tree and the plan files before acting."
+    prompt=${prompt:-$(continue_prompt "$phase")}
   else
     sid=$(python3 -c 'import uuid; print(uuid.uuid4())')
-    prompt=$(prompt_for "$phase")
+    prompt=${prompt:-$(prompt_for "$phase")}
   fi
-  status running phase="$phase" "session.$phase=$sid" reason=
+  status running phase="$phase" "session.$phase=$sid" "dirty.$phase=" reason=
   # No agent attribution in commits or PR text: the workflow's commit rules forbid Co-Authored-By lines.
   printf '%s\n' '{"includeCoAuthoredBy": false, "attribution": {"commit": "", "pr": ""}}' >"$RUN_DIR/settings.json"
   local -a args=(-p "$prompt" --plugin-dir "$RUN_DIR/dev" --append-system-prompt-file "$RUN_DIR/contract.md"
@@ -200,6 +260,8 @@ run_phase() {
   set -e
   read -r result session <<<"$(outcome "$LOGS/$phase.jsonl")"
   if [ -n "$session" ]; then status running "session.$phase=$session"; fi
+  # Every session the run ever had, so pack brings each transcript home.
+  printf '%s %s\n' "$phase" "${session:-$sid}" >>"$RUN_DIR/sessions.txt"
   if save_dirty "$phase"; then status running "dirty.$phase=true"; fi
   case $phase in ship|ship-quick) record_pr ;; esac
   status running "head.$phase=$(git rev-parse HEAD)" "exit.$phase=$rc"
@@ -300,7 +362,6 @@ setup_env() {
     . /etc/fleet/computer-use.env
     set +a
   fi
-  export DEV_MEMORY_DIR="$RUN_DIR/memory"
   # How long a headless phase waits for its background agents before Claude Code ends it.
   # The 600 s default killed a ship fix agent mid-run, so allow ten times that.
   export CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS="${CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS:-6000000}"
@@ -311,36 +372,51 @@ setup_env() {
     status failed reason="runner exited $rc";; esac; fi' EXIT
 }
 
-cmd_run() {
-  setup_env
-  status starting run="$RUN_ID" home="$HOME" started="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  open_view
-  prepare
-  local phase
-  for phase in $(cfg phases); do
-    run_phase "$phase" || exit 1
-    gate "$phase" || exit 1
-  done
-  status done phase= reason=
+# start_prompt PHASE MODE EXTRA - the prompt of a round's first session: the phase's own
+# command (fresh) or the continue prompt, naming uncommitted work the checkout no longer
+# holds, then the operator's own instruction.
+start_prompt() {
+  local phase=$1 mode=$2 extra=$3 text kept
+  if [ "$mode" = continue ]; then text=$(continue_prompt "$phase"); else text=$(prompt_for "$phase"); fi
+  if [ "$mode" = continue ] && [ -z "$(git -C "$WORK" status --porcelain 2>/dev/null)" ]; then
+    kept=$(archive_patch "$phase")
+    if [ -n "$kept" ]; then
+      text="$text Uncommitted work the earlier session left is not in this checkout; its diff is at $kept."
+    fi
+  fi
+  if [ -n "$extra" ]; then text="$text
+
+$extra"; fi
+  printf '%s' "$text"
 }
 
-cmd_resume() {
+cmd_run() {
   setup_env
-  local failed sid phase started=false
-  failed=$(field phase)
-  [ -n "$failed" ] || { echo "runner: no phase to resume" >&2; exit 1; }
-  sid=$(field session "$failed")
-  status running resumed="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  local round first mode sid extra phase started=true
+  round=$(rnd round); first=$(rnd first phase); mode=$(rnd first mode)
+  sid=$(rnd first session); extra=$(rnd first prompt)
+  if [ "${round:-1}" -le 1 ]; then
+    status starting run="$RUN_ID" home="$HOME" started="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  else
+    status running round="$round" phase= reason=
+  fi
   open_view
+  restore_sessions
+  prepare "$(rnd checkout)"
+  [ -z "$first" ] || started=false
   for phase in $(cfg phases); do
-    if [ "$phase" = "$failed" ]; then
+    if ! $started; then
+      [ "$phase" = "$first" ] || continue
       started=true
-      run_phase "$phase" "$sid" || exit 1
-      gate "$phase" || exit 1
-    elif $started; then
+      if [ "$mode" = continue ]; then
+        run_phase "$phase" "$sid" "$(start_prompt "$phase" continue "$extra")" || exit 1
+      else
+        run_phase "$phase" "" "$(start_prompt "$phase" fresh "$extra")" || exit 1
+      fi
+    else
       run_phase "$phase" || exit 1
-      gate "$phase" || exit 1
     fi
+    gate "$phase" || exit 1
   done
   status done phase= reason=
 }
@@ -381,43 +457,48 @@ PY
 }
 
 cmd_pack() {
-  python3 - "$RUN_DIR" "$WORK" "$PLAN" "$TMP_ROOT/$REPO" "$HOME" <<'PY'
+  python3 - "$RUN_DIR" "$WORK" "$PLAN" "$TMP_ROOT/$REPO" "$PROJECTS" <<'PY'
 import glob, json, os, sys, tarfile
-run_dir, work, plan, tmp, home = sys.argv[1:]
+run_dir, work, plan, tmp, projects = sys.argv[1:]
 with tarfile.open(fileobj=sys.stdout.buffer, mode="w|gz") as out:
     def add(src, name):
         if os.path.exists(src):
             out.add(src, arcname=name)
     add(os.path.join(work, ".dev", plan), "plan")
-    add(os.path.join(work, ".dev", "metrics.jsonl"), "metrics.jsonl")
     add(os.path.join(tmp, "reports"), "reports")
     add(os.path.join(tmp, "pr-evidence"), "pr-evidence")
-    add(os.path.join(run_dir, "memory"), "memory")
-    add(os.path.join(run_dir, "logs"), "run/logs")
-    add(os.path.join(run_dir, "status.json"), "run/status.json")
+    for name in ("logs", "status.json", "round.json", "sessions.txt"):
+        add(os.path.join(run_dir, name), "run/" + name)
     for extra in glob.glob(os.path.join(run_dir, "*.patch")) + glob.glob(os.path.join(run_dir, "gate-*.txt")):
         add(extra, "run/" + os.path.basename(extra))
-    # The transcripts the journal cites, mirrored under home/ so collect can repoint them.
-    cited = set()
-    for journal in glob.glob(os.path.join(run_dir, "memory", "journal", "*.jsonl")):
-        for line in open(journal, encoding="utf-8"):
-            try:
-                entry = json.loads(line)
-            except ValueError:
-                continue
-            cited.update(p for p in [entry.get("transcript"), *(entry.get("subagent_transcripts") or [])] if p)
-    for path in sorted(cited):
-        real = os.path.realpath(path)
-        if real.startswith(os.path.realpath(home) + os.sep) and os.path.isfile(real):
-            add(real, "home/" + os.path.relpath(real, os.path.realpath(home)))
+    # Every session's transcript, with its subagents and tool results, so a later round can
+    # continue any of them on any workspace.
+    sessions = set()
+    try:
+        status = json.load(open(os.path.join(run_dir, "status.json")))
+        sessions.update(v for v in (status.get("session") or {}).values() if v)
+    except (OSError, ValueError, AttributeError):
+        pass
+    try:
+        sessions.update(line.split()[1] for line in open(os.path.join(run_dir, "sessions.txt")) if len(line.split()) > 1)
+    except OSError:
+        pass
+    for sid in sorted(sessions):
+        add(os.path.join(projects, sid + ".jsonl"), f"sessions/{sid}.jsonl")
+        add(os.path.join(projects, sid), f"sessions/{sid}")
 PY
 }
 
 case "${1:-}" in
   run) cmd_run ;;
-  resume) cmd_resume ;;
+  queued)
+    if [ "${2:-1}" -gt 1 ]; then
+      status starting round="$2" resumed="$(date -u +%Y-%m-%dT%H:%M:%SZ)" phase= reason=
+    else
+      status starting round=1
+    fi ;;
   state) cmd_state ;;
   log) shift; cmd_log "$@" ;;
   pack) cmd_pack ;;
-  *) echo "usage: runner.sh run|resume|state|log OFFSET TAIL|pack" >&2; exit 2 ;;
+  *) echo "usage: runner.sh run|queued ROUND|state|log OFFSET TAIL|pack" >&2; exit 2 ;;
 esac

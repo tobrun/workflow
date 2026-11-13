@@ -24,8 +24,8 @@ The workspace agent is the host's configured Claude Code, on whatever model its 
 | Publication mode | `publish` in `run.json` and the matching block of the unattended contract | the PR the runner read back with `gh pr view`, in `status.json` as `pr` |
 | Reports and evidence | this machine's `/tmp/{repo}/reports/` and `/tmp/{repo}/pr-evidence/`, so a follow-up run on another workspace keeps build's e2e report | the workspace's `/tmp/{repo}/reports/` and `/tmp/{repo}/pr-evidence/` to the same paths here |
 | Sandbox settings | a settings file per phase that turns off commit and PR attribution | - |
-| Logs and state | - | `logs/`, `status.json`, `*.patch`, `gate-*.txt` to `~/.dev-workflow/remote/runs/{run}/` |
-| Run journal | the runner sets `DEV_MEMORY_DIR` to the run directory | entries appended to this machine's journal, cited transcripts mirrored under `{memory}/remote/{run}/home/` with every path rewritten, metrics rows appended to `.dev/metrics.jsonl` |
+| Logs and state | - | `logs/`, `status.json`, `round.json`, `sessions.txt`, `*.patch`, `gate-*.txt` to `~/.dev-workflow/remote/runs/{run}/` |
+| Session transcripts | on a restore, the transcript of the session to continue when the workspace lacks it, into Claude Code's project directory for `~/work/{repo}` | every session the run had (`status.json` and `sessions.txt`), with its subagents and tool results, to `~/.dev-workflow/remote/runs/{run}/sessions/` |
 
 The force push only ever moves the exchange clone's copy of the work branch, a private transport ref that mirrors this machine; nothing here is ever force-pushed to a shared remote.
 Collect updates the local branch by fast-forward only.
@@ -62,13 +62,30 @@ A workspace whose lock names a run that no record here knows was claimed from an
 | ----- | ------- | ---- |
 | `starting` | the runner is preparing the checkout | wait |
 | `running` | a phase session is live; `phase` names it | `wait`, `logs --follow` |
-| `done` | every phase ended with a successful result | collect |
+| `done` | every phase ended with a successful result | collect, or resume for more work |
 | `failed` | a phase ended in error or timed out; `reason` says which | read `logs`, then resume or collect |
 | `stopped` | `stop` or a signal ended it | resume or collect |
 | `lost` | the unit is gone without recording an end: the VM restarted, or the runner was killed | resume or collect |
 
 Per phase, `status.json` records `session.{phase}` (the Claude Code session id), `exit.{phase}`, `head.{phase}`, `completed.{phase}`, and `dirty.{phase}` when the session left uncommitted work (its diff is saved as `uncommitted-{phase}.patch`).
-Resume continues the recorded session of the phase that ended, with its working tree untouched, then runs the remaining phases fresh.
+
+## Rounds
+
+Dispatch is round 1; every `resume` is another round of the same run, recorded under `rounds` in the run record, and any run that is not running can have one.
+A round starts at a point, then runs the phases after it: a phase's recorded session continued (`--continue`; by default the phase that ended, or a finished run's last phase with a session) or a phase started fresh (`--from`).
+`--prompt` adds an instruction to the first session, and `--phases` replaces the phase list.
+Every round refreshes the plugin, runner, and contract in the run directory, so fixes made here since dispatch apply.
+
+| The run is | The round runs | Code and plan files |
+| ---------- | -------------- | ------------------- |
+| uncollected (`dispatched`) | in place, on its workspace | the workspace's checkout and plan directory as they are, uncommitted work included |
+| collected or released | restored: on its workspace when its lock is free, otherwise `--workspace` or any free one | this machine's branch (committed, as at dispatch) and plan directory; a continued session keeps the workspace's tree when it already stands on that commit |
+
+A restored round continues a session from the workspace's own transcript, or the one collect brought home; with neither it refuses and names `--from`.
+On another workspace, the run's logs and state go with it, so its history continues there.
+Before the new unit starts, `runner.sh queued` marks the round `starting`, so no one reads the last round's ending as this round's.
+Each phase log keeps every session the phase had, and a session's outcome is read only from where its own stream starts.
+An earlier session's `uncommitted-{phase}.patch` moves to `history/` when the phase runs again; a continued session whose tree no longer holds that work is told where its diff is.
 
 ## Desktop view
 

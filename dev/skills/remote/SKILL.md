@@ -24,7 +24,8 @@ Dispatching `ship` or `ship-quick` (ship in quick mode) is a request to ship, pu
 | accepted review fixes are scoped on `scope`'s small path | Dispatch with `build,ship-quick` |
 | "status", "how is it going", "logs" | Follow |
 | "collect", "bring it back", a finished run | Collect and publish |
-| "resume", "stop", "release" | the matching command on the named run |
+| "resume", "continue", "rerun ship", "restart from build", more work on a run, collected or not | Resume |
+| "stop", "release" | the matching command on the named run |
 
 ## Dispatch
 
@@ -51,6 +52,19 @@ Up to one run per workspace runs at a time; dispatching several plans in a row f
 - `{remote} logs {run} --tail 60` renders the current phase's session; `--follow` streams it; `--raw` gives the stream-json lines.
 - An idle time far above the phase's usual pace, with the same last event, is a stall: read the logs before acting.
   `stop` then `resume` continues the same session with its working tree intact.
+
+## Resume
+
+Any run that is not running resumes, collected or not; each resume is a new round of the same run.
+
+- `{remote} resume {run}` continues the phase that ended (the one that failed or stopped, or a finished run's last phase) in that phase's own session.
+- `--continue {phase}` continues another phase's session; `--from {phase}` starts that phase fresh; the phases after it run next either way.
+- `--prompt "..."` adds an instruction to that first session: the CI failure to fix, the review point to address, the work left unfinished.
+- `--phases` replaces the phase list the round runs through.
+
+An uncollected run resumes in place, working tree intact; a collected or released run is restored from this machine's branch and plan files, on its workspace when free, otherwise another.
+A refusal names its fix (`stop` a live run, `--from` when a session has no transcript); never work around it.
+Report the round, how it ran (in place or restored), the workspace, and the point, then continue as Dispatch step 5.
 
 ## Collect and publish
 

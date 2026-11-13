@@ -86,6 +86,11 @@ PLUGINS = {
                 "Scope, build, and ship one task with no questions",
                 "Use $dev:yolo to take this task from spec to an open pull request without asking me anything.",
             ),
+            "remote": (
+                "Remote",
+                "Build and ship a plan in a remote sandbox",
+                "Use $dev:remote to dispatch this plan's build and ship to a sandbox workspace and collect the result.",
+            ),
             "reflect": (
                 "Reflect",
                 "Turn run friction into cited skill fixes",
@@ -100,23 +105,6 @@ PLUGINS = {
                 "To Quiz",
                 "Create a graded change comprehension quiz",
                 "Use $dev:to-quiz to create a comprehension check for the completed change.",
-            ),
-        },
-    ),
-    "factory": PluginConfig(
-        name="factory",
-        display_name="Factory",
-        short_description="Drive a declared pipeline of phases unattended.",
-        capabilities=("Interactive", "Write"),
-        default_prompts=(
-            "Take this request through scope, then run it unattended to a pull request.",
-        ),
-        copied_dirs=("skills", "phases", "references", "scripts"),
-        skill_ui={
-            "run": (
-                "Run",
-                "Take a request from scope to a shipped change unattended",
-                "Use $factory:run to drive the pipeline declared in .factory/config.yaml, or the built-in scope, scope-review, build, and ship, unattended.",
             ),
         },
     ),
@@ -302,10 +290,30 @@ def write(config: PluginConfig) -> None:
 def main() -> int:
     args = parse_args()
     selected = [PLUGINS[args.plugin]] if args.plugin else list(PLUGINS.values())
+    retired = []
+    distributions = ROOT / "plugins"
+    if distributions.is_dir():
+        for path in sorted(distributions.iterdir()):
+            readme = path / "README.md"
+            if (
+                path.is_dir()
+                and not path.is_symlink()
+                and path.name not in PLUGINS
+                and (path / ".codex-plugin" / "plugin.json").is_file()
+                and readme.is_file()
+                and f"Generated from `{path.name}/` by `scripts/build_codex_plugin.py`."
+                in readme.read_text(encoding="utf-8")
+            ):
+                retired.append(path)
     if args.check:
-        return max(check(config) for config in selected)
+        for path in retired:
+            print(f"retired: plugins/{path.name}; run scripts/build_codex_plugin.py")
+        return max([int(bool(retired))] + [check(config) for config in selected])
     for config in selected:
         write(config)
+    for path in retired:
+        shutil.rmtree(path)
+        print(f"Removed retired Codex plugin: {path}")
     return 0
 
 

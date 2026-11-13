@@ -2,8 +2,7 @@
 
 | Plugin | Use When | Tools |
 | ------ | -------- | ----- |
-| [dev](dev/) | A test-focused development workflow for Claude Code, Codex, opencode, and Pi. | `scope`, `scope-quick`, `scope-review`, `commit`, `build`, `ship`, `ship-quick`, `yolo`, `reflect`, `to-pitch`, `to-quiz` |
-| [factory](factory/) | Take a request from scope to a shipped pull request unattended, on Claude Code or Codex. | `run` |
+| [dev](dev/) | A test-focused development workflow for Claude Code, Codex, opencode, and Pi. | `scope`, `scope-quick`, `scope-review`, `commit`, `build`, `ship`, `ship-quick`, `yolo`, `remote`, `reflect`, `to-pitch`, `to-quiz` |
 | [bootstrap](bootstrap/) | Prepare any repository for agent work: probe its stack and write its root AGENTS.md from the workflow's SDLC lessons, on Claude Code or Codex. | `agents-md` |
 
 ## Claude Code
@@ -11,23 +10,21 @@
 ```bash
 /plugin marketplace add tobrun/workflow
 /plugin install dev@nurbot
-/plugin install factory@nurbot
 /plugin install bootstrap@nurbot
 ```
 
-Invoke skills as `/scope`, `/build`, and so on, or namespaced as `/dev:scope`; factory's skill is `/factory:run` and bootstrap's is `/bootstrap:agents-md`.
+Invoke skills as `/scope`, `/build`, and so on, or namespaced as `/dev:scope`; use `/dev:yolo` for an unattended scope-build-ship run and `/bootstrap:agents-md` to prepare a repository.
 
 ## Codex
 
 ```bash
 codex plugin marketplace add tobrun/workflow
 codex plugin add dev@nurbot
-codex plugin add factory@nurbot
 codex plugin add bootstrap@nurbot
 ```
 
-Invoke skills as `$dev:scope`, `$dev:build`, `$factory:run`, `$bootstrap:agents-md`, and so on.
-factory needs `agents.max_depth` of at least 2; see [factory/README.md](factory/README.md#install).
+Invoke skills as `$dev:scope`, `$dev:build`, `$dev:yolo`, `$bootstrap:agents-md`, and so on.
+`dev:yolo` replaces the retired Factory plugin as the unattended development workflow.
 The distribution is explicit-invocation only.
 The checked-in Codex packages under `plugins/` are generated from each source plugin:
 

@@ -1,6 +1,0 @@
-interface:
-  display_name: "Run"
-  short_description: "Take a request from scope to a shipped change unattended"
-  default_prompt: "Use $factory:run to drive the pipeline declared in .factory/config.yaml, or the built-in scope, scope-review, build, and ship, unattended."
-policy:
-  allow_implicit_invocation: false

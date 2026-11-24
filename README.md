@@ -17,7 +17,7 @@ Pick the line for your harness. Each installs the same six skills.
 | Claude Code (plugin) | `/plugin marketplace add tobrun/workflow` then `/plugin install dev@nurbot` | `/dev:scope`, `/dev:yolo`, ... |
 | Codex (plugin) | `codex plugin marketplace add tobrun/workflow` then `codex plugin add dev@nurbot` | `$dev:scope`, `$dev:yolo`, ... |
 | Any Agent Skills harness | `npx skills add tobrun/workflow --skill '*' -a claude-code -a codex -a cursor -a opencode` | ask for the skill by name |
-| GitHub CLI | `gh skill install tobrun/workflow <skill> --agent <harness>`, once per skill, pinned with `--pin <sha>` | ask for the skill by name |
+| GitHub CLI | `gh skill install tobrun/workflow --all --agent <harness>`, pinned with `--pin <tag or sha>` | ask for the skill by name |
 | Pi | `pi install git:github.com/tobrun/workflow` | `/skill:scope`, ... |
 | By hand | copy the folders under [skills/](skills/) into `.agents/skills/` (Codex, Copilot, Cursor, OpenCode, Amp, Antigravity) or `.claude/skills/` (Claude Code) | ask for the skill by name |
 

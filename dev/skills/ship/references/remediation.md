@@ -34,7 +34,7 @@ A re-run of `ship` after the human call starts a fresh budget.
 - Fix the root cause the scenario names, never the symptom the lens observed; a fix that only makes the triggering scenario pass is a suppression.
 - Add the test that reproduces the triggering scenario at its right layer, seen red before the fix and green after; a blocker with no test guarding it is not fixed.
 - Stay inside the blocker's area: no refactors, no touching findings another agent owns, no concerns or nits.
-- Never delete or weaken a test or a check to make the blocker moot; never edit `docs/decisions.md`.
+- Never delete or weaken a test or a check to make the blocker moot; never edit `docs/decisions.md`, and never loosen `docs/architecture.toml`, edit a generated file under `.arch/`, or add a baseline entry.
 - A blocker that cannot be fixed without changing specced behavior, or a settled decision is marked `escalated` in the agent's result and left alone; escalations go straight to the real-blocker list without spending the second round.
 
 ## Real blockers

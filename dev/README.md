@@ -12,6 +12,7 @@ Skills are explicitly invoked and recommend the next step; only `yolo` follows s
 | [build](skills/build/SKILL.md) | A spec is ready to implement. | Code, tests, runner receipts, incremental notes, and actual application evidence. |
 | [ship](skills/ship/SKILL.md) | A change needs hardening, independent review, and an authorized PR. | Required checks, verified findings with explicit completeness, and current evidence. |
 | [yolo](skills/yolo/SKILL.md) | One task should run unattended. | The full scope/build/ship contracts, recorded assumptions, and a PR or local handoff within available authority. |
+| [bootstrap](skills/bootstrap/SKILL.md) | A repository's architecture should be enforced, not described: once per repository. | `docs/architecture.toml`, generated boundary, banned-API, and dependency checks that a red team proved fire, a shrinking baseline, and a CI job. |
 | [commit](skills/commit/SKILL.md) | Requested work is ready for local commits. | Atomic commits with what/why messages; a push only when requested. |
 
 ## Shared contracts
@@ -25,6 +26,7 @@ Skills are explicitly invoked and recommend the next step; only `yolo` follows s
   Missing or invalid results yield INCOMPLETE, not approval; useful findings remain visible.
 - [Decision ledger](references/decision-ledger.md) records choices and rationale.
   A missing overview does not turn a small task into whole-system documentation work.
+- [Architecture enforcement](references/architecture.md) turns structural decisions into generated checks from one human-owned file; agents may tighten rules, only the user loosens them.
 - [CI parity](references/ci-parity.md) keeps every existing required repository check mandatory at the change's impact, with full PR follow-through when publication is authorized.
   Share only when requested; evidence records the actual capture and tested sources.
 
@@ -66,7 +68,7 @@ done
 ln -sfn "$PWD/dev/references" ~/.config/opencode/references
 ```
 
-The last symlink keeps the shared references (`decision-ledger.md`, `plan-layout.md`) reachable through the `../../references/` links inside the skills.
+The last symlink keeps the shared references (`decision-ledger.md`, `architecture.md`, `plan-layout.md`) reachable through the `../../references/` links inside the skills.
 Symlinks mean a `git pull` updates the skills in place; restart opencode afterwards, since skills load at startup.
 The symlinks point at the clone, so keep it in place; if you move it, rerun the commands from the new location.
 
@@ -82,7 +84,8 @@ Preserve the explicit-invocation policy with a permission rule in `~/.config/ope
       "commit": "ask",
       "build": "ask",
       "ship": "ask",
-      "yolo": "ask"
+      "yolo": "ask",
+      "bootstrap": "ask"
     }
   }
 }

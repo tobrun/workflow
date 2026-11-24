@@ -32,6 +32,7 @@ Rate exploitability in this codebase, not theoretical severity.
 ## architecture
 
 Module boundaries, layering, dependency direction, abstraction quality, coupling introduced by the diff.
+When the repository keeps `docs/architecture.toml`, run `python3 .arch/arch.py run --base {default branch}` first: every failure is a BLOCK carrying the rule's own remediation, and so is a loosening of the file (per [../../../references/architecture.md](../../../references/architecture.md)) that no user decision in the spec or ledger approves. Then judge what no rule encodes; a recurring finding of that kind is a candidate rule, named as such.
 Judge coherence against the patterns already established in the surrounding code; deviation from an established convention is a finding, personal style preference is not.
 
 ## tests

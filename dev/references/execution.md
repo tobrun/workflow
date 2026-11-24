@@ -22,6 +22,7 @@ Do not create a separate approval checklist.
 Unattended execution chooses implementation details within the task.
 It does not grant itself new permissions or change a recorded decision, threshold, boundary guarantee, or requested scope to clear a blocker.
 Report an unresolved requirement as an open call and keep the deliverable local or draft as appropriate.
+Architecture rules in `docs/architecture.toml` follow the same asymmetry: adding or tightening a rule is within the task, while loosening one - a removed rule, a new edge, a wider exception, a grown baseline - needs the user.
 
 ## Durable records
 

@@ -66,6 +66,11 @@ PLUGINS = {
                 "Harden, review, then open a PR with proof",
                 "Use $dev:ship to run the quality gauntlet, the verified review, and open the pull request with evidence for this change.",
             ),
+            "bootstrap": (
+                "Bootstrap",
+                "Enforce the architecture from one file",
+                "Use $dev:bootstrap to infer this repository's architecture, write docs/architecture.toml, and wire the generated checks into CI.",
+            ),
             "yolo": (
                 "Yolo",
                 "Scope, build, and ship one task with no questions",

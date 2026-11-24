@@ -43,6 +43,9 @@ Each decision gets a stable `D-` slug, is phrased as a question ending in an `[i
 Write it as `[open]` when you find it and settle it in the file under the confidence rule above, highest impact first; `⚑` marks a line waiting on the user.
 When you do ask about a taste-driven choice, sketch the alternatives concretely instead of describing them.
 
+A decision about structure - which module may depend on which, a public entry point, a banned API, a dependency policy - lands on the strongest level of the ladder in [../../references/architecture.md](../../references/architecture.md) that can hold it.
+When the repository keeps `docs/architecture.toml` and the decision lands on a rule, the change plan edits that file (with fixtures for a banned API), runs `python3 .arch/arch.py generate`, and gives the decision an `enforced by:` line; loosening a rule is a scope change the user resolves.
+
 Argue each decision on its merits before reading `docs/decisions.md`, then compare: a collision with a recorded entry is raised with the user and marked `⚑` until resolved, never silently overridden.
 
 ## 3. Write the spec

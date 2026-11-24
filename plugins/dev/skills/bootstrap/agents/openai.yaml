@@ -1,0 +1,6 @@
+interface:
+  display_name: "Bootstrap"
+  short_description: "Enforce the architecture from one file"
+  default_prompt: "Use $dev:bootstrap to infer this repository's architecture, write docs/architecture.toml, and wire the generated checks into CI."
+policy:
+  allow_implicit_invocation: false

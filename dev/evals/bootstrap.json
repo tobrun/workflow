@@ -1,0 +1,41 @@
+{
+  "skill": "bootstrap",
+  "mode": "comprehension",
+  "evals": [
+    {
+      "id": "bootstrap-ladder-and-baseline",
+      "prompt": "Answer briefly, from the skill text and architecture.md only. A Python repository has no architecture file. arch.py infer shows ui -> service 40 imports, service -> domain 25, and domain -> ui 2. (1) What is the first decision, and how is it recorded? (2) What happens to the domain -> ui edge? (3) A decision says the auth module may be imported only through providers. How is that enforced, and what line does the decision carry? (4) The red team prints GREEN for one rule. What do you do?",
+      "fixture": "none - the answers come from the skill text",
+      "assertions": [
+        "Answer 1: the shape (fixed layers, hexagonal, vertical slices, or a process split), argued as a D- decision with alternatives in docs/decisions.md",
+        "Answer 2: it becomes a [[baseline]] entry, not an allowed edge, because it is the rare edge against the shape; the user is asked about it, and the baseline only shrinks",
+        "Answer 3: [providers] lists auth as a concern, so only the providers module may depend on it, and the decision carries an enforced by: line naming providers (and the boundary rules)",
+        "Answer 4: the rule enforces nothing; fix the rule or the tool setup until it fires, never accept it"
+      ]
+    },
+    {
+      "id": "bootstrap-who-loosens",
+      "prompt": "Answer briefly, from the skill text, architecture.md, and execution.md only. (1) During ship, a fix agent could clear a blocker by adding a baseline entry. May it? (2) A build agent wants to add a new banned API rule. May it? (3) A teammate edits .arch/importlinter.ini by hand. What happens? (4) Where is the architecture authoritative, and what command runs there?",
+      "fixture": "none - the answers come from the skill text",
+      "assertions": [
+        "Answer 1: no - a grown baseline is a loosening, which needs the user; arch.py check --base fails on it",
+        "Answer 2: yes - adding or tightening a rule is within the task",
+        "Answer 3: arch.py check fails: generated files are never edited, change docs/architecture.toml and run arch.py generate",
+        "Answer 4: CI, running python3 .arch/arch.py run --base origin/{default branch} for every change"
+      ]
+    },
+    {
+      "id": "bootstrap-existing-tools",
+      "prompt": "Set up architecture enforcement for this repository.",
+      "fixture": "a TypeScript repository with an .eslintrc using eslint-plugin-boundaries, src/{domain,service,ui}, and a GitHub Actions pull-request workflow",
+      "assertions": [
+        "arch.py infer runs over src with the language typescript before any rule is written",
+        "The existing eslint-plugin-boundaries rules are carried into docs/architecture.toml and the report says the generated dependency-cruiser config supersedes them, rather than running both",
+        "Every rule cites a D- decision that lists it on an enforced by: line, and arch.py validate exits clean",
+        "dependency-cruiser and typescript are installed as pinned dev dependencies, and arch.py redteam reports every rule firing",
+        "The pull-request workflow gains a job running python3 .arch/arch.py run --base origin/main",
+        "No source file is restructured; a package split appears only as a recommended decision"
+      ]
+    }
+  ]
+}

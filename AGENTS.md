@@ -46,6 +46,7 @@ inline in one session.
 ## Key Rules
 
 - All changes must pass `scripts/validate.sh` before committing.
+- Commit finished work directly on `main` and push it to `origin/main` without asking; do not create branches or pull requests.
 - Every plugin directory name must match its `plugin.json` name and marketplace entry name.
 - Every `SKILL.md` must have YAML frontmatter with `name` and `description`.
 - Every `SKILL.md` must set `disable-model-invocation: true`; all skills in this repo are human-triggered only, and skills recommend the next step instead of invoking each other. The dev `yolo` skill reads the sibling scope, build, and ship bodies by path and follows them inline in one session; it launches nothing.

@@ -1,63 +1,49 @@
-## Plugins
+## Skills
 
-| Plugin | Use When | Tools |
-| ------ | -------- | ----- |
-| [dev](dev/) | A test-focused development workflow for Claude Code, Codex, opencode, and Pi. | `scope`, `commit`, `build`, `ship`, `yolo`, `bootstrap` |
+| Plugin | Use when | Skills |
+| ------ | -------- | ------ |
+| [dev](dev/) | A test-focused development workflow, from a spec to a verified pull request. | `scope`, `build`, `ship`, `commit`, `yolo`, `bootstrap` |
 
-## Claude Code
+The skills follow the [Agent Skills](https://agentskills.io) standard, so any harness that reads `SKILL.md` folders can run them: Claude Code, Codex, GitHub Copilot, Cursor, OpenCode, Amp, Antigravity, Pi, and more.
+Install the whole set: `yolo` follows `scope`, `build`, and `ship` from the folders beside it.
+Every skill is explicit-invocation only - ask for it by name; each one recommends the next instead of running it.
 
-```bash
-/plugin marketplace add tobrun/workflow
-/plugin install dev@nurbot
-```
+## Install
 
-Invoke skills as `/scope`, `/build`, and so on, or namespaced as `/dev:scope`; use `/dev:yolo` for an unattended scope-build-ship run and `/dev:bootstrap` to set up a repository's architecture checks and CI evidence.
+Pick the line for your harness. Each installs the same six skills.
 
-## Codex
+| Harness | Install | Invoke |
+| --- | --- | --- |
+| Claude Code (plugin) | `/plugin marketplace add tobrun/workflow` then `/plugin install dev@nurbot` | `/dev:scope`, `/dev:yolo`, ... |
+| Codex (plugin) | `codex plugin marketplace add tobrun/workflow` then `codex plugin add dev@nurbot` | `$dev:scope`, `$dev:yolo`, ... |
+| Any Agent Skills harness | `npx skills add tobrun/workflow --skill '*' -a claude-code -a codex -a cursor -a opencode` | ask for the skill by name |
+| GitHub CLI | `gh skill install tobrun/workflow <skill> --agent <harness>`, once per skill, pinned with `--pin <sha>` | ask for the skill by name |
+| Pi | `pi install git:github.com/tobrun/workflow` | `/skill:scope`, ... |
+| By hand | copy the folders under [skills/](skills/) into `.agents/skills/` (Codex, Copilot, Cursor, OpenCode, Amp, Antigravity) or `.claude/skills/` (Claude Code) | ask for the skill by name |
 
-```bash
-codex plugin marketplace add tobrun/workflow
-codex plugin add dev@nurbot
-```
+`npx skills` keeps one copy in `.agents/skills/`, links it into each harness's own folder, and records the install in `skills-lock.json`; `npx skills update` refreshes it.
+`-g` installs for your user instead of the project.
 
-Invoke skills as `$dev:scope`, `$dev:build`, `$dev:yolo`, `$dev:bootstrap`, and so on.
-`dev:yolo` replaces the retired Factory plugin as the unattended development workflow.
-The distribution is explicit-invocation only.
-The checked-in Codex packages under `plugins/` are generated from each source plugin:
+Skills that are not invoked never help: in a project that uses them, add one line to its AGENTS.md naming when to reach for each, such as "Plan changes with the scope skill, then build and ship".
 
-```bash
-python3 scripts/build_codex_plugin.py
-```
+### Keeping them manual
 
-## opencode
+The Claude Code plugin marks every skill `disable-model-invocation: true`, and the Codex plugin sets `allow_implicit_invocation: false`.
+The portable copies keep to the six standard frontmatter fields, so other harnesses decide invocation themselves: in OpenCode, add a `permission.skill` rule set to `ask` (see [dev/README.md](dev/README.md#opencode-installation)); elsewhere, invoke them by name.
 
-opencode reads the Claude-format source skills directly.
-Clone the repository anywhere and, from its root, symlink the skills into opencode's global skill directory:
+### Review agents
 
-```bash
-git clone https://github.com/tobrun/workflow
-cd workflow
-mkdir -p ~/.config/opencode/skills
-for skill in "$PWD"/dev/skills/*/; do
-  ln -sfn "${skill%/}" ~/.config/opencode/skills/"$(basename "$skill")"
-done
-ln -sfn "$PWD/dev/references" ~/.config/opencode/references
-```
+`ship`'s review panel runs on the harness's own subagents (Claude Code, Codex, OpenCode, Copilot); on Pi it launches isolated `pi --print` processes in parallel.
 
-Ask the agent for a skill by name, for example "run the scope skill".
-Add a `permission.skill` rule set to `ask` to keep the skills human-triggered;
-see [dev/README.md](dev/README.md#opencode-installation) for the full setup.
+## Layout
 
-## Pi
+- `dev/` is the source and the Claude Code plugin: `dev/skills/`, plus the references and scripts several skills share.
+- `skills/` is the portable tree, generated: each skill self-contained, with the shared files it uses copied in. `npx skills`, `gh skill`, Pi, and hand copies install from here.
+- `.codex-plugin/plugin.json` makes the repository root the Codex plugin; it installs `skills/`, whose folders carry each skill's `agents/openai.yaml`.
+
+There is one copy of each skill outside `dev/`, so installers never find a skill twice; `dev/skills/` is the Claude Code plugin, which alone can mark its skills manual-only.
 
 ```bash
-pi install git:github.com/tobrun/workflow
+python3 scripts/build_distributions.py         # regenerate skills/ and .codex-plugin/
+python3 scripts/check_skills.py skills          # the Agent Skills spec, and self-containment
 ```
-
-Invoke skills as `/skill:scope`, `/skill:build`, and so on. Pi consumes
-`dev/skills/` directly through the root `package.json`; no generated Pi copy is
-needed.
-
-`ship` preserves its independent-agent review panel on Pi by launching isolated
-`pi --print` processes in parallel. Claude Code, Codex, and opencode continue
-to use their native subagent facilities.

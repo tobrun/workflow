@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from scripts import build_codex_plugin as generator
+from scripts import build_distributions as generator
 
 
 class RetiredDistributionTests(unittest.TestCase):
@@ -29,7 +29,7 @@ class RetiredDistributionTests(unittest.TestCase):
             patch.object(generator, "ROOT", self.root),
             patch.object(generator, "PLUGINS", {}),
             patch.object(generator, "parse_args",
-                         return_value=argparse.Namespace(check=check, plugin=None)),
+                         return_value=argparse.Namespace(check=check)),
             redirect_stdout(io.StringIO()) as output,
         ):
             status = generator.main()

@@ -477,14 +477,14 @@ for path in paths:
 }
 
 # ===========================================================================
-# C01: Generated Codex distributions are current and structurally valid
+# C01: Generated distributions (skills/, plugins/) are current and structurally valid
 # ===========================================================================
 check_codex() {
   local marketplace=".agents/plugins/marketplace.json"
 
-  if ! python3 scripts/build_codex_plugin.py --check >/dev/null 2>&1; then
-    fail "C01" "plugins" \
-      "Generated Codex plugins are stale; run python3 scripts/build_codex_plugin.py"
+  if ! python3 scripts/build_distributions.py --check >/dev/null 2>&1; then
+    fail "C01" "skills, .codex-plugin" \
+      "Generated distributions are stale; run python3 scripts/build_distributions.py"
   fi
 
   if ! jq -e '.name == "nurbot" and (.plugins | length > 0)' \
@@ -501,16 +501,18 @@ check_codex() {
       "Codex plugin names ($(echo $codex_names)) != Claude plugin names ($(echo $claude_names))"
   fi
 
+  # One plugin, installed from the repository root: its manifest is .codex-plugin/
+  # and its skills are the portable tree, so installers find each skill once.
   local name
   while IFS= read -r name; do
     [ -z "$name" ] && continue
-    local plugin="plugins/$name"
-    local manifest="$plugin/.codex-plugin/plugin.json"
+    local plugin="."
+    local manifest=".codex-plugin/plugin.json"
 
     if ! jq -e --arg name "$name" '
       .plugins[] | select(.name == $name) |
       .source.source == "local" and
-      .source.path == ("./plugins/" + $name) and
+      .source.path == "./" and
       .policy.installation == "AVAILABLE" and
       .policy.authentication == "ON_INSTALL" and
       (.category | length > 0)
@@ -518,9 +520,8 @@ check_codex() {
       fail "C01" "$marketplace" "Invalid Codex marketplace entry '$name'"
     fi
 
-    if [ ! -d "$plugin" ]; then
-      fail "C01" "$plugin" "Generated Codex plugin directory not found"
-      continue
+    if [ -d plugins ]; then
+      fail "C01" "plugins" "Retired: Codex installs from skills/ now; run python3 scripts/build_distributions.py"
     fi
 
     if ! jq -e --arg name "$name" '
@@ -540,7 +541,7 @@ check_codex() {
       fail "C01" "$manifest" "Invalid Codex plugin manifest"
     fi
 
-    for skilldir in "$plugin"/skills/*/; do
+    for skilldir in skills/*/; do
       [ ! -d "$skilldir" ] && continue
       local skill_name
       skill_name=$(basename "${skilldir%/}")
@@ -580,25 +581,11 @@ check_pi() {
     .name == "@tobrun/dev-workflow" and
     (.version | test("^[0-9]+\\.[0-9]+\\.[0-9]+([+-][0-9A-Za-z.-]+)?$")) and
     (.keywords | index("pi-package")) and
-    .files == ["dev/skills", "dev/references", "dev/scripts", "README.md"] and
-    .pi.skills == ["./dev/skills"]
+    .files == ["skills", "README.md"] and
+    .pi.skills == ["./skills"]
   ' "$package" >/dev/null 2>&1; then
     fail "P01" "$package" "Invalid Pi package manifest"
   fi
-
-  # Skills reach the plugin's shared scripts as {skill-root}/../../scripts/X;
-  # each one must exist and sit under a path the package ships.
-  local script
-  while IFS= read -r script; do
-    if [ ! -f "dev/$script" ]; then
-      fail "P01" "dev/$script" "Referenced by a dev skill but missing"
-    elif ! jq -e --arg path "dev/$script" \
-      'any(.files[]; . as $f | $path | startswith($f + "/"))' \
-      "$package" >/dev/null 2>&1; then
-      fail "P01" "$package" "dev/$script is referenced by a dev skill but not shipped in files"
-    fi
-  done < <(grep -rhoE '\.\./\.\./scripts/[A-Za-z0-9_.-]+' dev/skills dev/references \
-    | sed 's#^\.\./\.\./##' | sort -u)
 
   package_version=$(jq -r '.version // empty' "$package" 2>/dev/null || true)
   plugin_version=$(jq -r '.version // empty' \
@@ -626,6 +613,21 @@ check_pi() {
     fail "P01" "dev/skills/ship/references/orchestration.md" \
       "Missing Pi subprocess transport"
   fi
+}
+
+# ===========================================================================
+# S01: the portable skills follow the Agent Skills spec and are self-contained
+# ===========================================================================
+check_portable_skills() {
+  local tree
+  for tree in skills; do
+    if [ ! -d "$tree" ]; then
+      fail "S01" "$tree" "Missing; run python3 scripts/build_distributions.py"
+    elif ! python3 scripts/check_skills.py "$tree" >"$LOG_DIR/portable-skills.log" 2>&1; then
+      cat "$LOG_DIR/portable-skills.log" >&2
+      fail "S01" "$tree" "Portable skills break the Agent Skills spec or link outside their folder; run python3 scripts/check_skills.py $tree"
+    fi
+  done
 }
 
 # ===========================================================================
@@ -673,6 +675,7 @@ check_skill_length
 check_links
 check_codex
 check_pi
+check_portable_skills
 check_dev_script
 
 if [ -s "$ERROR_FILE" ]; then

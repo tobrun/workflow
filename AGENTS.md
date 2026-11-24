@@ -34,12 +34,13 @@ inline in one session.
 │       └── {skill-name}/
 │           ├── SKILL.md    # Skill definition with YAML frontmatter
 │           └── references/ # Deep-dive docs loaded on demand
-├── plugins/
-│   └── {plugin-name}/      # Generated Codex distribution
+├── skills/                 # Generated portable Agent Skills tree; Codex, npx skills, gh skill, Pi install it
+├── .codex-plugin/          # Generated Codex manifest, pointing at skills/
 ├── tools/harden/           # Optional local hardening analyses
 ├── package.json             # Pi package manifest (dev only)
 └── scripts/
-    ├── build_codex_plugin.py
+    ├── build_distributions.py
+    ├── check_skills.py
     ├── test_pi_runner.sh
     └── validate.sh
 ```
@@ -52,10 +53,16 @@ inline in one session.
 - Every `SKILL.md` must have YAML frontmatter with `name` and `description`.
 - Every `SKILL.md` must set `disable-model-invocation: true`; all skills in this repo are human-triggered only, and skills recommend the next step instead of invoking each other. The dev `yolo` skill reads the sibling scope, build, and ship bodies by path and follows them inline in one session; it launches nothing.
 - Plan files under `.dev/` are never committed.
-- Do not edit `plugins/` directly. Run `python3 scripts/build_codex_plugin.py`
-  after changing any source plugin; the generator builds every configured
-  plugin, removes Claude-only frontmatter, and writes Codex
-  `agents/openai.yaml` invocation policy. It never copies `evals/`.
+- Author skills only in `dev/`. Never edit `skills/` or `.codex-plugin/`; run
+  `python3 scripts/build_distributions.py` after any change under `dev/`. It writes
+  the portable tree - spec-only frontmatter, the shared references and scripts each
+  skill uses copied into it, links rewritten - plus the Codex `agents/openai.yaml`
+  sidecars and manifest. It never copies `evals/`.
+- Portable skills must pass `python3 scripts/check_skills.py skills`: the Agent Skills
+  frontmatter fields only, and every link inside the skill or a sibling skill. Write
+  harness-neutral prose ("read the file", "run the script"), never a harness's tool names.
+- Keep one copy of each skill outside `dev/`: an installer that scans the repository
+  refuses a skill it finds twice.
 - Keep the root Pi package version equal to `dev/.claude-plugin/plugin.json`.
 - Preserve native subagent behavior in `ship`; Pi-specific orchestration
   belongs in its subprocess transport and bundled runner.
@@ -68,7 +75,8 @@ inline in one session.
 ## Key Commands
 
 - `scripts/validate.sh` - Validate the entire repository structure.
-- `python3 scripts/build_codex_plugin.py [--check] [--plugin dev]` - Regenerate or check the Codex distributions.
+- `python3 scripts/build_distributions.py [--check]` - Regenerate or check `skills/` and `.codex-plugin/`.
+- `npx skills add . --skill '*' -a codex -a claude-code` (in a scratch project) - Install the portable set as users do.
 - Codex testing: `codex plugin marketplace add .` then
   `codex plugin add {name}@nurbot`.
 - Pi testing: `pi install .` then `pi list`.

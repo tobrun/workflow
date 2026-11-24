@@ -36,44 +36,22 @@ Quick modes retain the same authority and evidence rules while reducing review m
 Supplementary hardening analyses need meaningful changed-code targets, and skips are reported as skips.
 Mutation testing retains the configured, focused survivor-triage policy; a kill-rate score is not a ship gate.
 
-## Claude Code installation
+## Installation
 
-```bash
-/plugin marketplace add tobrun/workflow
-/plugin install dev@nurbot
-```
-
-Invoke skills as `/scope`, `/build`, and so on.
-
-## Codex installation
-
-```bash
-codex plugin marketplace add tobrun/workflow
-codex plugin add dev@nurbot
-```
-
-Invoke skills as `$dev:scope`, `$dev:build`, and so on.
+See the [repository README](../README.md#install) for every harness: the Claude Code and Codex plugins, `npx skills`, `gh skill`, Pi, and a copy by hand.
+This folder is the source and the Claude Code plugin; the portable copies under [`skills/`](../skills/) are generated from it, each skill self-contained.
 
 ## opencode installation
 
-opencode reads Claude-format `SKILL.md` files natively, so no generated distribution is needed.
-Clone this repository anywhere and, from its root, symlink the source skills into opencode's global skill directory:
+opencode reads Agent Skills from `.agents/skills/`, `.claude/skills/`, and `~/.config/opencode/skills/`, so install the portable set into any of them:
 
 ```bash
-git clone https://github.com/tobrun/workflow
-cd workflow
-mkdir -p ~/.config/opencode/skills
-for skill in "$PWD"/dev/skills/*/; do
-  ln -sfn "${skill%/}" ~/.config/opencode/skills/"$(basename "$skill")"
-done
-ln -sfn "$PWD/dev/references" ~/.config/opencode/references
+npx skills add tobrun/workflow --skill '*' -a opencode        # this project
+npx skills add tobrun/workflow --skill '*' -a opencode -g     # every project
 ```
 
-The last symlink keeps the shared references (`decision-ledger.md`, `architecture.md`, `plan-layout.md`) reachable through the `../../references/` links inside the skills.
-Symlinks mean a `git pull` updates the skills in place; restart opencode afterwards, since skills load at startup.
-The symlinks point at the clone, so keep it in place; if you move it, rerun the commands from the new location.
-
-opencode has no `disable-model-invocation` field (it is ignored harmlessly); skills load through a model-invoked `skill` tool.
+Restart opencode after installing or updating, since skills load at startup.
+opencode skills load through a model-invoked `skill` tool, and the portable copies carry no Claude invocation field.
 Preserve the explicit-invocation policy with a permission rule in `~/.config/opencode/opencode.json`:
 
 ```json
@@ -103,7 +81,7 @@ pi install git:github.com/tobrun/workflow
 ```
 
 Invoke skills as `/skill:scope`, `/skill:build`, and so on. Pi loads the
-source skills directly. A `ship` review phase starts multiple model processes,
+portable skills under `skills/` through the root `package.json`. A `ship` review phase starts multiple model processes,
 one per selected lens and then one per non-trivial finding verifier, so its
 model usage scales with the panel size.
 

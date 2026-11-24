@@ -8,7 +8,7 @@
       "name": "dev",
       "source": {
         "source": "local",
-        "path": "./plugins/dev"
+        "path": "./"
       },
       "policy": {
         "installation": "AVAILABLE",

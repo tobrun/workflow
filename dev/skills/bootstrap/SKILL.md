@@ -62,7 +62,7 @@ Every rule cites its decision, every `enforced by:` id exists, and `arch.py vali
 Pull requests carry two kinds of verification text: what the agent claims, and what CI measured at the head commit, which the agent cannot write. The second comes from `ci-evidence.py`:
 
 1. Copy `{bootstrap-skill-root}/../../scripts/ci-evidence.py` to `.verify/ci-evidence.py`.
-2. Write `.github/workflows/verify.yml` from [templates/verify.yml](templates/verify.yml), filling each `<<fill: ...>>` from the repository's existing CI: the toolchain setup, a test command that writes JUnit XML and a coverage report (Cobertura, LCOV, JaCoCo, or a Go profile), and a revert command that runs only the given test files.
+2. Write `.github/workflows/verify.yml` from [assets/verify.yml](assets/verify.yml), filling each `<<fill: ...>>` from the repository's existing CI: the toolchain setup, a test command that writes JUnit XML and a coverage report (Cobertura, LCOV, JaCoCo, or a Go profile), and a revert command that runs only the given test files.
 3. Prove it before committing: on a branch with a changed test, run `python3 .verify/ci-evidence.py collect --base origin/{default branch} --junit ... --coverage ... --revert-cmd ... --out /tmp/ci-evidence` with the same commands and read the block it writes. A row reading `not run` or `no report` is a setup gap to close, not a result.
 4. On a host other than GitHub, wire the same four steps (pending, test, collect, publish) into its pipeline; `publish --body-file` writes the block into a body file for any tool that edits PR descriptions.
 

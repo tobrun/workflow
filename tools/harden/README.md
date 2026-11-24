@@ -26,7 +26,7 @@ needs the suite run first:
 
 ```bash
 tools/harden/coverage_run.sh /tmp/coverage.json -- discover -s dev/evals/tests -t .
-uvx radon cc -j dev bootstrap scripts > /tmp/radon.json
+uvx radon cc -j dev scripts > /tmp/radon.json
 python3 tools/harden/complexity_coverage.py /tmp/radon.json /tmp/coverage.json --threshold 10
 ```
 

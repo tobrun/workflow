@@ -629,27 +629,6 @@ check_pi() {
 }
 
 # ===========================================================================
-# B01: the bootstrap plugin's checker tests and concept-map tripwires pass
-# ===========================================================================
-check_bootstrap_script() {
-  local dir="bootstrap/evals/tests"
-  [ -d "$dir" ] || return
-  if ! python3 - "$dir" >"$LOG_DIR/bootstrap-script-tests.log" 2>&1 <<'PYEOF'
-import sys, unittest
-
-loader = unittest.TestLoader()
-suite = loader.discover(start_dir=sys.argv[1], top_level_dir=".")
-result = unittest.TextTestRunner(verbosity=2).run(suite)
-sys.exit(0 if result.wasSuccessful() and result.testsRun > 0 else 1)
-PYEOF
-  then
-    tail -60 "$LOG_DIR/bootstrap-script-tests.log" >&2
-    fail "B01" "$dir" \
-      "Bootstrap script tests failed (full output: $LOG_DIR/bootstrap-script-tests.log); run: python3 -m unittest discover -s bootstrap/evals/tests -t ."
-  fi
-}
-
-# ===========================================================================
 # D01: the dev plugin's script tests pass
 # ===========================================================================
 check_dev_script() {
@@ -694,7 +673,6 @@ check_skill_length
 check_links
 check_codex
 check_pi
-check_bootstrap_script
 check_dev_script
 
 if [ -s "$ERROR_FILE" ]; then

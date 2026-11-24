@@ -8,9 +8,8 @@ This is a monorepo for Tobrun's Claude Code, Codex, and Pi skills. The root
 `.claude-plugin/marketplace.json` references the Claude source plugins.
 `.agents/plugins/marketplace.json` references generated Codex plugins under
 `plugins/`. The root `package.json` exposes the `dev` source skills as a Pi
-package. There are two plugins: `dev`, the hand-invoked development workflow;
-`bootstrap`, whose `agents-md` skill probes a consuming repository and writes
-its root AGENTS.md from the workflow's SDLC lessons. The `dev:bootstrap` skill sets up a
+package. There is one plugin, `dev`, the hand-invoked development workflow.
+The `dev:bootstrap` skill sets up a
 consuming repository's architecture enforcement from `docs/architecture.toml`
 with `dev/scripts/arch.py`. The `dev:yolo` skill is
 the unattended path: it reads scope, build, and ship by path and follows them
@@ -24,7 +23,7 @@ inline in one session.
 │   └── marketplace.json    # Marketplace manifest listing all plugins
 ├── .agents/plugins/
 │   └── marketplace.json    # Codex marketplace manifest
-├── {plugin-name}/          # Individual plugin directory (dev, bootstrap)
+├── {plugin-name}/          # Individual plugin directory (dev)
 │   ├── .claude-plugin/
 │   │   └── plugin.json     # Plugin metadata (name, version, author)
 │   ├── README.md           # Plugin documentation

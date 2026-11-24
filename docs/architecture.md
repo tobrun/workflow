@@ -1,7 +1,7 @@
 # Architecture
 
 Purpose: this repository is a monorepo of agent skills and the tooling that ships them.
-Two plugins live here: `dev`, the hand-invoked development workflow (scope, build, ship, yolo, and commit); and `bootstrap`, whose `agents-md` skill writes a consuming repository's root AGENTS.md from the workflow's lessons.
+One plugin lives here: `dev`, the hand-invoked development workflow (scope, build, ship, yolo, bootstrap, and commit).
 A person invokes each `dev` skill by hand; skills never invoke each other, and each one recommends the next step instead. The `dev` `yolo` skill is not an invoker: it reads the scope, build, and ship bodies by path and follows them inline in one session, answering each of their user questions with the stage's own recommendation.
 The generated Codex distributions under `plugins/` are built from their source plugin and never edited by hand.
 
@@ -17,7 +17,6 @@ Captured: 2026-09-17 (full, scope) - Updated: 2026-11-24 (five skills: the remot
 | repo scripts | validation of the whole repository, the plugin generator, and the Pi transport self-test | `scripts/` | every other component |
 | harden tools | optional local analyses ship's verify phase can draw on: added lines, coverage-weighted complexity, flaky reruns, mutation | `tools/harden/` | nothing; run by hand against a target repository |
 | research and todo | plans, findings, and reading notes | `research/`, `todo/` | nothing |
-| bootstrap plugin | the `agents-md` skill, its references distilled from the dev skills, `bootstrap/skills/agents-md/scripts/check-agents-md.py` that every draft loops against, and the checker's tests | `bootstrap/skills/`, `bootstrap/evals/` | the consuming repository's root AGENTS.md; reads its manifests, CI config, git history, and CLAUDE.md |
 
 ## Flows
 
@@ -27,12 +26,7 @@ Captured: 2026-09-17 (full, scope) - Updated: 2026-11-24 (five skills: the remot
 
 ### Building the Codex distribution
 1. `scripts/build_codex_plugin.py` copies skills/, references/, and `scripts/` of the source plugin into plugins/{name}/, strips Claude-only frontmatter, and writes agents/openai.yaml for invocable skills. It removes obsolete distributions identified by their generated README and plugin manifest.
-2. `scripts/validate.sh` checks structure, links, skill length, the Codex distribution (C01), the Pi package and transport (P01), the bootstrap checker's tests (B01), and the dev tests (D01); `--check` mode of the generator fails when `plugins/` is stale, including a retired generated distribution.
-
-### Bootstrapping a repository
-1. A person invokes `/bootstrap:agents-md` (or `$bootstrap:agents-md`) in a consuming repository.
-2. The skill probes the stack read-only, maps it onto its concept map, interviews only for what the probe cannot settle, and runs each command it will list.
-3. It drafts outside the repository, loops `bootstrap/skills/agents-md/scripts/check-agents-md.py` until it exits 0, shows the diff for approval, then writes the root AGENTS.md; it never commits and never writes CLAUDE.md.
+2. `scripts/validate.sh` checks structure, links, skill length, the Codex distribution (C01), the Pi package and transport (P01) and the dev tests (D01); `--check` mode of the generator fails when `plugins/` is stale, including a retired generated distribution.
 
 ### An unattended dev run
 1. A person invokes `/dev:yolo "a request"` (or `$dev:yolo`).
@@ -46,7 +40,7 @@ Captured: 2026-09-17 (full, scope) - Updated: 2026-11-24 (five skills: the remot
 | -------- | ---- | -------- | ----- |
 | Claude Code, Codex, opencode, Pi | host | the skills | each reads the skills in its own format; the generated tree under `plugins/` serves Codex |
 | git and GitHub | external | the ship skill | branch state and `gh pr` calls made during a ship run |
-| consuming repository | store | the skills | `.dev/` plan files, `docs/` ledgers, shared config, and the root AGENTS.md bootstrap writes |
+| consuming repository | store | the skills | `.dev/` plan files, `docs/` ledgers, shared config |
 
 ## Cross-cutting
 
@@ -55,4 +49,4 @@ Rules: no em dash anywhere, SKILL.md under roughly 150 lines, every skill `disab
 
 ## Entry points
 
-`scripts/validate.sh`, `scripts/build_codex_plugin.py`, `scripts/test_pi_runner.sh`, `dev/scripts/skill-metrics.py`, `dev/scripts/claims.py`, `bootstrap/skills/agents-md/scripts/check-agents-md.py`.
+`scripts/validate.sh`, `scripts/build_codex_plugin.py`, `scripts/test_pi_runner.sh`, `dev/scripts/skill-metrics.py`, `dev/scripts/claims.py`.

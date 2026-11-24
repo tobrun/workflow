@@ -27,7 +27,6 @@ parallel = True
 data_file = $work/.coverage
 source =
     $root/dev
-    $root/bootstrap
     $root/scripts
 EOF
 

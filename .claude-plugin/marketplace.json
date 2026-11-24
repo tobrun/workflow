@@ -11,11 +11,6 @@
       "name": "dev",
       "source": "./dev",
       "description": "Development workflow skills: scope changes with argued decisions, build across unit, component, integration, contract, property, fuzz, e2e, smoke, and benchmark scenarios each proven by tests, ship with twenty kinds of verification and an adversarially verified review, take a task to a pull request unattended with yolo, enforce a repository's architecture from one file with bootstrap, and create structured commits that feed a decision ledger."
-    },
-    {
-      "name": "bootstrap",
-      "source": "./bootstrap",
-      "description": "Probe a repository's stack and write or refresh its root AGENTS.md, encoding the dev workflow's SDLC lessons (test layers, mocking at boundaries, CI parity, fix-at-source quality, commit and PR conventions) with the repo's exact commands and its gaps as open items."
     }
   ]
 }

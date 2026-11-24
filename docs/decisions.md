@@ -74,6 +74,28 @@ D-remote-publication: Who pushes the branch and opens the PR for a remote run? (
 
 ## Removed
 
+D-architecture-enforcement: What replaces docs/contracts.md? (2026-11-24, user)
+  ✓ one human-owned docs/architecture.toml from which arch.py generates every boundary, public-API, banned-API, and dependency-allowlist check, with each rule citing the D- decision that lists it back on an `enforced by:` line, a red team that proves every rule fires, and a baseline that only shrinks - prose contracts and maps drifted (D-simplify-docs), and a rule an agent cannot argue with replaces a premise it can ignore (user, 2026-11-24; the user's research on enforcement-strength ranking) ⚠ the generated tools must be installed in each repository's CI, and a tool that parses nothing is caught only by the red team
+  ✗ a stricter contracts.md - still prose, still unenforced, the reason it was removed
+  ✗ hand-written tool configs per repository - intent and enforcement drift apart, and an agent can loosen a config nobody owns
+
+D-architecture-home: Where does setting it up live? (2026-11-24, user)
+  ✓ a new dev:bootstrap skill, with arch.py shared under dev/scripts and the format in dev/references/architecture.md so scope, ship, and remediation use the same rules (user, 2026-11-24)
+  ✗ a skill in the bootstrap plugin beside agents-md - the dev skills that enforce the rules would reach into another plugin
+  ✗ folded into agents-md - one skill doing two unrelated probes
+
+D-architecture-format: What format is the architecture file? (2026-11-24)
+  ✓ TOML at docs/architecture.toml - Python's standard library reads it (3.11+), so arch.py runs in a Go, Rust, C++, or JVM repository's CI with nothing installed (auto-applied at Confidence: 65%) ⚠ the research names architecture.yaml; switching later touches only load()
+  ✗ YAML - every CI would need PyYAML before the first check runs
+
+D-architecture-ecosystems: Which ecosystems does the first version generate for? (2026-11-24, user)
+  ✓ Python (import-linter), TS/JS (dependency-cruiser), Go (go-arch-lint), JVM and Kotlin (an ArchUnit test class), Rust (a built-in check of each crate's Cargo.toml), C++ (a built-in check of quoted includes), and ast-grep for banned APIs in all of them (user, 2026-11-24) ⚠ the ArchUnit output is untested against a real Gradle build; Konsist and cargo-deny are not generated
+  ✗ one boundary tool per ecosystem plus a second for in-editor feedback - duplicate configs and contradicting messages
+
+D-architecture-protection: How are the rules protected from erosion? (2026-11-24, user)
+  ✓ in CI only: generated files checked against the toml, rule-to-decision links checked both ways, `check --base` failing on any loosening unless a human-reviewed change passes --allow-loosening, and the red team - CI runs for every change, whoever wrote it (user, 2026-11-24) ⚠ the vendored .arch/arch.py checks itself, so a change to it needs review like any other
+  ✗ also a Claude Code PreToolUse hook and CODEOWNERS - stronger locally, but specific to one agent and written into each repository's settings
+
 D-scope-review-page: Does scope render an HTML page for the engineer, and how? (2026-11-24, user)
   ✓ `render-spec.py` turns spec.md into `.dev/{plan}/spec.html` on the full path: what waits on the user, applied recommendations with reply buttons, decisions by impact and confidence, scope, tests per layer, and build waves, every number counted from the file - a page the engineer acts on instead of a copy of the spec, and it cannot claim what the spec does not say (user, 2026-11-24; the plan-review format in the user's research on presenting agent changes) ⚠ the page is not a gate; it only helps if the engineer opens it
   ✗ the model fills a JSON object into a template, as the removed spec.html did - flexible, but the page and the spec can disagree, the failure the research ranks costliest
@@ -503,7 +525,7 @@ D-simplify-review: How is ship's review verified? (2026-11-13, user)
   ✓ a separate batch of adversarial verifiers, unchanged - a finding reaches the report only after an agent that did not raise it fails to refute it (user, 2026-11-13)
   ✗ one reviewer batch whose blockers the orchestrator confirms by reading the code - fewer agents, but the orchestrator grades findings in a context that has already formed a view of the diff
 
-D-simplify-docs: Which project documents does the workflow maintain? (2026-11-13, user)
+D-simplify-docs: Which project documents does the workflow maintain? (2026-11-13, user) architecture rules return as enforced checks by D-architecture-enforcement (2026-11-24)
   ✓ docs/decisions.md and docs/contracts.md only - docs/architecture.md upkeep (architecture-check.py, the architecture reference, build's and commit's architecture sync) and docs/dependencies.md upkeep (dependency-rules.md) are removed (user, 2026-11-13) ⚠ components and dependency edges are no longer written down by the workflow; scope discovers them from code
   ✗ keep all four documents - architecture and dependency maps drift with every change and cost a sync step in build and commit
 

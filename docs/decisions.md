@@ -488,6 +488,14 @@ D-simplify-docs: Which project documents does the workflow maintain? (2026-11-13
   ✓ docs/decisions.md and docs/contracts.md only - docs/architecture.md upkeep (architecture-check.py, the architecture reference, build's and commit's architecture sync) and docs/dependencies.md upkeep (dependency-rules.md) are removed (user, 2026-11-13) ⚠ components and dependency edges are no longer written down by the workflow; scope discovers them from code
   ✗ keep all four documents - architecture and dependency maps drift with every change and cost a sync step in build and commit
 
+D-scope-autonomy: When does scope ask the user instead of applying its recommendation? (2026-11-24, user)
+  ✓ below `Confidence: 50%`, or when the answer changes the requested problem, drops a requirement, or adds a non-goal - everything else is auto-applied and listed in one block the user can overturn (user, 2026-11-24) ⚠ more choices settle on the model's judgment; the auto-applied block is the user's only chance to catch them before build
+  ✗ 65%, with the big and medium decisions talked through with the user - an interview per run for choices the model already had a defensible answer to
+
+D-drop-contracts: Does the workflow keep a contract registry at docs/contracts.md? (2026-11-24, user)
+  ✓ no - scope, commit, and ship stop writing, maintaining, and citing `C-` entries, and the registry reference is removed; this narrows D-simplify-docs to docs/decisions.md alone, and a replacement for boundary premises comes later (user, 2026-11-24) ⚠ until then reviewers and fixers have no recorded boundary premises and work from the code and the spec's invariants
+  ✗ keep it - a second ledger to maintain at scope and commit time
+
 D-simplify-reverse-mode: Does scope keep its reverse mode and history bootstrap? (2026-11-13, user)
   ✓ no - auditing the decisions in existing code and seeding a ledger from commit history are cut; scope plans changes, and the ledger grows from the decisions those changes argue (user, 2026-11-13)
   ✗ keep both - two extra procedures in scope's references for runs that rarely happen

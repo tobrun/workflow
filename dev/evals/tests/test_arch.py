@@ -543,6 +543,48 @@ class GoToolsTest(unittest.TestCase):
         self.assertIn("fires  boundary:domain", result.stdout)
 
 
+def load_arch_module():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("arch_module", SCRIPT)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["arch_module"] = module  # dataclasses look their module up while the class is built
+    spec.loader.exec_module(module)
+    return module
+
+
+class FallbackTomlTest(unittest.TestCase):
+    """On Pythons without tomllib, arch.py reads TOML itself; it must agree with tomllib."""
+
+    EDGES = 'a = "x # not a comment" # a comment\nb = \'C:\\\\raw\'\nc = [\n  "one", # first\n  "two",\n]\n' \
+            'd = { path = "../x", features = ["f"] }\n[t.u]\nv = -3\nw = 1.5\nx = true\n[[t.list]]\ny = 1\n[[t.list]]\ny = 2\n' \
+            '"quoted key" = "\\u00e9\\n"\n'
+
+    def test_the_built_in_reader_matches_tomllib(self) -> None:
+        try:
+            import tomllib
+        except ModuleNotFoundError:
+            self.skipTest("tomllib is not available to compare against")
+        arch = load_arch_module()
+        sources = [PY_TOML, NATIVE_TOML, GO_TOML, TS_TOML, self.EDGES]
+        sources += [text for path, text in NATIVE_FILES.items() if path.endswith("Cargo.toml")]
+        for text in sources:
+            self.assertEqual(arch._parse_toml(text), tomllib.loads(text))
+
+    def test_the_built_in_reader_rejects_what_it_cannot_read(self) -> None:
+        arch = load_arch_module()
+        for text in ('a = """multi"""\n', "a = 1979-05-27\n", "a = 1\na = 2\n", 'a = "open\n'):
+            with self.assertRaises(arch.TOMLDecodeError):
+                arch._parse_toml(text)
+
+    def test_the_whole_cli_runs_on_the_built_in_reader(self) -> None:
+        repo = Repo(self, NATIVE_TOML, NATIVE_DECISIONS, NATIVE_FILES)
+        env = dict(os.environ, ARCH_TOML_FALLBACK="1")
+        for command in ("generate", "check"):
+            result = subprocess.run([sys.executable, str(SCRIPT), command, "--root", str(repo.root)],
+                                    capture_output=True, text=True, env=env, check=False)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+
 NODE_MODULES = os.environ.get("ARCH_TEST_NODE_MODULES", "")
 TS_TOML = """\
 version = 1

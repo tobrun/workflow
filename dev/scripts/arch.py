@@ -18,7 +18,9 @@ Usage: python3 arch.py <command> [--root DIR] [--file PATH]
              --depth N) and a draft [[modules]] block to start the file from
 
 Generated files are build artifacts: never edit them, change the toml and run
-generate. Standard library only (Python 3.11+), so it runs in any repository's CI.
+generate. Standard library only, so it runs in any repository's CI: tomllib on Python
+3.11+, tomli when installed, else a built-in reader for the TOML this file and Cargo
+manifests use.
 """
 
 from __future__ import annotations
@@ -34,7 +36,6 @@ import shlex
 import shutil
 import subprocess
 import sys
-import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -71,6 +72,194 @@ RULE_ID = re.compile(r"^[a-z0-9]+(?:[-:][a-z0-9]+)*$")
 
 class ArchError(Exception):
     """A problem with the file itself; the message says how to fix it."""
+
+
+class TOMLDecodeError(ValueError):
+    pass
+
+
+def _parse_toml(text: str) -> dict:
+    """The TOML subset architecture files and Cargo manifests use, for Pythons without tomllib.
+
+    Tables, arrays of tables, dotted keys, basic and literal strings, integers, floats,
+    booleans, and arrays and inline tables of those, across lines; no dates, no multi-line strings.
+    """
+    root: dict = {}
+    current = root
+    pos, n = 0, len(text)
+
+    def fail(message: str):
+        line = text.count("\n", 0, pos) + 1
+        raise TOMLDecodeError(f"{message} (line {line})")
+
+    def skip(newlines: bool) -> None:
+        nonlocal pos
+        while pos < n:
+            ch = text[pos]
+            if ch in " \t\r" or (newlines and ch == "\n"):
+                pos += 1
+            elif ch == "#":
+                while pos < n and text[pos] != "\n":
+                    pos += 1
+            else:
+                return
+
+    def key() -> list[str]:
+        nonlocal pos
+        parts = []
+        while True:
+            skip(False)
+            if pos < n and text[pos] in "\"'":
+                parts.append(string())
+            else:
+                match = re.compile(r"[A-Za-z0-9_-]+").match(text, pos)
+                if not match:
+                    fail("expected a key")
+                parts.append(match.group(0))
+                pos = match.end()
+            skip(False)
+            if pos < n and text[pos] == ".":
+                pos += 1
+                continue
+            return parts
+
+    def string() -> str:
+        nonlocal pos
+        quote = text[pos]
+        end = pos + 1
+        while end < n and text[end] != quote:
+            if text[end] == "\n":
+                fail("unterminated string")
+            end += 2 if quote == '"' and text[end] == "\\" else 1
+        if end >= n:
+            fail("unterminated string")
+        raw = text[pos:end + 1]
+        pos = end + 1
+        return json.loads(raw) if quote == '"' else raw[1:-1]
+
+    def value():
+        nonlocal pos
+        skip(False)
+        if pos >= n:
+            fail("expected a value")
+        ch = text[pos]
+        if ch in "\"'":
+            if text.startswith(ch * 3, pos):
+                fail("multi-line strings need Python 3.11+ or tomli")
+            return string()
+        if ch == "[":
+            pos += 1
+            items = []
+            while True:
+                skip(True)
+                if pos < n and text[pos] == "]":
+                    pos += 1
+                    return items
+                items.append(value())
+                skip(True)
+                if pos < n and text[pos] == ",":
+                    pos += 1
+                elif pos < n and text[pos] == "]":
+                    pos += 1
+                    return items
+                else:
+                    fail("expected , or ] in an array")
+        if ch == "{":
+            pos += 1
+            table: dict = {}
+            skip(False)
+            if pos < n and text[pos] == "}":
+                pos += 1
+                return table
+            while True:
+                path = key()
+                if pos >= n or text[pos] != "=":
+                    fail("expected = in an inline table")
+                pos += 1
+                assign(table, path, value())
+                skip(False)
+                if pos < n and text[pos] == ",":
+                    pos += 1
+                elif pos < n and text[pos] == "}":
+                    pos += 1
+                    return table
+                else:
+                    fail("expected , or } in an inline table")
+        match = re.compile(r"true|false|[+-]?(?:\d[\d_]*)(?:\.\d+)?(?:[eE][+-]?\d+)?").match(text, pos)
+        if not match:
+            fail("unsupported value; this reader covers strings, numbers, booleans, arrays, and inline tables")
+        pos = match.end()
+        word = match.group(0)
+        if word in ("true", "false"):
+            return word == "true"
+        number = word.replace("_", "")
+        return float(number) if any(c in number for c in ".eE") else int(number)
+
+    def descend(table: dict, path: list[str]) -> dict:
+        for part in path:
+            table = table.setdefault(part, {})
+            if isinstance(table, list):
+                table = table[-1]
+            if not isinstance(table, dict):
+                fail(f"{part} is not a table")
+        return table
+
+    def assign(table: dict, path: list[str], item) -> None:
+        target = descend(table, path[:-1])
+        if path[-1] in target:
+            fail(f"{'.'.join(path)} is defined twice")
+        target[path[-1]] = item
+
+    while True:
+        skip(True)
+        if pos >= n:
+            return root
+        if text.startswith("[[", pos):
+            pos += 2
+            path = key()
+            if not text.startswith("]]", pos):
+                fail("expected ]]")
+            pos += 2
+            parent = descend(root, path[:-1])
+            array = parent.setdefault(path[-1], [])
+            if not isinstance(array, list):
+                fail(f"{'.'.join(path)} is not an array of tables")
+            array.append({})
+            current = array[-1]
+        elif text[pos] == "[":
+            pos += 1
+            path = key()
+            if pos >= n or text[pos] != "]":
+                fail("expected ]")
+            pos += 1
+            current = descend(root, path)
+        else:
+            path = key()
+            if pos >= n or text[pos] != "=":
+                fail("expected =")
+            pos += 1
+            assign(current, path, value())
+        skip(False)
+        if pos < n and text[pos] != "\n":
+            fail("expected the end of the line")
+
+
+try:  # Python 3.11+
+    import tomllib
+except ModuleNotFoundError:  # pragma: no cover - exercised on Python 3.10
+    try:
+        import tomli as tomllib  # type: ignore[no-redef]
+    except ModuleNotFoundError:
+        tomllib = None  # type: ignore[assignment]
+
+
+def toml_loads(text: str) -> dict:
+    if tomllib is not None and not os.environ.get("ARCH_TOML_FALLBACK"):
+        try:
+            return tomllib.loads(text)
+        except tomllib.TOMLDecodeError as error:
+            raise TOMLDecodeError(str(error)) from None
+    return _parse_toml(text)
 
 
 # ---------------------------------------------------------------------------
@@ -173,8 +362,8 @@ def load(root: Path, source: str = SOURCE) -> Architecture:
     if not path.is_file():
         raise ArchError(f"no {source}; run the dev bootstrap skill to write one")
     try:
-        raw = tomllib.loads(path.read_text(encoding="utf-8"))
-    except tomllib.TOMLDecodeError as error:
+        raw = toml_loads(path.read_text(encoding="utf-8"))
+    except TOMLDecodeError as error:
         raise ArchError(f"{source} is not valid TOML: {error}") from None
     if raw.get("version") != VERSION:
         raise ArchError(f"{source}: version must be {VERSION}")
@@ -735,8 +924,8 @@ def resolve_cpp(arch: Architecture, source: Path, include: str) -> str | None:
 
 def cargo(path: Path) -> dict:
     try:
-        return tomllib.loads(path.read_text(encoding="utf-8"))
-    except (OSError, tomllib.TOMLDecodeError):
+        return toml_loads(path.read_text(encoding="utf-8"))
+    except (OSError, TOMLDecodeError):
         return {}
 
 
@@ -917,7 +1106,7 @@ def check(arch: Architecture, base: str | None, allow_loosening: bool) -> list[s
     if base:
         old = git_show(arch.root, base, SOURCE)
         if old is not None:
-            for loosening in loosenings(tomllib.loads(old), arch.raw):
+            for loosening in loosenings(toml_loads(old), arch.raw):
                 if not allow_loosening:
                     problems.append(f"loosening needs a human-reviewed change: {loosening}")
     violations = builtin_violations(arch)

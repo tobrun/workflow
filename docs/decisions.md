@@ -28,17 +28,17 @@ D-mutation-focused: Where should mutation testing run, and what should survivors
 
 risk: moderate - domains: remote compute, unattended agent output crossing into the user's repository (2026-11-09)
 
-D-remote-restart: What is a remote run? (2026-11-13, user)
+D-remote-restart: What is a remote run? (2026-11-13, user) superseded by D-remove-remote (2026-11-24)
   ✓ one unattended yolo session on the fleet instance the user names by number, kept going by the instance's runner until its pull request is open - the phased design (dispatch, per-phase sessions, a build gate, collect, rounds, restore, run records on the laptop) was hard to use, fell apart, and could not continue; a run should just work and always finish, as yolo does, and the user wants to own which instance gets it (user, 2026-11-13); supersedes the six decisions below without changing their historical record ⚠ a task started without a plan is scoped on the instance, with no user and only the MCP servers the credential relay admits
   ✗ repair the phased design - every repair so far added a mode (resume points, restore, local continuation) to a state machine the user already found too hard to use
   ✗ let the skill pick a free instance - the user asked to assign instances themselves
 
-D-remote-finish: Who decides that a remote run is finished? (2026-11-13)
+D-remote-finish: Who decides that a remote run is finished? (2026-11-13) superseded by D-remove-remote (2026-11-24)
   ✓ the runner, from the deliverable: a clean tree on a work branch and a pull request whose head is the checkout's HEAD, checked every time the session ends, with the same session resumed and told what is missing, up to a configured number of sessions; a hard stop is the session writing `blocked.md` - a session's own "success" is not evidence (the 2026-11-12 run skipped build steps and still ended "success"), and the pull request is the one outcome every yolo run ends in, draft when open calls remain (P-deterministic-guards-over-prose) (auto-applied at Confidence: 85%) ⚠ a tool the instance lacks becomes an open call in a draft pull request, not a failed run
   ✗ gate on build's `check-tests.py` as before - it failed the run that prompted the restart for want of Docker on the instance, leaving nothing shipped; ship's own checks and the draft rules already carry that signal to the reviewer
   ✗ trust the session's result event - it ends "success" on a question, a plan, or an API error
 
-D-remote-state: Where does a run's state live, and how does work cross? (2026-11-13)
+D-remote-state: Where does a run's state live, and how does work cross? (2026-11-13) superseded by D-remove-remote (2026-11-24)
   ✓ on the instance only, one run per instance addressed by the instance's number, with commits crossing as git bundles and files as tar streams over `incus exec`, and `pull` updating the local branch by fast-forward only and plan files against the hashes both sides last agreed on - nothing on the laptop to fall out of step with the instance, no host exchange clone whose `fleet sync` failed silently, and the instance's output stays untrusted data that never overwrites local work (auto-applied at Confidence: 80%) ⚠ a new start on an instance moves its previous run to history, where only the newest ten are kept
   ✗ run records on the laptop - a second source of truth, and the reason a collected run could not simply continue
 
@@ -73,6 +73,10 @@ D-remote-publication: Who pushes the branch and opens the PR for a remote run? (
   ✗ require the credential, refuse without it - a workspace without one still builds and ships to a prepared `pr.md`, and `--publish sandbox` is there when the user wants the refusal
 
 ## Removed
+
+D-remove-remote: Does the dev plugin keep its remote skill? (2026-11-24, user)
+  ✓ no - delete `dev/skills/remote/` (remote.py, runner.sh, view.py, the unattended contract), its evals, tests, and fakes, its Codex invocation policy, and its documentation; remote execution is being done differently outside this repository (user, 2026-11-24); dev:yolo remains the unattended path in the current session
+  ✗ keep it unmaintained - dead weight in every validation run and plugin build, and it would drift from yolo
 
 D-retire-factory-for-yolo: Which unattended development workflow remains? (2026-10-31, user)
   ✓ remove the Factory source plugin, generated distribution, marketplace entries, phase tooling, fixtures, and dedicated validation checks; use dev:yolo for unattended scope-build-ship runs - the user replaced Factory with dev:yolo (user, 2026-10-31); supersedes the active Factory decisions and contracts below without changing their historical record

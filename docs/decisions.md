@@ -74,6 +74,21 @@ D-remote-publication: Who pushes the branch and opens the PR for a remote run? (
 
 ## Removed
 
+D-scope-review-page: Does scope render an HTML page for the engineer, and how? (2026-11-24, user)
+  ✓ `render-spec.py` turns spec.md into `.dev/{plan}/spec.html` on the full path: what waits on the user, applied recommendations with reply buttons, decisions by impact and confidence, scope, tests per layer, and build waves, every number counted from the file - a page the engineer acts on instead of a copy of the spec, and it cannot claim what the spec does not say (user, 2026-11-24; the plan-review format in the user's research on presenting agent changes) ⚠ the page is not a gate; it only helps if the engineer opens it
+  ✗ the model fills a JSON object into a template, as the removed spec.html did - flexible, but the page and the spec can disagree, the failure the research ranks costliest
+  ✗ no page - spec.md stays the only view, which the user found not actionable and not visual
+
+D-decision-indicators: Which indicators does a decision carry on the page? (2026-11-24, user)
+  ✓ an `[impact: high|medium|low]` tag scope writes on each decision, and reach counted from the change plan's echoes, alongside the confidence and provenance the spec already states; lint-spec.py requires the tag (user, 2026-11-24)
+  ✗ reversibility (one-way or two-way door) - one more judgment for scope to annotate
+  ✗ one global confidence score for the plan - risk belongs where reviewers allocate attention, per decision
+
+D-flow-sketch: When does the page show a diagram? (2026-11-24, user)
+  ✓ only when the spec has a `### Flow` mermaid block, which scope writes for a change that adds or reorders calls between components or moves a boundary; it is labelled a design sketch, and Mermaid loads from a CDN (user, 2026-11-24) ⚠ the sketch needs network to draw; offline the page shows its source
+  ✗ a diagram for every spec - most changes have no structural delta, and an always-present diagram trains readers to skip it
+  ✗ boxes drawn by the script from a node list - works offline, but a basic layout
+
 D-remove-remote: Does the dev plugin keep its remote skill? (2026-11-24, user)
   ✓ no - delete `dev/skills/remote/` (remote.py, runner.sh, view.py, the unattended contract), its evals, tests, and fakes, its Codex invocation policy, and its documentation; remote execution is being done differently outside this repository (user, 2026-11-24); dev:yolo remains the unattended path in the current session
   ✗ keep it unmaintained - dead weight in every validation run and plugin build, and it would drift from yolo
@@ -472,7 +487,7 @@ D-simplify-dev: How much of the dev plugin stays? (2026-11-13, user)
   ✗ trim prose and keep all twelve skills - the quick variants and scope-review duplicate their parents, and every extra skill is another body to keep in sync
   ✗ a full rewrite in one change - a regression could not be traced to the cut that caused it; one step per pull request instead
 
-D-simplify-presentation: Which rendered outputs stay? (2026-11-13, user)
+D-simplify-presentation: Which rendered outputs stay? (2026-11-13, user) scope's page reopened by D-scope-review-page (2026-11-24)
   ✓ none of the presentation skills or HTML renders: to-pitch, to-quiz, and the spec and review HTML go, and build's e2e report becomes JSON with its screenshots, the shape pr-evidence.py extracts from - they never gated anything, and review_N.md, spec.md, and the PR body already carry the content (user, 2026-11-13)
   ✗ keep the renders as optional extras - each is a template, a schema reference, and an eval to maintain for a view nobody gates on
 

@@ -1,6 +1,6 @@
 {
   "name": "dev",
-  "version": "3.10.0",
+  "version": "4.0.0",
   "description": "Development workflow skills: scope changes with argued decisions, build across unit, component, integration, contract, property, fuzz, e2e, smoke, and benchmark scenarios each proven by tests, ship with twenty kinds of verification and an adversarially verified review, take a task to a pull request unattended with yolo, enforce a repository's architecture from one file with bootstrap, and create structured commits that feed a decision ledger.",
   "author": {
     "name": "Tobrun"

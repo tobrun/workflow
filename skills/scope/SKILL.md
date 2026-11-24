@@ -3,7 +3,7 @@ name: scope
 description: Spec a change at .dev/{plan-name}/spec.md - find the real problem, argue each consequential decision against its alternatives, and write a self-contained spec with a layer-tagged change plan and an HTML review page rendered from it, then record the settled decisions in docs/decisions.md and commit that ledger. Use to plan work before implementation, for a quick plan of a small request or of accepted review findings, or for a deeper verified review of a large spec.
 compatibility: Needs git and Python 3.10+.
 metadata:
-  version: "3.10.0"
+  version: "4.0.0"
   source: "https://github.com/tobrun/workflow"
   invocation: "explicit - recommend it, never run it unasked"
 ---

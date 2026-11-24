@@ -3,7 +3,7 @@ name: bootstrap
 description: Set up a repository's architecture enforcement and its CI verification evidence - probe its languages and structure, infer the module graph the code already follows, write docs/architecture.toml with each rule argued as a D- decision, generate the boundary, banned-API, and dependency configs with arch.py, freeze existing violations in a baseline that only shrinks, prove every rule fires with a red team, wire it into CI, and add the CI job that writes each pull request's verification evidence at its head commit. Use once per repository before relying on the dev workflow's architecture checks, or to re-bootstrap after a large restructuring.
 compatibility: Needs git and Python 3.10+. Writes GitHub Actions workflows; other CI hosts are wired by hand.
 metadata:
-  version: "3.10.0"
+  version: "4.0.0"
   source: "https://github.com/tobrun/workflow"
   invocation: "explicit - recommend it, never run it unasked"
 ---

@@ -115,6 +115,21 @@ D-remote-publication: Who pushes the branch and opens the PR for a remote run? (
   ✗ always publish from the laptop - leaves a finished ship waiting on the laptop for a step the sandbox can do
   ✗ require the credential, refuse without it - a workspace without one still builds and ships to a prepared `pr.md`, and `--publish sandbox` is there when the user wants the refusal
 
+## Distribution
+
+D-portable-skills: How are the skills exposed to harnesses other than Claude Code? (2026-11-24, user)
+  ✓ one generated, spec-compliant Agent Skills tree at skills/ - each skill self-contained, the shared references and scripts it links to copied in and the links rewritten, frontmatter cut to the six spec fields - which npx skills, gh skill, Pi, opencode, a hand copy into .agents/skills/, and the Codex plugin all install (user, 2026-11-24; the user's research on cross-harness publishing) ⚠ shared files are copied into every skill that uses them, so the tree repeats them
+  ✗ keep pointing installers at dev/skills/ - its skills link two levels up into dev/references and dev/scripts, which an installer that copies skill folders leaves behind, and its Claude-only frontmatter fails the spec's validator
+  ✗ one plugin wrapper per harness - a manifest format each to maintain, and no gain for harnesses that read skill folders
+
+D-codex-from-portable: Where does the Codex plugin install from? (2026-11-24)
+  ✓ the repository root: .codex-plugin/plugin.json points at skills/, and each skill folder carries its agents/openai.yaml sidecar; plugins/dev is retired - a second copy made gh skill find every skill twice and refuse to install the set (auto-applied at Confidence: 75%)
+  ✗ keep plugins/dev - the duplicate the research warns about in anthropics/skills
+
+D-claude-keeps-source: Where does the Claude Code plugin install from? (2026-11-24)
+  ✓ dev/, unchanged - disable-model-invocation in each SKILL.md is the only documented way to keep a Claude Code plugin's skills manual-only (skillOverrides does not reach plugin skills), so the Claude copy keeps a field the portable copy may not (auto-applied at Confidence: 70%, per the Claude Code skills and plugin docs) ⚠ dev/skills/ stays a second visible copy of each skill, so gh skill cannot install the whole set from one command
+  ✗ install the portable tree into Claude Code too - the skills would become model-invocable, against the rule that every skill here is human-triggered
+
 ## Removed
 
 D-remove-bootstrap-plugin: Does the repository keep the bootstrap plugin? (2026-11-24, user)

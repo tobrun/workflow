@@ -21,7 +21,7 @@ Tests: scenarios met/not met, invariants held, seams tested/untested. Omit if no
 
 ## Decision reconciliation
 
-{only when the repo keeps docs/decisions.md} Each colliding finding: still-holds (with the checked reopen condition), reopened, or diverged.
+{only when the repo keeps docs/decisions.md} Each colliding finding: still-holds (with the checked reopen condition), reopened, or diverged, naming the decision by its title with its slug once in parentheses, per [../../../references/decision-ledger.md](../../../references/decision-ledger.md).
 
 ## Previous findings
 

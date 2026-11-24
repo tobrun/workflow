@@ -258,14 +258,15 @@ class BodyStructureTest(GateCase):
         body = EVIDENCE + quality(fuzz="skipped (no parser)").replace("| coverage | ran | 0 | 0 | 0 |", "| coverage | ran | 1 | 0 | 1 |")
         self.check(body)
         written = self.body.read_text()
-        self.assertIn("| Tests | ✅ unit · ✅ functional", written)
-        self.assertIn("⏭️ fuzz", written)
-        self.assertIn("⚠️ coverage", written)
+        self.assertIn("| Tests | ✅ Unit · ✅ Functional", written)
+        self.assertIn("✅ Static analysis", written)
+        self.assertIn("⏭️ Fuzz", written)
+        self.assertIn("⚠️ Coverage", written)
         self.assertIn("19 of 20 kinds ran", written)
 
     def test_a_hand_edited_summary_is_rejected(self) -> None:
         self.check(EVIDENCE)
-        edited = self.body.read_text().replace("⏭️", "✅").replace("✅ unit", "✅ unit (all good)")
+        edited = self.body.read_text().replace("⏭️", "✅").replace("✅ Unit", "✅ Unit (all good)")
         self.assertIn("the QUALITY-SUMMARY block does not match the Quality table", self.check(edited).stderr)
 
 

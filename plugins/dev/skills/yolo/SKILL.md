@@ -62,7 +62,7 @@ Every decision made in the user's place is written when it is made, in the file 
 | build | `implementation-notes.md` | Deviations lines and fixup entries |
 | ship | `pr.md` | Open calls, one line each |
 
-Before creating the PR, add every scope line under 75% and every build deviation to the Open calls section, so the body lists every guess in one place.
+Before creating the PR, add every scope line under 75% and every build deviation to the Open calls section, so the body lists every guess in one place; name each decision by its title, not its slug.
 A run with an open call of any kind, or a real blocker, opens the PR as a draft; a clean run opens it ready once its required checks are green.
 
 ## Wrap up

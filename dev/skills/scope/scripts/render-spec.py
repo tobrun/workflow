@@ -36,6 +36,25 @@ def esc(text: object) -> str:
     return html.escape(str(text), quote=True)
 
 
+ACRONYMS = {"pr", "ci", "api", "ui", "ux", "e2e", "id", "url", "http", "sql", "json", "yaml", "toml", "io", "db", "cli",
+            "sdk", "llm", "tla", "ast", "ssh", "vm", "jvm", "tls", "dns", "ttl", "s3", "os", "gpu", "cpu", "html", "css"}
+
+
+# What a person reads for each verification kind; the slug stays in files and tables tools parse.
+KIND_NAMES = {"static-analysis": "Static analysis", "ui-ux": "UI/UX", "threat-model": "Threat model"}
+
+
+def kind_name(kind: str) -> str:
+    return KIND_NAMES.get(kind, kind.capitalize())
+
+
+def title(slug: str) -> str:
+    """A decision's readable name: D-complexity-threshold -> Complexity threshold. People read this; files keep the slug."""
+    words = slug.removeprefix("D-").split("-")
+    words = [w.upper() if w in ACRONYMS else w for w in words]
+    return (words[0][:1].upper() + words[0][1:] + " " + " ".join(words[1:])).strip()
+
+
 # ---------------------------------------------------------------------------
 # Reading spec.md
 # ---------------------------------------------------------------------------
@@ -245,7 +264,9 @@ def inline(text: str) -> str:
     out = esc(text)
     out = re.sub(r"`([^`]+)`", r"<code>\1</code>", out)
     out = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", out)
-    return re.sub(r"(D-[a-z0-9-]+) \(([^)]*)\)", r'<a class="echo" href="#\1" data-tab="decisions">\1 (\2)</a>', out)
+    return re.sub(r"(D-[a-z0-9-]+) \(([^)]*)\)",
+                  lambda m: f'<a class="echo" href="#{m.group(1)}" data-tab="decisions" title="{m.group(1)}">'
+                            f'{title(m.group(1))} ({m.group(2)})</a>', out)
 
 
 def prose_html(lines: list[str]) -> str:
@@ -352,7 +373,7 @@ def decision_card(decision: dict) -> str:
     alts = "".join(alternative_html(decision, a, True) for a in decision["alternatives"])
     flags = "".join(f'<div class="flag">⚑ {inline(f)}</div>' for f in decision["flags"])
     return f"""<article class="card decision" id="{esc(decision['slug'])}">
-  <header><code class="slug">{esc(decision['slug'])}</code><h3>{inline(decision['question'])}</h3></header>
+  <header><h3 title="{esc(decision['slug'])}">{esc(title(decision['slug']))}</h3><span class="question">{inline(decision['question'])}</span></header>
   <div class="indicators">{impact_badge(decision['impact'])}{state_chip(decision)}{settled_chip(decision)}{meter(decision['confidence'])}{reach_html(decision)}{warnings_html(decision)}</div>
   {flags}<div class="alts">{alts}</div>
 </article>"""
@@ -399,11 +420,12 @@ def quadrant_svg(decisions: list[dict]) -> str:
         attention = decision["settled"] == "you-pending" or (
             decision["confidence"] is not None and decision["confidence"] < ASK_BELOW)
         cls = "dot attention" if attention else ("dot you" if decision["settled"] == "you" else "dot")
-        tip = (f'{decision["slug"]} · {decision["impact"]} impact · '
+        tip = (f'{title(decision["slug"])} · {decision["impact"]} impact · '
                + (f'{decision["confidence"]}% confidence' if decision["confidence"] is not None
                   else SETTLED_LABEL[decision["settled"]].lower())
                + f' · {decision["question"]}')
-        label = decision["slug"][2:]
+        label = title(decision["slug"])
+        label = label if len(label) <= 24 else label[:23].rstrip() + "…"
         label_y = y - 11 if len(placed[row]) % 2 else y + 20
         parts.append(f'<a href="#{esc(decision["slug"])}" data-tab="decisions" class="{cls}" data-tip="{esc(tip)}">'
                      f'<circle class="hit" cx="{x:.1f}" cy="{y:.1f}" r="13"/>'
@@ -447,11 +469,11 @@ def verification_html(scope: dict) -> str:
     for kind in lint.KINDS:
         entry = planned.get(kind)
         if entry is None:
-            tiles.append(f'<div class="vk missing"><b>? {esc(kind)}</b><span>not planned - lint fails</span></div>')
+            tiles.append(f'<div class="vk missing"><b>? {esc(kind_name(kind))}</b><span>not planned - lint fails</span></div>')
         elif entry["yes"]:
-            tiles.append(f'<div class="vk yes"><b>✓ {esc(kind)}</b><span>{inline(entry["why"])}</span></div>')
+            tiles.append(f'<div class="vk yes"><b>✓ {esc(kind_name(kind))}</b><span>{inline(entry["why"])}</span></div>')
         else:
-            tiles.append(f'<div class="vk no"><b>- {esc(kind)}</b><span>{inline(entry["why"])}</span></div>')
+            tiles.append(f'<div class="vk no"><b>- {esc(kind_name(kind))}</b><span>{inline(entry["why"])}</span></div>')
     count = sum(1 for v in scope["verification"] if v["yes"])
     threats = "".join(f"<li>{inline(t)}</li>" for t in scope["threats"])
     threat_html = f'<h4>Threat model</h4><ul class="threats">{threats}</ul>' if threats else ""
@@ -487,8 +509,8 @@ def needs_you(data: dict) -> str:
     for decision in pending:
         alts = "".join(alternative_html(decision, a, True) for a in decision["alternatives"])
         flags = "".join(f'<div class="flag">⚑ {inline(f)}</div>' for f in decision["flags"])
-        out.append(f'<div class="card pending"><header><code class="slug">{esc(decision["slug"])}</code>'
-                   f'<h3>{inline(decision["question"])}</h3>{impact_badge(decision["impact"])}</header>{flags}{alts}</div>')
+        out.append(f'<div class="card pending"><header><h3 title="{esc(decision["slug"])}">{esc(title(decision["slug"]))}</h3>'
+                   f'<span class="question">{inline(decision["question"])}</span>{impact_badge(decision["impact"])}</header>{flags}{alts}</div>')
     if applied:
         rows = []
         for decision in applied:
@@ -497,7 +519,7 @@ def needs_you(data: dict) -> str:
                                          f'↺ {a["label"]}')
                             for a in decision["alternatives"] if a["mark"] == "✗")
             confidence = meter(decision["confidence"]) or '<span class="muted">no confidence stated</span>'
-            rows.append(f'<tr><td><a href="#{esc(decision["slug"])}" data-tab="decisions"><code>{esc(decision["slug"])}</code></a>'
+            rows.append(f'<tr><td><a href="#{esc(decision["slug"])}" data-tab="decisions" title="{esc(decision["slug"])}"><b>{esc(title(decision["slug"]))}</b></a>'
                         f'<div class="q">{inline(decision["question"])}</div></td><td>{impact_badge(decision["impact"])}</td>'
                         f'<td><b>{esc(resolution["mark"])} {inline(resolution["label"])}</b></td><td>{confidence}</td>'
                         f'<td class="swaps">{swaps}</td></tr>')
@@ -671,7 +693,7 @@ h3 { margin: 0; font-size: 15px; } h3.sub { margin: 18px 0 8px; font-size: 13px;
 h4 { margin: 14px 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
 .card { background: var(--surface); border: 1px solid var(--ring); border-radius: 12px; padding: 16px 18px; margin-bottom: 12px; }
 .card > header { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
-.slug { color: var(--series); font-size: 12px; }
+.question { color: var(--ink-2); }
 .tiles { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 26px; }
 .tile { background: var(--surface); border: 1px solid var(--ring); border-radius: 12px; padding: 14px 16px; }
 .tile b { display: block; font-size: 26px; font-weight: 600; } .tile span { color: var(--ink-2); }

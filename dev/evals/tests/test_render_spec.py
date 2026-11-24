@@ -182,12 +182,13 @@ class RenderSpecTest(unittest.TestCase):
     def test_the_verification_plan_shows_every_kind_with_its_reason(self) -> None:
         _, page = self.render()
         self.assertIn("3 of 20 kinds apply", page)
-        self.assertIn('<div class="vk yes"><b>✓ unit</b>', page)
-        self.assertIn('<div class="vk no"><b>- fuzz</b><span>not touched by this change</span>', page)
+        self.assertIn('<div class="vk yes"><b>✓ Unit</b>', page)
+        self.assertIn('<div class="vk no"><b>- Fuzz</b><span>not touched by this change</span>', page)
+        self.assertIn("<b>- UI/UX</b>", page)
 
     def test_a_kind_missing_from_the_plan_is_shown_as_a_gap(self) -> None:
         _, page = self.render(SPEC.replace("- penetration: no - not touched by this change\n", ""))
-        self.assertIn('<div class="vk missing"><b>? penetration</b>', page)
+        self.assertIn('<div class="vk missing"><b>? Penetration</b>', page)
         self.assertIn("⚑ Draft - lint fails", page)
 
     def test_the_heatmap_has_a_column_per_tag_the_spec_uses(self) -> None:
@@ -196,6 +197,25 @@ class RenderSpecTest(unittest.TestCase):
         _, page = self.render(text)
         head = re.search(r'<table class="heatmap"><thead><tr>(.*?)</tr>', page).group(1)
         self.assertEqual(re.findall(r"<th>([^<]+)</th>", head), ["Change set", "Unit", "Integration", "Property", "E2E", "Total"])
+
+    def test_people_read_titles_and_the_slug_stays_an_id(self) -> None:
+        _, page = self.render()
+        card = self.card(page, "D-cache-store")
+        self.assertIn('<h3 title="D-cache-store">Cache store</h3>', card)
+        self.assertIn("Where are cached tiles stored?", card)
+        visible = re.sub(r"<style>.*?</style>|<script>.*?</script>|<pre class=\"source\">.*?</pre>", "", page, flags=re.S)
+        visible = re.sub(r"<[^>]+>", "", visible)
+        self.assertNotRegex(visible, r"\bD-[a-z]", "no slug in the text a person reads")
+        self.assertIn('title="D-cache-store">Cache store (✓ SQLite)</a>', page)
+
+    def test_titles_spell_acronyms(self) -> None:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("render_spec", SCRIPT)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        self.assertEqual(module.title("D-complexity-threshold"), "Complexity threshold")
+        self.assertEqual(module.title("D-pr-evidence-split"), "PR evidence split")
+        self.assertEqual(module.title("D-ui-ux-gate"), "UI UX gate")
 
     def test_spec_text_is_escaped_not_executed(self) -> None:
         _, page = self.render(SPEC.replace("How is the cache bounded?", "How is <script>alert(1)</script> bounded?"))

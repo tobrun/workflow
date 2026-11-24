@@ -211,6 +211,8 @@ GROUPS = (
     ("Experience", ("ui-ux", "usability")),
     ("Security", ("threat-model", "penetration")),
 )
+# What a person reads for each kind; the Quality table keeps the slug for tools.
+KIND_NAMES = {"static-analysis": "Static analysis", "ui-ux": "UI/UX", "threat-model": "Threat model"}
 EVIDENCE_BEGIN, EVIDENCE_END = "<!-- BEGIN DEV-EVIDENCE -->", "<!-- END DEV-EVIDENCE -->"
 SUMMARY_BEGIN, SUMMARY_END = "<!-- BEGIN QUALITY-SUMMARY -->", "<!-- END QUALITY-SUMMARY -->"
 SUMMARY = re.compile(re.escape(SUMMARY_BEGIN) + r".*?" + re.escape(SUMMARY_END), re.DOTALL)
@@ -234,12 +236,13 @@ def summary_block(body: str) -> str:
         marks = []
         for kind in kinds:
             result, surviving = table.get(kind, ("missing", ""))
+            name = KIND_NAMES.get(kind, kind.capitalize())
             if result == "ran":
-                marks.append(f"{'⚠️' if surviving not in ('', '0') else '✅'} {kind}")
+                marks.append(f"{'⚠️' if surviving not in ('', '0') else '✅'} {name}")
             elif result.startswith("skipped"):
-                marks.append(f"⏭️ {kind}")
+                marks.append(f"⏭️ {name}")
             else:
-                marks.append(f"❓ {kind}")
+                marks.append(f"❓ {name}")
         rows.append(f"| {group} | {' · '.join(marks)} |")
     ran = sum(1 for r, _ in table.values() if r == "ran")
     return "\n".join([SUMMARY_BEGIN, f"{ran} of {len(KINDS)} kinds ran; the rest were skipped with the reasons in the table below.", "",

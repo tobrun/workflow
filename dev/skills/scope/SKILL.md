@@ -31,6 +31,7 @@ Answer your own questions first: read the code, the data, and the request, and g
 Apply a recommendation at `Confidence: 50%` or above and write `auto-applied at Confidence: NN%` on its chosen line.
 Ask the user only below 50%, or when the answer changes the requested problem, drops a requirement, or adds a non-goal; ask one question at a time, using the host's structured user-input tool when available.
 List the recommendations you applied without asking in one block, so a single reply can overturn any of them before later decisions rely on them.
+In that block and in every question, name a decision by its title, not its slug, per the ledger's "Naming decisions for people".
 Prefer the smallest spec that delivers observable behavior, but never shrink the requested scope without the user.
 
 ## 2. Argue the decisions

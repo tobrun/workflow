@@ -53,6 +53,7 @@ The body lives at `.dev/{plan-name}/pr.md` and is handed to the PR tool with `--
 A run that will reach this phase opens the file in the shape below before its first check and fills it as the run goes, per [../../../references/plan-layout.md](../../../references/plan-layout.md): the Summary at once, a Quality row when its check finishes, the CI parity line as each command returns, the review line when a verdict is set, an Open call when it is raised and each remediation round's attempt when the round ends.
 Only the Evidence section is left for this phase; a part the run has not reached is absent from the file, never a placeholder or a guess.
 
+Name decisions and verification kinds by their titles anywhere outside the Quality table, per [../../../references/decision-ledger.md](../../../references/decision-ledger.md).
 Everything the agent writes is a claim. What proves it is the DEV-EVIDENCE block at the end, which only CI writes: `ci-evidence.py` (vendored by `bootstrap` as `.verify/ci-evidence.py`) runs at the PR's head commit and fills it with the test totals from CI's own JUnit, a test-diff guard, a fails-on-revert check of the new tests against the base, changed-line coverage, each acceptance criterion's status, and where the claims above disagree with any of it.
 The body leaves the markers empty; `pr-evidence.py check` refuses anything between them.
 

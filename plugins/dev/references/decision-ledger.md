@@ -57,6 +57,13 @@ D-rate-limit-login: Rate limit the login endpoint? (2026-08-02, security audit)
   ⊘ not doing - no abuse observed (checkLoginAttempts audit log, none flagged); reopen if failed-login volume exceeds 100/day
 ```
 
+## Naming decisions for people
+
+The slug is an identifier for files and tools: specs, the ledger, lint, commit trailers, echoes, and replies an agent parses keep it exactly.
+A person reads a title instead: the slug without `D-`, its dashes as spaces, capitalized, acronyms spelled (`D-complexity-threshold` is "Complexity threshold", `D-pr-evidence-split` is "PR evidence split"), followed by the question or the chosen line when the title alone is not enough.
+Wherever a person is the reader - a chat message, a question to the user, the list of applied recommendations, a review report, a PR body, a wrap-up - name the decision by that title, and give the slug only where the reader must find the entry, once, in parentheses: "Complexity threshold (D-complexity-threshold): split functions over 10".
+The same holds for `P-` principles and for the verification kinds: "Static analysis", not `static-analysis`, outside the tables tools parse.
+
 ## Area headers
 
 Two dated lines open each area section.

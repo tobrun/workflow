@@ -117,6 +117,10 @@ D-remote-publication: Who pushes the branch and opens the PR for a remote run? (
 
 ## Removed
 
+D-remove-bootstrap-plugin: Does the repository keep the bootstrap plugin? (2026-11-24, user)
+  ✓ no - delete the bootstrap plugin (the agents-md skill, its checker, references, evals, and tests), its generated Codex distribution, marketplace entries, and the validate.sh B01 check; the dev plugin, including dev:bootstrap, stays (user, 2026-11-24)
+  ✗ keep it - the user asked to remove it
+
 D-architecture-enforcement: What replaces docs/contracts.md? (2026-11-24, user)
   ✓ one human-owned docs/architecture.toml from which arch.py generates every boundary, public-API, banned-API, and dependency-allowlist check, with each rule citing the D- decision that lists it back on an `enforced by:` line, a red team that proves every rule fires, and a baseline that only shrinks - prose contracts and maps drifted (D-simplify-docs), and a rule an agent cannot argue with replaces a premise it can ignore (user, 2026-11-24; the user's research on enforcement-strength ranking) ⚠ the generated tools must be installed in each repository's CI, and a tool that parses nothing is caught only by the red team
   ✗ a stricter contracts.md - still prose, still unenforced, the reason it was removed
@@ -128,7 +132,7 @@ D-architecture-home: Where does setting it up live? (2026-11-24, user)
   ✗ folded into agents-md - one skill doing two unrelated probes
 
 D-architecture-format: What format is the architecture file? (2026-11-24)
-  ✓ TOML at docs/architecture.toml - Python's standard library reads it (3.11+), so arch.py runs in a Go, Rust, C++, or JVM repository's CI with nothing installed (auto-applied at Confidence: 65%) ⚠ the research names architecture.yaml; switching later touches only load()
+  ✓ TOML at docs/architecture.toml - Python's standard library reads it (3.11+, and on 3.10 tomli or arch.py's own reader of the subset it uses, after CI's 3.10 job failed on the missing tomllib), so arch.py runs in a Go, Rust, C++, or JVM repository's CI with nothing installed (auto-applied at Confidence: 65%) ⚠ the research names architecture.yaml; switching later touches only load()
   ✗ YAML - every CI would need PyYAML before the first check runs
 
 D-architecture-ecosystems: Which ecosystems does the first version generate for? (2026-11-24, user)

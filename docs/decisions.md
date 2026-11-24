@@ -28,6 +28,11 @@ D-verify-name: What is ship's first phase called? (2026-11-24, user)
   ✗ gauntlet - the user dislikes the word
   ✗ harden or checks - the user chose verify
 
+D-decision-titles: How are decisions named where a person reads them? (2026-11-24, user)
+  ✓ by a title derived from the slug - without D-, dashes as spaces, capitalized, acronyms spelled ("Complexity threshold", "PR evidence split") - beside the question, with the slug kept for files, tools, and agent replies and given to a person at most once in parentheses; verification kinds read the same way ("Static analysis", "UI/UX") - the slug's prefix and dashes make it hard to read, and a derived title needs no new annotation (user, 2026-11-24; the derived title auto-applied at Confidence: 70%) ⚠ a terse slug gives a terse title; the question beside it carries the meaning
+  ✗ a separate title field on every decision - one more thing scope writes and lint checks, for little over the derived one
+  ✗ replace slugs with numbers - the ledger, echoes, and commit trailers rely on stable readable ids
+
 D-pr-evidence-split: How does a PR show that its verification is real? (2026-11-24, user)
   ✓ split the body: everything the agent writes (summary, acceptance criteria, evidence, what was not verified, the twenty kinds) is a claim, and a DEV-EVIDENCE block that only CI's ci-evidence.py writes at the head commit is the evidence - test totals from CI's JUnit, a test-diff guard, fails-on-revert against the base, changed-line coverage, each acceptance criterion's status, and the mismatches between the claims and those measurements (user, 2026-11-24; the user's research on proof of verification) ⚠ the block in the body mirrors the CI run; a body edit between pushes could alter it, so the run it links, and its attestation when enabled, is the authority
   ✗ the agent writes its own verification table - forgeable, and often honestly wrong

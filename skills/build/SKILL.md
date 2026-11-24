@@ -1,6 +1,7 @@
 ---
 name: build
 description: Execute the change sets of a spec at .dev/{plan-name}/spec.md, proving every scenario with a test at its tagged layer, from unit and component through contract, property, fuzz, and benchmark to e2e and smoke, running independent change sets in parallel, and looping until every change set is committed and the e2e run passes. Use when the user asks to build or implement a spec or its change sets.
+license: MIT
 compatibility: Needs git and Python 3.10+. Runs parallel subagents when the host has them.
 metadata:
   version: "4.0.0"

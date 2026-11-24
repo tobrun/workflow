@@ -592,7 +592,7 @@ check_pi() {
     .name == "@tobrun/dev-workflow" and
     (.version | test("^[0-9]+\\.[0-9]+\\.[0-9]+([+-][0-9A-Za-z.-]+)?$")) and
     (.keywords | index("pi-package")) and
-    .files == ["skills", "README.md"] and
+    .files == ["skills", "README.md", "LICENSE"] and
     .pi.skills == ["./skills"]
   ' "$package" >/dev/null 2>&1; then
     fail "P01" "$package" "Invalid Pi package manifest"

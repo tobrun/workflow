@@ -13,11 +13,13 @@
   },
   "files": [
     "skills",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "pi": {
     "skills": [
       "./skills"
     ]
-  }
+  },
+  "license": "MIT"
 }

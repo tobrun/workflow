@@ -135,6 +135,7 @@ def portable_frontmatter(fields: dict[str, str], name: str, skill: SkillConfig, 
         "---\n"
         f"name: {fields['name']}\n"
         f"description: {fields['description']}\n"
+        "license: MIT\n"
         f"compatibility: {skill.compatibility}\n"
         "metadata:\n"
         f"  version: {json.dumps(version)}\n"

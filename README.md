@@ -47,3 +47,7 @@ Installers therefore find each skill exactly once. `dev/source/` stays separate 
 python3 scripts/build_distributions.py         # regenerate skills/ and .codex-plugin/
 python3 scripts/check_skills.py skills          # the Agent Skills spec, and self-containment
 ```
+
+## License
+
+[MIT](LICENSE).

@@ -1,6 +1,7 @@
 ---
 name: ship
 description: Verify a change across twenty kinds of verification - from unit, property, and fuzz tests to coverage, performance, accessibility, and a penetration test against the local build - fixing what fails, review it with an independent panel whose findings are adversarially verified, and open or update an authorized pull request carrying current evidence. Use after build, for a verify-only, review-only, or local-only pass, or in quick mode to re-check fixes for an earlier review; incomplete review results never approve the change.
+license: MIT
 compatibility: Needs git and Python 3.10+. Needs subagents or the Pi runner for the review panel; gh to open the pull request.
 metadata:
   version: "4.0.0"

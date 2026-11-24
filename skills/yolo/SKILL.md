@@ -1,6 +1,7 @@
 ---
 name: yolo
 description: Take one task from request to an open pull request in a single unattended run - the scope, build, and ship stages run back to back in this session with every quality loop intact, and every question those stages would put to the user is answered by their own recommendation and recorded for the PR reviewer instead. Use when the user hands over a task and wants it finished without being asked anything, or says to yolo it.
+license: MIT
 compatibility: Needs git and Python 3.10+. Reads the scope, build, and ship skills installed beside it; install the whole set.
 metadata:
   version: "4.0.0"

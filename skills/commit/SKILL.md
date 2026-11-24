@@ -1,6 +1,7 @@
 ---
 name: commit
 description: Group pending changes into granular commits with structured what/why bodies and metadata trailers, fix documentation the changes made wrong, capture durable decisions into the project ledger, and push only when requested. Use when the user asks to commit, or signals implementation work is ready to be committed.
+license: MIT
 compatibility: Needs git.
 metadata:
   version: "4.0.0"

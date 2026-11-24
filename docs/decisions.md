@@ -5,7 +5,28 @@
 P-deterministic-guards-over-prose: when a loop or skill must be constrained, prefer a check it cannot argue with over an instruction
   promoted 2026-09-17 - recurred across several decisions in the factory work (removed 2026-09-20); matches CLAUDE.md "prefer a deterministic check it loops against"; recurred again 2026-09-20 in D-unattended-wording-check, D-protocol-check, D-run-state-script (factory-plugin/spec.md); set aside once and deliberately, in D-verification - the principle buys a guard where a guard may hold, and a count that refuses a fourth attempt would be the deterministic gate above the model's judgment D-completion-authority rejects
 
-## Quality gauntlet
+## Verification
+
+D-verification-kinds: Which kinds of verification does the workflow cover? (2026-11-24, user)
+  ✓ twenty - unit, functional, component, contract, property, fuzz, formal, static analysis, lint, coverage, mutation, regression, acceptance, smoke, benchmark, performance, UI/UX, usability, threat modeling, and penetration - each with a trigger and an owner in dev/references/verification.md: scope plans them in a ### Verification block that marks every kind yes or no with a reason, build writes their tests under nine scenario tags, and ship's verify phase runs or checks each one (user, 2026-11-24)
+  ✓ every kind is accounted for: lint-spec.py fails a spec that does not mark all twenty or whose tags and marks disagree, and pr-evidence.py check fails a Quality table without a row per kind, a skip without a reason, or a skip of a kind the spec planned (user, 2026-11-24) ⚠ twenty lines in every spec and PR, even for a typo fix
+  ✗ list only the kinds that apply - a kind nobody considered looks the same as one that did not apply
+  ✗ run all twenty on every change - fuzzing, load tests, and penetration tests on a typo fix
+
+D-verification-gates: What does a failing new kind do? (2026-11-24, user)
+  ✓ it never blocks: changed-line coverage under 80%, a benchmark or performance regression over 10% against the base, a fuzz crash or hang, a property or model counterexample, a medium-or-higher penetration finding, a serious or critical accessibility violation, and usability findings start fix agents and re-run up to three rounds, then become Open calls (user, 2026-11-24; extending the note to fuzz, property, formal, and usability findings auto-applied at Confidence: 70%) ⚠ a ship can publish with a known coverage gap or a slowdown, listed but not blocking
+  ✓ three fix rounds for every kind of the verify phase, replacing the two of the earlier loop, so one number holds; a must-pass kind left failing is still a human call (auto-applied at Confidence: 65%)
+  ✗ block on each threshold - the user prefers fixing and reporting to stopping
+
+D-formal-verification: What does formal verification mean in a change? (2026-11-24, user)
+  ✓ triggered by concurrency, a distributed protocol, a state machine, or lock or message ordering; scope decides by D- decision between a TLA+ model checked with TLC or an Alloy model, and a stateful property-based test driving the state machine with generated command sequences (user, 2026-11-24)
+  ✗ always a TLA+ or Alloy model when triggered - a JVM toolchain and modelling skill on every such change
+  ✗ only on request - the changes that most need it would skip it by default
+
+D-verify-name: What is ship's first phase called? (2026-11-24, user)
+  ✓ verify - the phases are verify, review, and publish; the mode is "verify only" and the loop lives in references/verify.md (user, 2026-11-24)
+  ✗ gauntlet - the user dislikes the word
+  ✗ harden or checks - the user chose verify
 
 D-complexity-threshold: Where does the ship gauntlet's coverage-weighted complexity line sit in this repository? (2026-09-18)
   ✓ 10 per function, applied to functions a branch adds - holding pre-existing functions a diff only brushes to any line would turn every change into a refactor of code it did not write (user, 2026-09-18); the evidence was the factory runner's established functions sitting far above the default, measured with radon 2026-09-18, and that code was removed 2026-09-20 ⚠ touched pre-existing functions stay over the line until a change that owns them splits them

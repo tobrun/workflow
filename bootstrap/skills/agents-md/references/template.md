@@ -40,7 +40,7 @@ A secret found in the tree is escalated to a person immediately, not quietly rem
 ## Architecture
 
 <<fill: a pointer to the architecture overview, or one to three lines of dependency direction the code does not make obvious>>
-<<fill: where decisions, contracts, and dependency rules live, or "There is no written architecture overview, decision log, or contract list yet.">>
+<<fill: where decisions and dependency rules live, or "There is no written architecture overview or decision log yet.">>
 
 ## Contributions
 

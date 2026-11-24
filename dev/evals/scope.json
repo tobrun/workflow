@@ -7,7 +7,7 @@
       "prompt": "We want to add rate limiting to our public API to stop abuse. Spec this change.",
       "fixture": "a repo with src/api/server.js with no rate limiting",
       "assertions": [
-        "The interview climbs above the stated solution: it asks what was observed and pressure-tests the premise before speccing rate limiting",
+        "The run climbs above the stated solution: it checks what was observed and pressure-tests the premise before speccing rate limiting",
         "The stated solution becomes one alternative among others in the research section, as the first decision",
         "The run takes the full path, tells the user so, and the user can switch it",
         "The spec is written to .dev/{plan-name}/spec.md with a research section of D- slugged decisions using the marks (chosen, rejected, open, accepted downside, not doing)",
@@ -38,7 +38,7 @@
       "assertions": [
         "The plan directory is located by the convention in references/plan-layout.md rather than guessed",
         "review_2.md is used, not review_1.md, because it is the highest-numbered review",
-        "The accepted Blockers and Concerns open the interview as decisions rather than being implemented directly",
+        "The accepted Blockers and Concerns become decisions rather than being implemented directly",
         "Rejected and deferred findings are written as not-doing lines with reopen conditions, not dropped",
         "New change sets are appended to the existing spec.md starting at 4; the existing change sets are never renumbered",
         "A defect change set carries the review's triggering scenario as its reproduction",
@@ -47,21 +47,21 @@
     },
     {
       "id": "scope-confidence-threshold",
-      "prompt": "Answer briefly, from the skill text only. During the interview you recommend storing the dedup keys in a database table over Redis at Confidence: 82%, and separately recommend a 30-day retention window at Confidence: 55%. Later a finding suggests the real problem is not duplicate deliveries but a missing retry, at Confidence: 90%. (0) Do you ask about the store, and how is that decision recorded? (1) Do you ask about the retention window? (2) Do you ask about the retry finding, and why? (3) When does the user see the recommendations you applied without asking?",
+      "prompt": "Answer briefly, from the skill text only. While scoping you recommend storing the dedup keys in a database table over Redis at Confidence: 82%, and separately recommend a 30-day retention window at Confidence: 45%. Later a finding suggests the real problem is not duplicate deliveries but a missing retry, at Confidence: 90%. (0) Do you ask about the store, and how is that decision recorded? (1) Do you ask about the retention window? (2) Do you ask about the retry finding, and why? (3) When does the user see the recommendations you applied without asking?",
       "assertions": [
         "Answer 0: no question; the table is applied and its chosen line carries `auto-applied at Confidence: 82%` in its because clause",
-        "Answer 1: yes, 55% is below the 65% threshold, so the user is asked",
+        "Answer 1: yes, 45% is below the 50% threshold, so the user is asked",
         "Answer 2: yes, whatever the score, because it changes what was asked for (a different problem than the request names)",
         "Answer 3: in one block, so a single reply can overturn any of them before later decisions rely on them"
       ]
     },
     {
       "id": "scope-written-as-the-run-goes",
-      "prompt": "Answer briefly, from the skill text and the references it links only. (1) At what point in a run is spec.md created, and what does it hold at that moment? (2) You have just cataloged nine decisions and are about to talk the big ones through with the user. Where are those nine decisions right now? (3) The user answers a question that settles D-file-storage. When does the spec change? (4) What does the fresh-context reviewer receive, and what does it not receive? (5) The session dies halfway through the decision talk-through. What does the next scope run find, and how does it treat it?",
+      "prompt": "Answer briefly, from the skill text and the references it links only. (1) At what point in a run is spec.md created, and what does it hold at that moment? (2) You have just cataloged nine decisions and are about to settle them. Where are those nine decisions right now? (3) The user answers a question that settles D-file-storage. When does the spec change? (4) What does the fresh-context reviewer receive, and what does it not receive? (5) The session dies halfway through settling the decisions. What does the next scope run find, and how does it treat it?",
       "assertions": [
-        "Answer 1: during the interview, as soon as the change's subject is known - not after the interview or the catalog; it holds the title, the date, what was understood so far, and empty Research, Scope, and Change plan sections",
+        "Answer 1: as soon as the change's subject is known - not after the research or the catalog; it holds the title, the date, what was understood so far, and empty Research, Scope, and Change plan sections",
         "Answer 2: in the research section of spec.md, each written as an [open] entry the moment it was cataloged - not only in the conversation",
-        "Answer 3: at once, when the answer lands - the decision's marks change in the file as the talk-through settles it, not in a later write-up",
+        "Answer 3: at once, when the answer lands - the decision's marks change in the file as the answer settles it, not in a later write-up",
         "Answer 4: the spec file and the repository; never the conversation",
         "Answer 5: a spec.md that lint-spec.py does not pass, holding everything established before the session died; it is a draft that scope picks up where it stopped, and no other skill builds on it"
       ]
@@ -76,10 +76,10 @@
     },
     {
       "id": "confidence-boundary",
-      "prompt": "From scope and execution.md: an in-scope reversible recommendation has Confidence: 70%. Apply or ask? What changes when the recommendation drops a requested requirement? Is 70% a measured probability or publication permission?",
+      "prompt": "From scope and execution.md: an in-scope reversible recommendation has Confidence: 55%. Apply or ask? What changes when the recommendation drops a requested requirement? Is 55% a measured probability or publication permission?",
       "fixture": "none - boundary policy question",
       "assertions": [
-        "Apply the in-scope 70% recommendation under the 65% rule and record it as auto-applied",
+        "Apply the in-scope 55% recommendation under the 50% rule and record it as auto-applied",
         "Resolve a dropped requirement with the user regardless of confidence",
         "Confidence expresses judgment, not a measured probability or authorization"
       ]
@@ -103,15 +103,15 @@
       "assertions": [
         "Answer 1: it switches to the full path instead of guessing",
         "Answer 2: none; the spec still has Research, Scope with a Validation block of the repo's real commands, and a Change plan",
-        "Answer 3: any three of the interview, the decisions talked through with the user, the fresh-context reviewer, and the promotion to docs/decisions.md and docs/contracts.md"
+        "Answer 3: any three of the argued decisions with alternatives, the auto-applied block the user can overturn, the fresh-context reviewer, and the promotion to docs/decisions.md"
       ]
     },
     {
       "id": "scope-commits-its-ledger",
-      "prompt": "Answer briefly, from the skill text and execution.md only. Scope finished on the full path while the checkout is on main, with docs/decisions.md and docs/contracts.md updated, a settled spec in .dev/rate-limit/, and an unrelated edit to src/app.py that the user made earlier. (1) What does scope commit, and what does it leave uncommitted? (2) On which branch, and what has to happen first? (3) Does it push? (4) What does it recommend next?",
+      "prompt": "Answer briefly, from the skill text and execution.md only. Scope finished on the full path while the checkout is on main, with docs/decisions.md updated, a settled spec in .dev/rate-limit/, and an unrelated edit to src/app.py that the user made earlier. (1) What does scope commit, and what does it leave uncommitted? (2) On which branch, and what has to happen first? (3) Does it push? (4) What does it recommend next?",
       "fixture": "none - the answers come from the skill text",
       "assertions": [
-        "Answer 1: only the ledger files it changed (docs/decisions.md, docs/contracts.md); the plan directory stays out of git because plan files travel with the run, and src/app.py is other pending work it never includes",
+        "Answer 1: only docs/decisions.md, the ledger file it changed; the plan directory stays out of git because plan files travel with the run, and src/app.py is other pending work it never includes",
         "Answer 2: not on main: it creates dev/rate-limit from HEAD first, a branch change that waits for the user's consent where the repository requires it",
         "Answer 3: no - a request to scope authorizes committing its ledger entries, not a push",
         "Answer 4: build, or remote to run it on a fleet instance, recommended and never launched"

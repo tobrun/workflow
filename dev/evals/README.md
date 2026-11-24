@@ -25,7 +25,7 @@ Independent evaluators receive the skill, the task, and raw artifacts, without t
 Keep their git operations and outputs inside the fixtures; prevent network, production, publication, and global-memory side effects unless explicitly part of the evaluation.
 
 Include boundary cases that distinguish the actual policy alternatives.
-For example, 70% distinguishes a 65% threshold from 75%; 55% and 82% do not.
+For example, 45% distinguishes a 50% threshold from 40%; 30% and 82% do not.
 Include failure cases such as missing agent results, malformed enums, skipped tests, competing writes, and unavailable remotes.
 
 ## Grade observable behavior

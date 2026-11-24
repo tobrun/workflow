@@ -28,7 +28,7 @@ Every stage keeps its full body.
 These rules replace only the moments where a stage would wait on the user:
 
 - **The task text is the interview.** Read it as the user's answers; what `scope` would still ask becomes a cataloged decision and is argued like any other.
-- **A recommendation is the answer.** Whatever confidence it carries, apply it; write `auto-applied at Confidence: NN%` on the chosen line as `scope` does for its 65%+ cases; yolo's below-75% warning is a separate reporting policy.
+- **A recommendation is the answer.** Whatever confidence it carries, apply it; write `auto-applied at Confidence: NN%` on the chosen line as `scope` does for its 50%+ cases; yolo's below-75% warning is a separate reporting policy.
   Below 75%, also mark the line `⚠` and give it a `? verify:` naming the one fact that would overturn it, so the reviewer sees exactly where the run guessed.
 - **No `⚑` survives.** A decision `scope` would leave waiting on the user resolves to its best-evidenced alternative under the rule above; the change plan never links an open decision, so nothing settles later.
 - **The ask is the scope.** Climb to the problem and pressure-test the premise as `scope` does, but a premise that does not hold is recorded as a `⊘` line with the evidence, and the task is still built as asked - the reviewer decides whether to merge it.

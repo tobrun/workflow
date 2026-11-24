@@ -1,6 +1,6 @@
 ---
 name: scope
-description: Spec a change at .dev/{plan-name}/spec.md - interview for the real problem, argue each consequential decision against its alternatives, and write a self-contained spec with a layer-tagged change plan, then record the settled decisions in docs/decisions.md and boundary guarantees in docs/contracts.md and commit that ledger. Use to plan work before implementation, for a quick plan of a small request or of accepted review findings, or for a deeper verified review of a large spec.
+description: Spec a change at .dev/{plan-name}/spec.md - find the real problem, argue each consequential decision against its alternatives, and write a self-contained spec with a layer-tagged change plan, then record the settled decisions in docs/decisions.md and commit that ledger. Use to plan work before implementation, for a quick plan of a small request or of accepted review findings, or for a deeper verified review of a large spec.
 ---
 
 # Scope
@@ -11,8 +11,8 @@ Paths follow [../../references/plan-layout.md](../../references/plan-layout.md),
 
 ## Choose the path
 
-- **Full** is the default: interview, argued decisions, a reviewer, promotion to the ledger.
-- **Small** is for a small request with an obvious implementation, or for accepted review findings that are plain defects: no interview, no reviewer, at most one question and only when you cannot proceed without it, and a `D-` decision only where the code offered a real choice.
+- **Full** is the default: research, argued decisions, a reviewer, promotion to the ledger.
+- **Small** is for a small request with an obvious implementation, or for accepted review findings that are plain defects: no reviewer, at most one question and only when you cannot proceed without it, and a `D-` decision only where the code offered a real choice.
   Switch to full when a finding needs a recorded decision flipped or user-visible scope changed, or when the request turns out not to be small.
 
 Tell the user which path you took.
@@ -26,10 +26,11 @@ A request often arrives one level too low: a solution hides the problem it solve
 Ask what led to the request and what would look different if it worked, and check the data behind the premise before speccing a fix.
 The user's original ask then becomes one alternative among others in the first decision; a premise that does not survive resolves as a `⊘` line.
 
-Interview one consequential question at a time, using the host's structured user-input tool when available, each with your recommendation and its confidence.
-Look at the code first so you ask only what the code cannot answer.
+Answer your own questions first: read the code, the data, and the request, and give each open question a recommendation with its confidence.
+Apply a recommendation at `Confidence: 50%` or above and write `auto-applied at Confidence: NN%` on its chosen line.
+Ask the user only below 50%, or when the answer changes the requested problem, drops a requirement, or adds a non-goal; ask one question at a time, using the host's structured user-input tool when available.
 List the recommendations you applied without asking in one block, so a single reply can overturn any of them before later decisions rely on them.
-Prefer the smallest spec that delivers observable behavior, but resolve any reduction of the requested scope with the user instead of deferring required work silently.
+Prefer the smallest spec that delivers observable behavior, but never shrink the requested scope without the user.
 
 ## 2. Argue the decisions
 
@@ -38,8 +39,8 @@ How the change is verified is a decision too: which layer to test at, what needs
 Routine implementation choices need no entry.
 
 Each decision gets a stable `D-` slug, is phrased as a question, and lists at least two alternatives with because clauses, argued against what the codebase already does.
-Write it as `[open]` when you find it and settle it in the file as the talk-through goes; `⚑` marks a line waiting on the user.
-Talk the big and medium decisions through with the user, highest impact first; sketch taste-driven alternatives concretely instead of describing them.
+Write it as `[open]` when you find it and settle it in the file under the confidence rule above, highest impact first; `⚑` marks a line waiting on the user.
+When you do ask about a taste-driven choice, sketch the alternatives concretely instead of describing them.
 
 Argue each decision on its merits before reading `docs/decisions.md`, then compare: a collision with a recorded entry is raised with the user and marked `⚑` until resolved, never silently overridden.
 
@@ -49,7 +50,6 @@ Argue each decision on its merits before reading `docs/decisions.md`, then compa
 When a later section references a decision, echo the chosen line's leading label in parentheses - `D-file-storage (✓ S3)`, `(open)`, `(⊘ not doing)` - so lead each chosen line with the short label you will echo.
 
 **Scope**: inputs, outputs, invariants, and error handling.
-An invariant another module will rely on without seeing the enforcing code is written in the notation of [../../references/contracts.md](../../references/contracts.md).
 Second-order work becomes nested sub-efforts with their own decisions; weighed and cut options become `⊘` non-goals with a because clause.
 End with a `### Validation` block of the repository's real typecheck, test, lint, and build commands, discovered from its manifests and CI config, never guessed.
 List each once, and mark `(end of build)` the ones a build wave does not need, such as the e2e suite, benchmarks, or a coverage run that repeats the suite.
@@ -81,18 +81,17 @@ Apply confirmed findings that stay within the settled decisions, ask the user ab
 ## 5. Record
 
 Copy into `docs/decisions.md` every decision that passes the promotion test in [../../references/decision-ledger.md](../../references/decision-ledger.md), verbatim, dated, and sourced to this spec.
-Promote cross-boundary invariants to `docs/contracts.md`, phrased for the relying side; a planned invariant keeps its `? verify:` until enforcing code exists.
 
-Commit the ledger files this run changed, and only those, so `build` and `remote` start from a clean tree; the plan directory stays out of git, because plan files travel with the run instead.
+Commit `docs/decisions.md` if this run changed it, and nothing else, so `build` and `remote` start from a clean tree; the plan directory stays out of git, because plan files travel with the run instead.
 Commit on the current work branch; on the default branch, create `dev/{plan-name}` from HEAD first, a branch change that waits for the user's consent where the repository requires it.
-Write the message per the commit skill's [message format](../commit/references/message-format.md), typed `docs`, such as `docs({plan-name}): record the spec's decisions and contracts`.
+Write the message per the commit skill's [message format](../commit/references/message-format.md), typed `docs`, such as `docs({plan-name}): record the spec's decisions`.
 
 Recommend `build`, or `remote` to run it on a fleet instance; never launch either.
 
 ## From review findings
 
 When the plan directory holds `review_N.md` files, the highest-numbered one is the input.
-On the small path, each accepted Blocker becomes one change set, and a Concern only when the user names it; on the full path, the accepted findings open the interview as decisions, and rejected or deferred ones land as `⊘` lines.
+On the small path, each accepted Blocker becomes one change set, and a Concern only when the user names it; on the full path, the accepted findings become decisions, and rejected or deferred ones land as `⊘` lines.
 Read the code each finding names before writing its change set.
 Append to the existing change plan with continued numbering - never renumber or rewrite what is there - and use the review's triggering scenario as the change set's test.
 Apply the review's Decision reconciliation section to `docs/decisions.md`, and commit the ledger as in Record.

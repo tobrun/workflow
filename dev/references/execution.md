@@ -9,7 +9,7 @@ Record any limitation in the run's existing notes or report.
 Do not create a separate approval checklist.
 
 - A request to commit authorizes local commits of the requested work, not a push.
-- A request to scope authorizes committing the ledger entries it records (`docs/decisions.md`, `docs/contracts.md`), not a push and not other pending work.
+- A request to scope authorizes committing the ledger entries it records in `docs/decisions.md`, not a push and not other pending work.
 - A request to ship can authorize a push and PR when that is the requested outcome and no higher-priority instruction restricts it.
 - A branch change requiring consent waits for that consent; meanwhile, prepare reviewable file changes on the current checkout.
 - Include only work owned by this task or explicitly included by the user.
@@ -25,16 +25,15 @@ Report an unresolved requirement as an open call and keep the deliverable local 
 
 ## Durable records
 
-One authority rule applies to decisions and contracts.
+One authority rule applies to recorded decisions.
 Promote settled choices already approved by the user or made within the authorized task.
 Keep proposed changes to scope or settled policy as candidates until resolved.
-Never turn an unimplemented spec invariant into a verified contract: retain `? verify:` until enforcing code and its behavior have been checked.
 Do not expand a small task into a whole-system documentation capture merely because a registry is absent.
 
 ## Confidence
 
-The interactive scope policy auto-applies an in-scope recommendation at 65% or above.
-Below 65%, ask when the answer is needed.
+The interactive scope policy auto-applies an in-scope recommendation at 50% or above.
+Below 50%, ask when the answer is needed.
 Changing the requested problem, dropping a requirement, or adding a non-goal always requires resolving that scope change.
 These percentages express judgment, not measured probabilities or permission.
 Yolo applies in-scope recommendations without an interview and separately marks recommendations below 75% for reviewer attention.

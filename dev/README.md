@@ -25,7 +25,6 @@ Skills are explicitly invoked and recommend the next step; only `yolo` follows s
 - [Review transport](skills/ship/references/orchestration.md) preserves independent lens and verifier batches with bounded host concurrency.
   Missing or invalid results yield INCOMPLETE, not approval; useful findings remain visible.
 - [Decision ledger](references/decision-ledger.md) records choices and rationale.
-  [Contracts](references/contracts.md) record boundary guarantees with provenance; planned guarantees remain unverified until checked against implementation.
   A missing overview does not turn a small task into whole-system documentation work.
 - [CI parity](references/ci-parity.md) keeps every existing required repository check mandatory at the change's impact, with full PR follow-through when publication is authorized.
   Share only when requested; evidence records the actual capture and tested sources.
@@ -103,7 +102,7 @@ done
 ln -sfn "$PWD/dev/references" ~/.config/opencode/references
 ```
 
-The last symlink keeps the shared references (`decision-ledger.md`, `contracts.md`, `plan-layout.md`) reachable through the `../../references/` links inside the skills.
+The last symlink keeps the shared references (`decision-ledger.md`, `plan-layout.md`) reachable through the `../../references/` links inside the skills.
 Symlinks mean a `git pull` updates the skills in place; restart opencode afterwards, since skills load at startup.
 The symlinks point at the clone, so keep it in place; if you move it, rerun the commands from the new location.
 

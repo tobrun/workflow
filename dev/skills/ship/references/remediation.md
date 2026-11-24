@@ -15,7 +15,7 @@ CONCERNS and PASS skip straight to phase 3; concerns stay in the report and the 
 
 1. **Fix.** Take every Blocker from the current `review_N.md` - each carries a `file:line`, a title, and the triggering scenario verification confirmed.
    Group blockers by independent area and dispatch one fresh-context fix agent per group, scheduled within available host capacity.
-   Each agent gets only its blockers, the relevant file paths, the brief phase 2 built (spec excerpts, contracts, decision rationale), and the fix vocabulary below.
+   Each agent gets only its blockers, the relevant file paths, the brief phase 2 built (spec excerpts, decision rationale), and the fix vocabulary below.
    Agents report their changes and leave git state alone; the orchestrator verifies and commits authorized fixes on the work branch, naming the review index and finding in the Why.
    Schedule within available child capacity and keep file ownership disjoint.
 2. **Re-harden.** Run phase 1's four read-only analyzers over the files the round touched, plus the flakiness check over the tests it added; dispatch fixes and loop per [gauntlet.md](gauntlet.md) as usual.
@@ -34,8 +34,8 @@ A re-run of `ship` after the human call starts a fresh budget.
 - Fix the root cause the scenario names, never the symptom the lens observed; a fix that only makes the triggering scenario pass is a suppression.
 - Add the test that reproduces the triggering scenario at its right layer, seen red before the fix and green after; a blocker with no test guarding it is not fixed.
 - Stay inside the blocker's area: no refactors, no touching findings another agent owns, no concerns or nits.
-- Never delete or weaken a test, a check, or a contract to make the blocker moot; never edit `docs/decisions.md` or `docs/contracts.md`.
-- A blocker that cannot be fixed without changing specced behavior, a settled decision, or a contract the reliance sites still assume is marked `escalated` in the agent's result and left alone; escalations go straight to the real-blocker list without spending the second round.
+- Never delete or weaken a test or a check to make the blocker moot; never edit `docs/decisions.md`.
+- A blocker that cannot be fixed without changing specced behavior, or a settled decision is marked `escalated` in the agent's result and left alone; escalations go straight to the real-blocker list without spending the second round.
 
 ## Real blockers
 

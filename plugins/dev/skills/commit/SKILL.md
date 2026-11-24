@@ -1,6 +1,6 @@
 ---
 name: commit
-description: Group pending changes into granular commits with structured what/why bodies and metadata trailers, fix documentation the changes made wrong, capture durable decisions and contracts into the project ledger, and push only when requested. Use when the user asks to commit, or signals implementation work is ready to be committed.
+description: Group pending changes into granular commits with structured what/why bodies and metadata trailers, fix documentation the changes made wrong, capture durable decisions into the project ledger, and push only when requested. Use when the user asks to commit, or signals implementation work is ready to be committed.
 ---
 
 # Commit
@@ -45,7 +45,7 @@ EOF
 
 ## 4. Sync documentation and the ledger
 
-Per [references/sync-checks.md](references/sync-checks.md): fix documentation the changes made wrong, and capture decisions and contracts the commits settled.
+Per [references/sync-checks.md](references/sync-checks.md): fix documentation the changes made wrong, and capture decisions the commits settled.
 Skip this when the changes are formatting, comments, or whitespace only.
 
 ## 5. Confirm and push

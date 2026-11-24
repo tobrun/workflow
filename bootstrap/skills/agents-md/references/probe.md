@@ -56,7 +56,7 @@ Only a security gap, neither a secret scan nor a dependency audit, becomes an op
 
 ## F. Durable docs and merge input
 
-- `docs/architecture.md`, `docs/decisions.md`, `docs/contracts.md`, `docs/dependencies.md`, an ADR folder, `ARCHITECTURE.md`, `CONTRIBUTING.md`.
+- `docs/architecture.md`, `docs/decisions.md`, `docs/dependencies.md`, an ADR folder, `ARCHITECTURE.md`, `CONTRIBUTING.md`.
 - Dependency direction between workspace packages, only when it is clear from the manifests and not obvious from the names.
 - The existing root AGENTS.md and CLAUDE.md are read in SKILL.md step 2; test each behavioral claim they make (a gitignore rule, a generator's output, a CI step) against the code, not only their paths and commands.
   Nested agent files, `.cursorrules`, and `.github/copilot-instructions.md` are evidence only; `CLAUDE.local.md` is private and never read.

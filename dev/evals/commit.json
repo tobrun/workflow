@@ -18,11 +18,10 @@
     {
       "id": "ledger-capture",
       "prompt": "Commit my changes.",
-      "fixture": "a repo keeping docs/decisions.md and docs/contracts.md, where the diff changes a function named as a contract's guarantee site and the commit body carries a Considered: alternative",
+      "fixture": "a repo keeping docs/decisions.md, where the commit body carries a Considered: alternative",
       "assertions": [
         "The Considered: choice is evaluated against the promotion test and, if it qualifies, written as a D- entry to the matching area of docs/decisions.md, dated and sourced to the commit hash",
-        "The touched guarantee site gets a typed verdict: holds, broken, or needs-verify, with broken surfacing the relied-on sites as follow-up",
-        "Ledger and contract updates are committed as their own docs(decisions)/docs(contracts) commits, not folded into the code commit"
+        "Ledger updates are committed as their own docs(decisions) commit, not folded into the code commit"
       ]
     },
     {

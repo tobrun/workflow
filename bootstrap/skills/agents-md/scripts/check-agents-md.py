@@ -42,7 +42,7 @@ SLOTS = {
 }
 SLUGS = {
     "setup", "build", "check", "unit", "integration", "e2e", "e2e-env", "browser", "ci",
-    "security", "architecture", "decisions", "contracts", "dependencies", "commits",
+    "security", "architecture", "decisions", "dependencies", "commits",
     "plans", "pr", "branch",
 }
 EM_DASH = "\u2014"

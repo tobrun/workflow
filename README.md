@@ -37,11 +37,11 @@ The portable copies keep to the six standard frontmatter fields, so other harnes
 
 ## Layout
 
-- `dev/` is the source and the Claude Code plugin: `dev/skills/`, plus the references and scripts several skills share.
+- `dev/` is the source and the Claude Code plugin: the skills in `dev/source/`, plus the references and scripts several skills share. The folder is not called `skills/` on purpose: installers scan a repository for `skills/` folders, and must find only the portable copy.
 - `skills/` is the portable tree, generated: each skill self-contained, with the shared files it uses copied in. `npx skills`, `gh skill`, Pi, and hand copies install from here.
 - `.codex-plugin/plugin.json` makes the repository root the Codex plugin; it installs `skills/`, whose folders carry each skill's `agents/openai.yaml`.
 
-There is one copy of each skill outside `dev/`, so installers never find a skill twice; `dev/skills/` is the Claude Code plugin, which alone can mark its skills manual-only.
+Installers therefore find each skill exactly once. `dev/source/` stays separate because only the Claude Code plugin can mark its skills manual-only, with a frontmatter field the Agent Skills spec does not allow.
 
 ```bash
 python3 scripts/build_distributions.py         # regenerate skills/ and .codex-plugin/

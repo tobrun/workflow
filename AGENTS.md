@@ -1,14 +1,15 @@
 # AGENTS.md
 
-This file provides guidance to coding agents (Claude Code, Codex, Pi) working in this repository.
+This file provides guidance to coding agents (Claude Code, Codex, Pi, and others) working in this repository.
 
 ## Repository Overview
 
-This is a monorepo for Tobrun's Claude Code, Codex, and Pi skills. The root
-`.claude-plugin/marketplace.json` references the Claude source plugins.
-`.agents/plugins/marketplace.json` references generated Codex plugins under
-`plugins/`. The root `package.json` exposes the `dev` source skills as a Pi
-package. There is one plugin, `dev`, the hand-invoked development workflow.
+This repository publishes Tobrun's `dev` skills, the hand-invoked development
+workflow, to every Agent Skills harness. `dev/` is the source and the Claude
+Code plugin (`.claude-plugin/marketplace.json`). Everything else installs the
+generated portable tree `skills/`: the Codex plugin (`.codex-plugin/` at the
+root, listed in `.agents/plugins/marketplace.json`), the Pi package
+(`package.json`), `npx skills`, and `gh skill`.
 The `dev:bootstrap` skill sets up a
 consuming repository's architecture enforcement from `docs/architecture.toml`
 with `dev/scripts/arch.py`. The `dev:yolo` skill is
@@ -30,10 +31,11 @@ inline in one session.
 │   ├── references/         # Shared references across the plugin's skills
 │   ├── scripts/            # Shared scripts
 │   ├── evals/              # Skill evals (not shipped to Codex)
-│   └── skills/
+│   └── source/             # The skills (plugin.json "skills"); not skills/, so installers skip it
 │       └── {skill-name}/
 │           ├── SKILL.md    # Skill definition with YAML frontmatter
-│           └── references/ # Deep-dive docs loaded on demand
+│           ├── references/ # Deep-dive docs loaded on demand
+│           └── assets/     # Templates the skill fills in
 ├── skills/                 # Generated portable Agent Skills tree; Codex, npx skills, gh skill, Pi install it
 ├── .codex-plugin/          # Generated Codex manifest, pointing at skills/
 ├── tools/harden/           # Optional local hardening analyses
@@ -53,7 +55,7 @@ inline in one session.
 - Every `SKILL.md` must have YAML frontmatter with `name` and `description`.
 - Every `SKILL.md` must set `disable-model-invocation: true`; all skills in this repo are human-triggered only, and skills recommend the next step instead of invoking each other. The dev `yolo` skill reads the sibling scope, build, and ship bodies by path and follows them inline in one session; it launches nothing.
 - Plan files under `.dev/` are never committed.
-- Author skills only in `dev/`. Never edit `skills/` or `.codex-plugin/`; run
+- Author skills only in `dev/source/` and the shared `dev/references/` and `dev/scripts/`. Never edit `skills/` or `.codex-plugin/`; run
   `python3 scripts/build_distributions.py` after any change under `dev/`. It writes
   the portable tree - spec-only frontmatter, the shared references and scripts each
   skill uses copied into it, links rewritten - plus the Codex `agents/openai.yaml`
@@ -61,8 +63,9 @@ inline in one session.
 - Portable skills must pass `python3 scripts/check_skills.py skills`: the Agent Skills
   frontmatter fields only, and every link inside the skill or a sibling skill. Write
   harness-neutral prose ("read the file", "run the script"), never a harness's tool names.
-- Keep one copy of each skill outside `dev/`: an installer that scans the repository
-  refuses a skill it finds twice.
+- Keep exactly one discoverable copy of each skill, `skills/`: the source lives in
+  `dev/source/`, not a `skills/` folder, because installers (gh skill, npx skills)
+  scan for those and refuse or mis-pick a skill they find twice.
 - Keep the root Pi package version equal to `dev/.claude-plugin/plugin.json`.
 - Preserve native subagent behavior in `ship`; Pi-specific orchestration
   belongs in its subprocess transport and bundled runner.

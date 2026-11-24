@@ -13,7 +13,9 @@ Usage: python3 scripts/build_distributions.py [--check]
 One portable copy, not one per harness: installers that scan the repository would
 otherwise find each skill twice.
 
-dev/ stays the Claude Code plugin, where disable-model-invocation keeps every skill manual.
+dev/ stays the Claude Code plugin, its skills under dev/source/ (named so installers that
+scan for skills/ folders find only the portable copy), where disable-model-invocation
+keeps every skill manual.
 --check fails when a generated tree differs from a fresh build.
 """
 
@@ -35,6 +37,8 @@ GENERATOR = "scripts/build_distributions.py"
 # Markers of trees an earlier generator wrote, so a retired distribution is still recognized.
 GENERATED_MARKERS = (GENERATOR, "scripts/build_codex_plugin.py")
 SHARED = ("references", "scripts")
+# Not "skills": installers scan a repository for skills/ folders, and must find only the portable copy.
+SOURCE_SKILLS = "source"
 JUNK = shutil.ignore_patterns(".DS_Store", "__pycache__")
 LINK = re.compile(r"\]\(([^)\s#]+)(#[^)\s]*)?\)")
 SKILL_ROOT = re.compile(r"\{([a-z]+)-skill-root\}(/[^\s`'\")\]]*)?")
@@ -145,7 +149,7 @@ class Portable:
 
     def __init__(self, plugin: PluginConfig, out: Path, name: str) -> None:
         self.plugin, self.out, self.name = plugin, out, name
-        self.source_skills = plugin.source / "skills"
+        self.source_skills = plugin.source / SOURCE_SKILLS
         self.root = out / name
         self.origin: dict[Path, Path] = {}  # file in the portable tree -> its source file
 
@@ -219,16 +223,16 @@ class Portable:
 
 def build_portable(plugin: PluginConfig, out: Path) -> list[str]:
     version = json.loads((plugin.source / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))["version"]
-    names = sorted(p.name for p in (plugin.source / "skills").iterdir() if (p / "SKILL.md").is_file())
+    names = sorted(p.name for p in (plugin.source / SOURCE_SKILLS).iterdir() if (p / "SKILL.md").is_file())
     unlisted = [n for n in names if n not in plugin.skills]
     orphaned = [n for n in plugin.skills if n not in names]
     if unlisted or orphaned:
-        raise ValueError(f"skill configs out of sync with {plugin.name}/skills/: missing {unlisted}, stale {orphaned}")
+        raise ValueError(f"skill configs out of sync with {plugin.name}/{SOURCE_SKILLS}/: missing {unlisted}, stale {orphaned}")
     out.mkdir(parents=True, exist_ok=True)
     for name in names:
         Portable(plugin, out, name).build(version)
     (out / "README.md").write_text(
-        f"# Portable skills\n\nGenerated from `{plugin.name}/skills/` by `{GENERATOR}`; do not edit.\n"
+        f"# Portable skills\n\nGenerated from `{plugin.name}/{SOURCE_SKILLS}/` by `{GENERATOR}`; do not edit.\n"
         "Each folder is a self-contained Agent Skill (agentskills.io). Install the whole set - `yolo` reads `scope`,\n"
         "`build`, and `ship` beside it. See the repository README for every harness.\n",
         encoding="utf-8")

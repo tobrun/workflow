@@ -15,7 +15,7 @@ import unittest
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-SCRIPT = REPO_ROOT / "dev" / "skills" / "ship" / "scripts" / "pr-evidence.py"
+SCRIPT = REPO_ROOT / "dev" / "source" / "ship" / "scripts" / "pr-evidence.py"
 PIXEL = "data:image/png;base64,iVBORw0KGgo="
 
 

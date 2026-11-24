@@ -17,8 +17,8 @@ from pathlib import Path
 from dev.evals.tests.spec_fixtures import verification
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-LINT = REPO_ROOT / "dev" / "skills" / "scope" / "scripts" / "lint-spec.py"
-CHECK = REPO_ROOT / "dev" / "skills" / "build" / "scripts" / "check-tests.py"
+LINT = REPO_ROOT / "dev" / "source" / "scope" / "scripts" / "lint-spec.py"
+CHECK = REPO_ROOT / "dev" / "source" / "build" / "scripts" / "check-tests.py"
 
 HEAD = """# Coupons
 

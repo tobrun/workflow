@@ -16,7 +16,7 @@ from pathlib import Path
 from dev.evals.tests.spec_fixtures import verification
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-SCRIPT = REPO_ROOT / "dev" / "skills" / "scope" / "scripts" / "lint-spec.py"
+SCRIPT = REPO_ROOT / "dev" / "source" / "scope" / "scripts" / "lint-spec.py"
 
 CHOSEN = """D-storage: Where do files live?
   ✓ S3 bucket - durable across redeploys

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-RUNNER="$ROOT/dev/skills/ship/scripts/run-pi-agents.sh"
+RUNNER="$ROOT/dev/source/ship/scripts/run-pi-agents.sh"
 TEMP_DIR=$(mktemp -d)
 trap 'rm -rf "$TEMP_DIR"' EXIT
 

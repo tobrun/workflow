@@ -61,6 +61,17 @@ yaml_field() {
 }
 
 # ---------------------------------------------------------------------------
+# A plugin's skills directory: its plugin.json "skills" path, else skills/
+# ---------------------------------------------------------------------------
+skills_dir() {
+  local dir="$1" path
+  path=$(jq -r 'if (.skills | type) == "string" then .skills else "skills" end' \
+    "$dir/.claude-plugin/plugin.json" 2>/dev/null || echo skills)
+  path="${path#./}"
+  echo "$dir/${path%/}"
+}
+
+# ---------------------------------------------------------------------------
 # Get list of plugin directories from marketplace
 # ---------------------------------------------------------------------------
 marketplace_source_dirs() {
@@ -261,7 +272,7 @@ check_08() {
   while IFS= read -r dir; do
     [ -z "$dir" ] && continue
     [ ! -d "$dir" ] && continue
-    if [ ! -d "$dir/skills" ] && [ ! -d "$dir/commands" ] && [ ! -d "$dir/agents" ]; then
+    if [ ! -d "$(skills_dir "$dir")" ] && [ ! -d "$dir/commands" ] && [ ! -d "$dir/agents" ]; then
       fail "R08" "$dir" "No skills/, commands/, or agents/ directory found"
     fi
   done <<< "$sources"
@@ -277,8 +288,8 @@ check_09() {
   while IFS= read -r dir; do
     [ -z "$dir" ] && continue
     [ ! -d "$dir" ] && continue
-    [ ! -d "$dir/skills" ] && continue
-    for skilldir in "$dir/skills"/*/; do
+    [ ! -d "$(skills_dir "$dir")" ] && continue
+    for skilldir in "$(skills_dir "$dir")"/*/; do
       [ ! -d "$skilldir" ] && continue
       skilldir="${skilldir%/}"
       [ ! -f "$skilldir/SKILL.md" ] && fail "R09" "$skilldir" "Missing SKILL.md"
@@ -296,8 +307,8 @@ check_10() {
   while IFS= read -r dir; do
     [ -z "$dir" ] && continue
     [ ! -d "$dir" ] && continue
-    [ ! -d "$dir/skills" ] && continue
-    for skilldir in "$dir/skills"/*/; do
+    [ ! -d "$(skills_dir "$dir")" ] && continue
+    for skilldir in "$(skills_dir "$dir")"/*/; do
       [ ! -d "$skilldir" ] && continue
       local sf="${skilldir%/}/SKILL.md"
       [ ! -f "$sf" ] && continue
@@ -335,8 +346,8 @@ check_11() {
   while IFS= read -r dir; do
     [ -z "$dir" ] && continue
     [ ! -d "$dir" ] && continue
-    [ ! -d "$dir/skills" ] && continue
-    for skilldir in "$dir/skills"/*/; do
+    [ ! -d "$(skills_dir "$dir")" ] && continue
+    for skilldir in "$(skills_dir "$dir")"/*/; do
       [ ! -d "$skilldir" ] && continue
       local sname
       sname=$(basename "${skilldir%/}")
@@ -367,8 +378,8 @@ check_14() {
   while IFS= read -r dir; do
     [ -z "$dir" ] && continue
     [ ! -d "$dir" ] && continue
-    [ ! -d "$dir/skills" ] && continue
-    for skilldir in "$dir/skills"/*/; do
+    [ ! -d "$(skills_dir "$dir")" ] && continue
+    for skilldir in "$(skills_dir "$dir")"/*/; do
       [ ! -d "$skilldir" ] && continue
       local sf="${skilldir%/}/SKILL.md"
       [ ! -f "$sf" ] && continue
@@ -434,8 +445,8 @@ check_skill_length() {
   while IFS= read -r dir; do
     [ -z "$dir" ] && continue
     [ ! -d "$dir" ] && continue
-    [ ! -d "$dir/skills" ] && continue
-    for skilldir in "$dir/skills"/*/; do
+    [ ! -d "$(skills_dir "$dir")" ] && continue
+    for skilldir in "$(skills_dir "$dir")"/*/; do
       [ ! -d "$skilldir" ] && continue
       local sf="${skilldir%/}/SKILL.md"
       [ ! -f "$sf" ] && continue
@@ -573,7 +584,7 @@ check_codex() {
 # ===========================================================================
 check_pi() {
   local package="package.json"
-  local runner="dev/skills/ship/scripts/run-pi-agents.sh"
+  local runner="dev/source/ship/scripts/run-pi-agents.sh"
   local package_version
   local plugin_version
 
@@ -604,13 +615,13 @@ check_pi() {
   fi
 
   if ! grep -q 'Native transport (preferred)' \
-    dev/skills/ship/references/orchestration.md; then
-    fail "P01" "dev/skills/ship/references/orchestration.md" \
+    dev/source/ship/references/orchestration.md; then
+    fail "P01" "dev/source/ship/references/orchestration.md" \
       "Missing native multi-agent transport"
   fi
   if ! grep -q 'PI_CODING_AGENT=true' \
-    dev/skills/ship/references/orchestration.md; then
-    fail "P01" "dev/skills/ship/references/orchestration.md" \
+    dev/source/ship/references/orchestration.md; then
+    fail "P01" "dev/source/ship/references/orchestration.md" \
       "Missing Pi subprocess transport"
   fi
 }

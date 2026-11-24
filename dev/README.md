@@ -8,21 +8,21 @@ Skills are explicitly invoked and recommend the next step; only `yolo` follows s
 
 | Skill | Use when | Deliverable |
 | --- | --- | --- |
-| [scope](skills/scope/SKILL.md) | The problem or consequential choices need planning. | A settled spec with invariants, argued choices, and layer-tagged scenarios, plus an HTML review page of what needs you, decisions by impact and confidence, and test coverage per layer. |
-| [build](skills/build/SKILL.md) | A spec is ready to implement. | Code, tests, runner receipts, incremental notes, and actual application evidence. |
-| [ship](skills/ship/SKILL.md) | A change needs hardening, independent review, and an authorized PR. | Required checks, verified findings with explicit completeness, and current evidence. |
-| [yolo](skills/yolo/SKILL.md) | One task should run unattended. | The full scope/build/ship contracts, recorded assumptions, and a PR or local handoff within available authority. |
-| [bootstrap](skills/bootstrap/SKILL.md) | A repository's architecture should be enforced, not described: once per repository. | `docs/architecture.toml`, generated boundary, banned-API, and dependency checks that a red team proved fire, a shrinking baseline, and a CI job. |
-| [commit](skills/commit/SKILL.md) | Requested work is ready for local commits. | Atomic commits with what/why messages; a push only when requested. |
+| [scope](source/scope/SKILL.md) | The problem or consequential choices need planning. | A settled spec with invariants, argued choices, and layer-tagged scenarios, plus an HTML review page of what needs you, decisions by impact and confidence, and test coverage per layer. |
+| [build](source/build/SKILL.md) | A spec is ready to implement. | Code, tests, runner receipts, incremental notes, and actual application evidence. |
+| [ship](source/ship/SKILL.md) | A change needs hardening, independent review, and an authorized PR. | Required checks, verified findings with explicit completeness, and current evidence. |
+| [yolo](source/yolo/SKILL.md) | One task should run unattended. | The full scope/build/ship contracts, recorded assumptions, and a PR or local handoff within available authority. |
+| [bootstrap](source/bootstrap/SKILL.md) | A repository's architecture should be enforced, not described: once per repository. | `docs/architecture.toml`, generated boundary, banned-API, and dependency checks that a red team proved fire, a shrinking baseline, and a CI job. |
+| [commit](source/commit/SKILL.md) | Requested work is ready for local commits. | Atomic commits with what/why messages; a push only when requested. |
 
 ## Shared contracts
 
 - [Execution authority](references/execution.md) owns permissions and durable-write authority.
   A skill never overrides session or repository restrictions.
 - [Plan layout](references/plan-layout.md) owns paths and incremental working state.
-- [Scenario evidence](skills/build/references/test-evidence.md) maps spec scenarios to current passing runner cases.
+- [Scenario evidence](source/build/references/test-evidence.md) maps spec scenarios to current passing runner cases.
   The checker verifies receipts and declared layers; reviewers judge assertions and actual layer suitability.
-- [Review transport](skills/ship/references/orchestration.md) preserves independent lens and verifier batches with bounded host concurrency.
+- [Review transport](source/ship/references/orchestration.md) preserves independent lens and verifier batches with bounded host concurrency.
   Missing or invalid results yield INCOMPLETE, not approval; useful findings remain visible.
 - [Decision ledger](references/decision-ledger.md) records choices and rationale.
   A missing overview does not turn a small task into whole-system documentation work.
@@ -39,7 +39,7 @@ Mutation testing retains the configured, focused survivor-triage policy; a kill-
 ## Installation
 
 See the [repository README](../README.md#install) for every harness: the Claude Code and Codex plugins, `npx skills`, `gh skill`, Pi, and a copy by hand.
-This folder is the source and the Claude Code plugin; the portable copies under [`skills/`](../skills/) are generated from it, each skill self-contained.
+This folder is the source and the Claude Code plugin, its skills in `source/`; the portable copies under [`skills/`](../skills/) are generated from it, each skill self-contained.
 
 ## opencode installation
 

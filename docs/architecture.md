@@ -11,7 +11,7 @@ Captured: 2026-09-17 (full, scope) - Updated: 2026-11-24 (five skills: the remot
 
 | Component | Responsibility | Lives at | Talks to |
 | --------- | -------------- | -------- | -------- |
-| dev skills | the interactive workflow skills and the references and scripts they share | `dev/skills/`, `dev/references/`, `dev/scripts/` | nothing at runtime; read by Claude, Codex, opencode, and Pi hosts |
+| dev skills | the interactive workflow skills and the references and scripts they share | `dev/source/`, `dev/references/`, `dev/scripts/` | nothing at runtime; read by Claude, Codex, opencode, and Pi hosts |
 | dev evals | comprehension evals for the skills | `dev/evals/` | nothing at runtime |
 | portable skills | the Agent Skills tree every harness but Claude Code installs: each skill self-contained, with spec-only frontmatter and its Codex `agents/openai.yaml` sidecar | `skills/`, `.codex-plugin/` | npx skills, gh skill, the Codex plugin marketplace, Pi |
 | repo scripts | validation of the whole repository, the plugin generator, and the Pi transport self-test | `scripts/` | every other component |
@@ -25,7 +25,7 @@ Captured: 2026-09-17 (full, scope) - Updated: 2026-11-24 (five skills: the remot
 2. The skill reads its SKILL.md and references, writes plan files under .dev/{plan-name}/ in the consuming repository, and recommends the next skill; skills never invoke each other.
 
 ### Building the distributions
-1. `scripts/build_distributions.py` copies each skill of `dev/skills/` into `skills/{name}/`, vendors the shared references and scripts it links to, rewrites the links, keeps only the Agent Skills frontmatter fields, adds the Codex sidecar, and writes `.codex-plugin/plugin.json`; it removes generated plugins left under `plugins/`.
+1. `scripts/build_distributions.py` copies each skill of `dev/source/` into `skills/{name}/`, vendors the shared references and scripts it links to, rewrites the links, keeps only the Agent Skills frontmatter fields, adds the Codex sidecar, and writes `.codex-plugin/plugin.json`; it removes generated plugins left under `plugins/`.
 2. `scripts/validate.sh` checks structure, links, skill length, the generated distributions (C01), the portable skills against the spec (S01), the Pi package and transport (P01) and the dev tests (D01); `--check` mode of the generator fails when `plugins/` is stale, including a retired generated distribution.
 
 ### An unattended dev run

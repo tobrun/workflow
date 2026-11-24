@@ -33,14 +33,14 @@ def write(root: Path, files: dict[str, str]) -> None:
 MINI = {
     "mini/.claude-plugin/plugin.json": json.dumps({"name": "mini", "version": "1.2.3", "description": "d",
                                                    "author": {"name": "T"}}),
-    "mini/skills/alpha/SKILL.md": "---\nname: alpha\ndescription: Does alpha. Use when alpha.\n"
+    "mini/source/alpha/SKILL.md": "---\nname: alpha\ndescription: Does alpha. Use when alpha.\n"
                                   "disable-model-invocation: true\n---\n\n# Alpha\n\n"
                                   "Follow [the rules](../../references/rules.md) and run "
                                   "`python3 {alpha-skill-root}/../../scripts/tool.py`; see [beta](../beta/SKILL.md).\n",
-    "mini/skills/beta/SKILL.md": "---\nname: beta\ndescription: Does beta. Use when beta.\n"
+    "mini/source/beta/SKILL.md": "---\nname: beta\ndescription: Does beta. Use when beta.\n"
                                  "disable-model-invocation: true\n---\n\n# Beta\n\nRead [local](references/local.md).\n",
-    "mini/skills/beta/references/local.md": "Local detail.\n",
-    "mini/references/rules.md": "Rules link [more](more.md) and [beta's detail](../skills/beta/references/local.md).\n",
+    "mini/source/beta/references/local.md": "Local detail.\n",
+    "mini/references/rules.md": "Rules link [more](more.md) and [beta's detail](../source/beta/references/local.md).\n",
     "mini/references/more.md": "More.\n",
     "mini/references/unused.md": "Nobody links here.\n",
     "mini/scripts/tool.py": "print('tool')\n",
@@ -95,7 +95,7 @@ class GeneratorTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout)
 
     def test_a_source_skill_without_its_claude_policy_is_refused(self) -> None:
-        path = self.root / "mini/skills/beta/SKILL.md"
+        path = self.root / "mini/source/beta/SKILL.md"
         path.write_text(path.read_text().replace("disable-model-invocation: true\n", ""))
         skill = generator.SkillConfig("X", "x", "Use x", "c")
         plugin = generator.PluginConfig("mini", "Mini", "mini", ("Write",), ("p",), {"alpha": skill, "beta": skill})

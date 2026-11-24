@@ -9,7 +9,7 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
-CHECK = ROOT / 'dev/skills/build/scripts/check-tests.py'
+CHECK = ROOT / 'dev/source/build/scripts/check-tests.py'
 RUNNER = '''import sys, unittest, xml.etree.ElementTree as ET
 suite = unittest.defaultTestLoader.loadTestsFromName("tests")
 class Result(unittest.TextTestResult):

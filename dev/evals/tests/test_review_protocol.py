@@ -10,7 +10,7 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
-AGGREGATE = ROOT / 'dev/skills/ship/scripts/aggregate-findings.py'
+AGGREGATE = ROOT / 'dev/source/ship/scripts/aggregate-findings.py'
 
 
 class ReviewProtocolTest(unittest.TestCase):

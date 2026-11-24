@@ -3,6 +3,7 @@
 Twenty kinds of verification, each with what it proves, when it applies, where it is written, and what a failure does.
 `scope` plans them in the spec's `### Verification` block, `build` writes the tests they need, and `ship`'s verify phase runs or checks every one and records it as one row of `pr.md`'s Quality table.
 A kind that does not apply is skipped with a reason, never left out: `lint-spec.py` refuses a spec missing one, and `pr-evidence.py check` refuses a Quality table missing one.
+That table is the agent's account. In the PR, CI's `ci-evidence.py` re-measures what it can at the head commit - tests, test edits, fails-on-revert, changed-line coverage, the acceptance criteria - in a block only CI writes, per [../skills/ship/references/pull-request.md](../skills/ship/references/pull-request.md).
 
 ## The kinds
 

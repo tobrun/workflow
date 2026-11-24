@@ -1,0 +1,81 @@
+# Written by the dev bootstrap skill. At each pull request's head commit, this job runs the
+# tests, then writes the verification evidence into the PR body between its DEV-EVIDENCE
+# markers with .verify/ci-evidence.py. The agent that wrote the PR cannot write that block;
+# this job rewrites it on every push. Fill each <<fill: ...>> from the repository's own CI.
+name: verify
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+  # To sign the evidence, uncomment these two and the attest step at the end.
+  # id-token: write
+  # attestations: write
+
+concurrency:
+  group: verify-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  evidence:
+    runs-on: ubuntu-latest
+    env:
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      GH_TOKEN: ${{ github.token }}
+      # A fork's token cannot edit the PR; its evidence goes to the job summary only.
+      CAN_EDIT: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Mark earlier evidence as stale
+        if: env.CAN_EDIT == 'true'
+        run: python3 .verify/ci-evidence.py pending --sha "$HEAD_SHA" --pr "$PR_NUMBER" || true
+
+      # <<fill: set up the toolchain and install dependencies exactly as the repository's CI does>>
+
+      - name: Run the tests with JUnit and coverage
+        run: <<fill: the test command, writing JUnit XML under reports/junit/ and coverage to reports/coverage.xml or reports/lcov.info>>
+
+      - name: Collect the evidence
+        if: always()
+        env:
+          # The body comes in through the environment, never interpolated into the script.
+          PR_BODY: ${{ github.event.pull_request.body }}
+          BASE_REF: ${{ github.base_ref }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          printf '%s' "$PR_BODY" > "$RUNNER_TEMP/pr-body.md"
+          python3 .verify/ci-evidence.py collect --base "origin/$BASE_REF" --head "$HEAD_SHA" \
+            --junit 'reports/junit/*.xml' --coverage '<<fill: reports/coverage.xml or reports/lcov.info>>' \
+            --body "$RUNNER_TEMP/pr-body.md" \
+            --revert-cmd '<<fill: runs only {tests} and writes JUnit to {junit}, such as: python -m pytest -q --junitxml={junit} {tests}>>' \
+            --run-url "$RUN_URL" --workflow .github/workflows/verify.yml --out reports/evidence
+          cat reports/evidence/block.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Write the evidence into the PR body
+        if: always() && env.CAN_EDIT == 'true'
+        run: python3 .verify/ci-evidence.py publish --block reports/evidence/block.md --pr "$PR_NUMBER"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: verification-evidence
+          path: reports/evidence
+
+      # Sign the evidence as an in-toto test-result attestation, verifiable with:
+      #   gh attestation verify reports/evidence/evidence.json --repo OWNER/REPO \
+      #     --predicate-type https://in-toto.io/attestation/test-result/v0.1 \
+      #     --signer-workflow OWNER/REPO/.github/workflows/verify.yml
+      # Private repositories need a plan that includes artifact attestations.
+      # - uses: actions/attest@v4
+      #   with:
+      #     subject-path: reports/evidence/evidence.json
+      #     predicate-type: https://in-toto.io/attestation/test-result/v0.1
+      #     predicate-path: reports/evidence/predicate.json

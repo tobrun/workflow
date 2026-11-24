@@ -5,6 +5,7 @@
                            [--url-template URL]
     pr-evidence.py publish <dir> [--branch pr-evidence] [--remote origin]
     pr-evidence.py check <pr-body.md> [--kind frontend|non-frontend] [--spec spec.md]
+    pr-evidence.py summarize <pr-body.md>
 
 `extract` reads build's JSON e2e report, decodes every
 screenshot to `<dir>/{plan}/{scenario}/{step}.png`, and writes
@@ -23,7 +24,14 @@ holding real proof: an image served over http(s), or a labeled before/after
 (or merge-base/branch) pair of fenced blocks. Placeholders fail it. It also
 requires a "## Quality" table with one row per verification kind of
 references/verification.md, each `ran` or `skipped (reason)`; with --spec, a
-kind the spec's Verification block marks yes may not be skipped.
+kind the spec's Verification block marks yes may not be skipped, every spec
+scenario needs an Acceptance criteria row naming its test, and that table's
+Status cells stay "awaiting CI". The body keeps empty DEV-EVIDENCE markers: CI's
+ci-evidence.py owns what goes between them. A "## Not verified" section is
+required, and the grouped verification summary must be what `summarize` writes.
+
+`summarize` rewrites the QUALITY-SUMMARY block from the Quality table: the twenty
+kinds grouped, each marked ran clean, ran with open calls, or skipped.
 """
 
 from __future__ import annotations
@@ -195,6 +203,111 @@ QUALITY_ROW = re.compile(r"^\|\s*`?([a-z-]+)`?\s*\|\s*([^|]*?)\s*\|")
 PLANNED = re.compile(r"^\s*[-*]\s+([a-z-]+):\s*(yes|no)\b")
 
 
+GROUPS = (
+    ("Tests", ("unit", "functional", "component", "contract", "acceptance", "regression", "smoke")),
+    ("Generated inputs and models", ("property", "fuzz", "formal")),
+    ("Code analysis", ("static-analysis", "lint", "coverage", "mutation")),
+    ("Speed", ("benchmark", "performance")),
+    ("Experience", ("ui-ux", "usability")),
+    ("Security", ("threat-model", "penetration")),
+)
+EVIDENCE_BEGIN, EVIDENCE_END = "<!-- BEGIN DEV-EVIDENCE -->", "<!-- END DEV-EVIDENCE -->"
+SUMMARY_BEGIN, SUMMARY_END = "<!-- BEGIN QUALITY-SUMMARY -->", "<!-- END QUALITY-SUMMARY -->"
+SUMMARY = re.compile(re.escape(SUMMARY_BEGIN) + r".*?" + re.escape(SUMMARY_END), re.DOTALL)
+SCENARIO_TESTS = re.compile(r"^\s*tests:\s*(.*)$", re.IGNORECASE)
+
+
+def quality_table(body: str) -> dict[str, tuple[str, str]]:
+    """Each kind's Result and Surviving cells."""
+    found = {}
+    for line in (evidence_section(body, "Quality") or "").splitlines():
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if len(cells) >= 2 and cells[0].strip("`") in KINDS:
+            found[cells[0].strip("`")] = (cells[1], cells[4] if len(cells) > 4 else "")
+    return found
+
+
+def summary_block(body: str) -> str:
+    table = quality_table(body)
+    rows = []
+    for group, kinds in GROUPS:
+        marks = []
+        for kind in kinds:
+            result, surviving = table.get(kind, ("missing", ""))
+            if result == "ran":
+                marks.append(f"{'⚠️' if surviving not in ('', '0') else '✅'} {kind}")
+            elif result.startswith("skipped"):
+                marks.append(f"⏭️ {kind}")
+            else:
+                marks.append(f"❓ {kind}")
+        rows.append(f"| {group} | {' · '.join(marks)} |")
+    ran = sum(1 for r, _ in table.values() if r == "ran")
+    return "\n".join([SUMMARY_BEGIN, f"{ran} of {len(KINDS)} kinds ran; the rest were skipped with the reasons in the table below.", "",
+                      "| Area | Kinds |", "| --- | --- |", *rows, "",
+                      "<sub>✅ ran clean · ⚠️ ran, open calls remain · ⏭️ skipped with a reason. "
+                      "Reported by the agent; the CI block at the end re-measures tests, coverage, and test edits.</sub>",
+                      SUMMARY_END])
+
+
+def spec_scenarios(spec: Path) -> list[str]:
+    """Positional scenario ids CS{n}-S{m} of the spec's change plan, as check-tests.py numbers them."""
+    ids, current, in_plan = [], None, False
+    for line in spec.read_text(encoding="utf-8").splitlines():
+        if line.startswith("## "):
+            in_plan = line[3:].strip().lower() == "change plan"
+            continue
+        if not in_plan:
+            continue
+        change_set = re.match(r"^\s*(\d+)\.\s+\S", line)
+        if change_set:
+            current = int(change_set.group(1))
+        tests = SCENARIO_TESTS.match(line)
+        if tests and current is not None and not tests.group(1).strip().lower().startswith("none"):
+            ids += [f"CS{current}-S{i}" for i, s in enumerate(tests.group(1).split(";"), 1) if s.strip()]
+    return ids
+
+
+def check_structure(body: str, spec: Path | None, problems: list[str]) -> None:
+    if EVIDENCE_BEGIN not in body or EVIDENCE_END not in body:
+        problems.append(f"no {EVIDENCE_BEGIN} / {EVIDENCE_END} markers; CI writes the verified evidence between them")
+    else:
+        inside = body.split(EVIDENCE_BEGIN, 1)[1].split(EVIDENCE_END, 1)[0]
+        if inside.strip():
+            problems.append("the DEV-EVIDENCE block is not empty; only CI's ci-evidence.py writes there")
+    evidence_block = re.compile(re.escape(EVIDENCE_BEGIN) + r".*?" + re.escape(EVIDENCE_END), re.DOTALL)
+    not_verified = SUMMARY.sub("", evidence_block.sub("", evidence_section(body, "Not verified") or ""))
+    if not not_verified.strip():
+        problems.append("no non-empty '## Not verified' section; name what was not verified, or say nothing was skipped and why")
+    found = SUMMARY.search(body)
+    if not found:
+        problems.append("no QUALITY-SUMMARY block; run pr-evidence.py summarize")
+    elif found.group(0) != summary_block(body):
+        problems.append("the QUALITY-SUMMARY block does not match the Quality table; run pr-evidence.py summarize, never edit it")
+    rows = {}
+    for line in (evidence_section(body, "Acceptance criteria") or "").splitlines():
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if len(cells) >= 4 and re.match(r"^`?CS\d+-S\d+`?$", cells[0]):
+            rows[cells[0].strip("`")] = cells
+            if not re.search(r"\S", cells[2].strip("`")):
+                problems.append(f"Acceptance criteria {cells[0]} names no test")
+            if cells[3].lower() != "awaiting ci":
+                problems.append(f"Acceptance criteria {cells[0]} sets its own status '{cells[3]}'; write 'awaiting CI', CI fills it")
+    if spec is not None:
+        for scenario in spec_scenarios(spec):
+            if scenario not in rows:
+                problems.append(f"Acceptance criteria has no row for {scenario}")
+
+
+def summarize(args: argparse.Namespace) -> None:
+    path = Path(args.body)
+    body = path.read_text(encoding="utf-8")
+    block = summary_block(body)
+    body = SUMMARY.sub(lambda _: block, body, count=1) if SUMMARY.search(body) else body.replace(
+        "<details>", block + "\n\n<details>", 1) if "<details>" in body else body.rstrip("\n") + "\n\n" + block + "\n"
+    path.write_text(body, encoding="utf-8")
+    print(f"pr-evidence: summary written to {path}")
+
+
 def planned_kinds(spec: Path) -> set[str]:
     """The kinds a spec's ### Verification block marks yes."""
     planned, inside = set(), False
@@ -329,7 +442,9 @@ def check(args: argparse.Namespace) -> None:
         problems.append("Evidence holds neither an http(s) image nor a labeled before/after pair")
     if args.require_current:
         check_provenance(section, Path(args.repo_root), problems)
-    check_quality(Path(args.body).read_text(encoding="utf-8"), Path(args.spec) if args.spec else None, problems)
+    body = Path(args.body).read_text(encoding="utf-8")
+    check_quality(body, Path(args.spec) if args.spec else None, problems)
+    check_structure(body, Path(args.spec) if args.spec else None, problems)
     if problems:
         fail("PR body rejected:\n  - " + "\n  - ".join(problems))
     print(f"pr-evidence: ok ({len(images)} images, pairs: {', '.join(sorted(labels)) or 'none'})")
@@ -359,6 +474,9 @@ def main() -> None:
     ck.add_argument("--repo-root", default=".")
     ck.add_argument("--spec", help="spec.md whose Verification block names the kinds that may not be skipped")
     ck.set_defaults(run=check)
+    sm = sub.add_parser("summarize")
+    sm.add_argument("body")
+    sm.set_defaults(run=summarize)
     args = parser.parse_args()
     args.run(args)
 

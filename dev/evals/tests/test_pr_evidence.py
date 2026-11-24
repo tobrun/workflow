@@ -98,8 +98,15 @@ class GateCase(unittest.TestCase):
         self.source.write_text("def total():\n    return 6\n")
         self.body = self.root / "pr.md"
 
-    def check(self, body: str, current: bool = False, spec: str | None = None) -> subprocess.CompletedProcess[str]:
-        self.body.write_text(body if "## Quality" in body else body + "\n" + quality())
+    def check(self, body: str, current: bool = False, spec: str | None = None, complete: bool = True) -> subprocess.CompletedProcess[str]:
+        """Check a body; unless complete is False, add the parts every body needs first, as ship writes them."""
+        if complete:
+            body += "" if "## Quality" in body else "\n" + quality()
+            body += "" if "## Not verified" in body else "\n## Not verified\n\nNothing; every planned kind ran.\n"
+            body += "" if "DEV-EVIDENCE" in body else "\n<!-- BEGIN DEV-EVIDENCE -->\n<!-- END DEV-EVIDENCE -->\n"
+        self.body.write_text(body)
+        if complete and "QUALITY-SUMMARY" not in body:
+            subprocess.run([sys.executable, str(SCRIPT), "summarize", str(self.body)], check=True, capture_output=True)
         args = [sys.executable, str(SCRIPT), "check", str(self.body)]
         if spec is not None:
             (self.root / "spec.md").write_text(spec)
@@ -188,9 +195,7 @@ class QualityGateTest(GateCase):
         self.assertIn("Quality row fuzz reads 'skipped'; write ran, or skipped (reason)", result.stderr)
 
     def test_a_body_without_a_quality_section_is_rejected(self) -> None:
-        self.body.write_text(EVIDENCE)
-        result = subprocess.run([sys.executable, str(SCRIPT), "check", str(self.body)], capture_output=True, text=True)
-        self.assertIn("no '## Quality' section", result.stderr)
+        self.assertIn("no '## Quality' section", self.check(EVIDENCE, complete=False).stderr)
 
     def test_a_kind_the_spec_plans_may_not_be_skipped(self) -> None:
         spec = "# S\n\n## Scope\n\n### Verification\n\n- fuzz: yes - the parser\n- ui-ux: no - no UI\n\n## Change plan\n"
@@ -208,6 +213,60 @@ class QualityGateTest(GateCase):
         for kind in KINDS:
             self.assertIn(f'"{kind}"', lint)
             self.assertIn(f'"{kind}"', SCRIPT.read_text(encoding="utf-8"))
+
+
+
+ACCEPTANCE = """## Acceptance criteria
+
+| Scenario | Criterion | Test | Status |
+| --- | --- | --- | --- |
+| CS1-S1 | price 3 -> total 6 | `tests.CouponTest::test_total` | awaiting CI |
+"""
+SPEC = "# S\n\n## Change plan\n\n1. Double\n   a. app.py - total\n   tests: [unit] price 3 -> total 6; [unit] price 0 -> total 0\n"
+
+
+class BodyStructureTest(GateCase):
+    def test_a_complete_body_passes(self) -> None:
+        result = self.check(EVIDENCE + ACCEPTANCE)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_the_agent_may_not_write_inside_the_ci_block(self) -> None:
+        body = EVIDENCE + "\n<!-- BEGIN DEV-EVIDENCE -->\n### ✅ Verified by CI\n<!-- END DEV-EVIDENCE -->\n"
+        self.assertIn("the DEV-EVIDENCE block is not empty; only CI's ci-evidence.py writes there", self.check(body).stderr)
+
+    def test_the_ci_markers_are_required(self) -> None:
+        body = EVIDENCE + quality() + "\n## Not verified\n\nNothing.\n"
+        self.assertIn("no <!-- BEGIN DEV-EVIDENCE -->", self.check(body, complete=False).stderr)
+
+    def test_the_agent_may_not_set_an_acceptance_status(self) -> None:
+        result = self.check(EVIDENCE + ACCEPTANCE.replace("awaiting CI", "✅ passed"))
+        self.assertIn("Acceptance criteria CS1-S1 sets its own status '✅ passed'; write 'awaiting CI'", result.stderr)
+
+    def test_every_spec_scenario_needs_an_acceptance_row(self) -> None:
+        result = self.check(EVIDENCE + ACCEPTANCE, spec=SPEC)
+        self.assertIn("Acceptance criteria has no row for CS1-S2", result.stderr)
+        self.assertNotIn("CS1-S1", result.stderr)
+
+    def test_not_verified_is_required(self) -> None:
+        body = EVIDENCE + quality() + "\n## Not verified\n\n<!-- BEGIN DEV-EVIDENCE -->\n<!-- END DEV-EVIDENCE -->\n"
+        self.body.write_text(body)
+        subprocess.run([sys.executable, str(SCRIPT), "summarize", str(self.body)], check=True, capture_output=True)
+        result = subprocess.run([sys.executable, str(SCRIPT), "check", str(self.body)], capture_output=True, text=True)
+        self.assertIn("no non-empty '## Not verified' section", result.stderr)
+
+    def test_the_summary_groups_every_kind_and_marks_open_calls_and_skips(self) -> None:
+        body = EVIDENCE + quality(fuzz="skipped (no parser)").replace("| coverage | ran | 0 | 0 | 0 |", "| coverage | ran | 1 | 0 | 1 |")
+        self.check(body)
+        written = self.body.read_text()
+        self.assertIn("| Tests | ✅ unit · ✅ functional", written)
+        self.assertIn("⏭️ fuzz", written)
+        self.assertIn("⚠️ coverage", written)
+        self.assertIn("19 of 20 kinds ran", written)
+
+    def test_a_hand_edited_summary_is_rejected(self) -> None:
+        self.check(EVIDENCE)
+        edited = self.body.read_text().replace("⏭️", "✅").replace("✅ unit", "✅ unit (all good)")
+        self.assertIn("the QUALITY-SUMMARY block does not match the Quality table", self.check(edited).stderr)
 
 
 if __name__ == "__main__":

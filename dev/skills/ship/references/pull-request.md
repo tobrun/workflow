@@ -53,15 +53,34 @@ The body lives at `.dev/{plan-name}/pr.md` and is handed to the PR tool with `--
 A run that will reach this phase opens the file in the shape below before its first check and fills it as the run goes, per [../../../references/plan-layout.md](../../../references/plan-layout.md): the Summary at once, a Quality row when its check finishes, the CI parity line as each command returns, the review line when a verdict is set, an Open call when it is raised and each remediation round's attempt when the round ends.
 Only the Evidence section is left for this phase; a part the run has not reached is absent from the file, never a placeholder or a guess.
 
+Everything the agent writes is a claim. What proves it is the DEV-EVIDENCE block at the end, which only CI writes: `ci-evidence.py` (vendored by `bootstrap` as `.verify/ci-evidence.py`) runs at the PR's head commit and fills it with the test totals from CI's own JUnit, a test-diff guard, a fails-on-revert check of the new tests against the base, changed-line coverage, each acceptance criterion's status, and where the claims above disagree with any of it.
+The body leaves the markers empty; `pr-evidence.py check` refuses anything between them.
+
 ```markdown
 ## Summary
 
-{What changed and why, 2-4 sentences from the spec's research and scope sections.}
-Plan `.dev/{plan-name}` | Review {N}: {verdict}
+{What changed and why, at most five lines, from the spec's research and scope sections.}
+Plan `.dev/{plan-name}` | Review {N}: {verdict} (advisory)
+
+## Acceptance criteria
+
+| Scenario | Criterion | Test | Status |
+| --- | --- | --- | --- |
+{one row per spec scenario: its positional id (CS1-S1), the scenario text, the runner case from test-evidence.json as `classname::name`, and Status `awaiting CI` - CI writes the real status}
 
 ## Evidence
 
 {pr-evidence.py extract output, or the hand-captured section per the rules above}
+
+## Not verified
+
+{What this PR does not prove, one line each: every planned kind that could not run and why, every fix-and-report kind left failing, every test the diff edited or deleted with the reason, and any environment the tests cannot reach. "Nothing" needs its reason.}
+
+## Verification
+
+{pr-evidence.py summarize output: the twenty kinds grouped, each ran clean, ran with open calls, or skipped}
+
+<details><summary>All twenty kinds as the agent reported them</summary>
 
 ## Quality
 
@@ -74,18 +93,32 @@ Mutation testing: {selected targets, command, runtime, killed/survived/uncovered
 Review panel: {lenses}; {blockers} blockers, {concerns} concerns ({review_N.md path}).
 CI parity ({impact verdict and packages}): {each reproducible required command, the scope it ran at, and its result}; deferred to CI: {commands outside the impact, or "none"}; remote-only: {checks verified by the PR itself, or "none"}.
 
+</details>
+
 ## Open calls
 
 {Each surviving human or open call from the verify phase with its three-round history, each real blocker with its two-round history, and each concern from the review, one line each, or "none".}
+
+## Provenance
+
+Written by {agent and model} via {host}{, session: link when the host gives one}. The sections above are the agent's account; the block below is CI's.
+
+<!-- BEGIN DEV-EVIDENCE -->
+<!-- END DEV-EVIDENCE -->
 ```
 
 Title: the change in imperative mood, under 70 characters.
 
 ## Create or update
 
+Before creating or updating, run `pr-evidence.py summarize .dev/{plan-name}/pr.md`, then loop `pr-evidence.py check --require-current --spec .dev/{plan-name}/spec.md` until it passes.
+When the repository has `.verify/ci-evidence.py`, run its `collect` locally against the base as a preflight (`--out /tmp/{project-slug}/ci-evidence`) and fix what it finds before pushing; its local block never goes into the body.
+
 - No PR for the branch: `gh pr create --title ... --body-file .dev/{plan-name}/pr.md` (`--draft` on BLOCK or a deferred check), base = the authorized intended base, defaulting to the default branch only when none was specified.
-- A PR already exists (build opened it on request, or a re-review): `gh pr edit --body-file ...`; `gh pr ready` once no BLOCK verdict stands and its required checks are green, never the reverse.
+- A PR already exists (build opened it on request, or a re-review): copy `pr.md` to a scratch file, run `ci-evidence.py splice {scratch} --from {the current body from gh pr view}` so CI's block survives, then `gh pr edit --body-file {scratch}`; `gh pr ready` once no BLOCK verdict stands and its required checks are green, never the reverse.
 - No `gh` and no equivalent host CLI: push, keep `pr.md`, print the compare URL, and say the PR must be opened by hand.
 
-Then follow the PR's required checks to a terminal state per [../../../references/ci-parity.md](../../../references/ci-parity.md).
+Then follow the PR's required checks to a terminal state per [../../../references/ci-parity.md](../../../references/ci-parity.md), and read the DEV-EVIDENCE block CI wrote for the head commit.
+A failing test, a guard finding, a new test that passes on the base, coverage under the line, or a claims mismatch there is a verify-phase violation: fix it and push, and CI re-measures, up to three rounds; what remains goes under Open calls and Not verified, and the block stays as CI wrote it.
+Without an evidence job the markers stay empty: say so under Not verified and recommend `bootstrap`.
 Opening the PR is not the end of the phase; every required check green, or a genuine human call, is.

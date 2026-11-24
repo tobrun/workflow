@@ -26,6 +26,7 @@ Skills are explicitly invoked and recommend the next step; only `yolo` follows s
   Missing or invalid results yield INCOMPLETE, not approval; useful findings remain visible.
 - [Decision ledger](references/decision-ledger.md) records choices and rationale.
   A missing overview does not turn a small task into whole-system documentation work.
+- [Verification kinds](references/verification.md) cover twenty kinds from unit tests to penetration testing; in each PR the agent's account sits above a block CI writes at the head commit, which re-measures tests, test edits, fails-on-revert, coverage, and acceptance criteria.
 - [Architecture enforcement](references/architecture.md) turns structural decisions into generated checks from one human-owned file; agents may tighten rules, only the user loosens them.
 - [CI parity](references/ci-parity.md) keeps every existing required repository check mandatory at the change's impact, with full PR follow-through when publication is authorized.
   Share only when requested; evidence records the actual capture and tested sources.

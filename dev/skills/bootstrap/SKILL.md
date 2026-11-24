@@ -1,6 +1,6 @@
 ---
 name: bootstrap
-description: Set up a repository's architecture enforcement - probe its languages and structure, infer the module graph the code already follows, write docs/architecture.toml with each rule argued as a D- decision, generate the boundary, banned-API, and dependency configs with arch.py, freeze existing violations in a baseline that only shrinks, prove every rule fires with a red team, and wire it into CI. Use once per repository before relying on the dev workflow's architecture checks, or to re-bootstrap after a large restructuring.
+description: Set up a repository's architecture enforcement and its CI verification evidence - probe its languages and structure, infer the module graph the code already follows, write docs/architecture.toml with each rule argued as a D- decision, generate the boundary, banned-API, and dependency configs with arch.py, freeze existing violations in a baseline that only shrinks, prove every rule fires with a red team, wire it into CI, and add the CI job that writes each pull request's verification evidence at its head commit. Use once per repository before relying on the dev workflow's architecture checks, or to re-bootstrap after a large restructuring.
 disable-model-invocation: true
 ---
 
@@ -57,5 +57,14 @@ Every rule cites its decision, every `enforced by:` id exists, and `arch.py vali
 - **The Validation block** of later specs picks the job up from CI, so `build` and `ship` run it without being told.
 - **AGENTS.md**: one line under Architecture pointing to `docs/architecture.toml` and saying that generated files under `.arch/` are never edited and that loosening a rule is a human call. The rules themselves stay in the file, not in prose.
 
-Commit the file, the generated configs, the CI change, and the ledger entries per the commit skill's [message format](../commit/references/message-format.md) on the current work branch, under the same authority as `scope`'s ledger commit.
-Report the rules by ladder level, the baseline size per rule, the red-team result, and what the probe found that no rule covers yet.
+## 6. The evidence job
+
+Pull requests carry two kinds of verification text: what the agent claims, and what CI measured at the head commit, which the agent cannot write. The second comes from `ci-evidence.py`:
+
+1. Copy `{bootstrap-skill-root}/../../scripts/ci-evidence.py` to `.verify/ci-evidence.py`.
+2. Write `.github/workflows/verify.yml` from [templates/verify.yml](templates/verify.yml), filling each `<<fill: ...>>` from the repository's existing CI: the toolchain setup, a test command that writes JUnit XML and a coverage report (Cobertura, LCOV, JaCoCo, or a Go profile), and a revert command that runs only the given test files.
+3. Prove it before committing: on a branch with a changed test, run `python3 .verify/ci-evidence.py collect --base origin/{default branch} --junit ... --coverage ... --revert-cmd ... --out /tmp/ci-evidence` with the same commands and read the block it writes. A row reading `not run` or `no report` is a setup gap to close, not a result.
+4. On a host other than GitHub, wire the same four steps (pending, test, collect, publish) into its pipeline; `publish --body-file` writes the block into a body file for any tool that edits PR descriptions.
+
+Commit the file, the generated configs, the CI changes, the vendored scripts, and the ledger entries per the commit skill's [message format](../commit/references/message-format.md) on the current work branch, under the same authority as `scope`'s ledger commit.
+Report the rules by ladder level, the baseline size per rule, the red-team result, the evidence job's preflight block, and what the probe found that no rule covers yet.

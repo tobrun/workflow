@@ -32,6 +32,18 @@
       ]
     },
     {
+      "id": "pr-evidence-split",
+      "prompt": "Answer briefly, from the skill text and the references it links only. (1) Who writes the DEV-EVIDENCE block of the PR body, at which commit, and what may the agent write between its markers? (2) What does the Status column of the Acceptance criteria table say in pr.md, and who fills it? (3) The PR exists and ship must update its body. How does CI's block survive? (4) CI's block reports a new test that passes on the base. What does ship do? (5) The repository has no evidence job. What does the PR say?",
+      "fixture": "none - the answers come from the skill text",
+      "assertions": [
+        "Answer 1: only CI's ci-evidence.py, at the PR's head commit, from CI's own runs; the agent leaves the markers empty and pr-evidence.py check refuses anything between them",
+        "Answer 2: 'awaiting CI'; CI writes each scenario's real status from its JUnit results",
+        "Answer 3: ship splices the current block into a scratch copy of pr.md with ci-evidence.py splice before gh pr edit",
+        "Answer 4: it is a verify-phase violation: fix it and push so CI re-measures, up to three rounds, then Open calls and Not verified; the block stays as CI wrote it",
+        "Answer 5: the markers stay empty, Not verified says there is no evidence job, and bootstrap is recommended"
+      ]
+    },
+    {
       "id": "review-policy",
       "prompt": "Answer briefly, from the skill text only: (1) After build finishes a task, should ship launch automatically? (2) A finding is BLOCK severity but verification returns PLAUSIBLE (could not refute, could not fully confirm). What severity does it end up as in the report: BLOCK, CONCERN, or dropped entirely? (3) Should the orchestrator read the diff's file contents and form its own opinion on code quality? (4) If one lens agent fails or returns nothing parseable, does the whole review abort? (5) The diff adds new user-facing behavior with a passing unit test but no matching scenario in the spec's e2e report. Is that a pass? (6) implementation-notes.md logs a Deviation for this spec. What must the tests lens or spec-conformance lens do with that information? (7) Besides review_N.md, what else does the review phase produce, and where does the URL for it come from? (8) How does agent execution differ between a host with native subagents and Pi? (9) The user asks for a review only run. Does the verify phase run? (10) Who numbers the findings for the verifiers and who applies their verdicts - you, another agent, or something else?",
       "assertions": [

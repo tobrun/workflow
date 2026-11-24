@@ -15,7 +15,6 @@ This reference owns the layout, the locating convention, and the diff scope; ski
 
 Build's e2e report lives at `/tmp/{project-slug}/reports/{plan-name}-e2e.json`, outside the plan directory because its screenshots are large.
 One writer per file at a time; every other skill only reads.
-A `remote` run writes these same files in the instance's copy of the plan directory; its pull merges them home and never overwrites a file edited here meanwhile.
 
 ## Git ignore policy
 

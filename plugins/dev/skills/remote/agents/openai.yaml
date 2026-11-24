@@ -1,6 +1,0 @@
-interface:
-  display_name: "Remote"
-  short_description: "Run a task or plan on a fleet instance"
-  default_prompt: "Use $dev:remote 1 to run this plan to its pull request on the first fleet instance."
-policy:
-  allow_implicit_invocation: false

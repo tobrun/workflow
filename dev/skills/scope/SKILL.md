@@ -83,11 +83,11 @@ Apply confirmed findings that stay within the settled decisions, ask the user ab
 
 Copy into `docs/decisions.md` every decision that passes the promotion test in [../../references/decision-ledger.md](../../references/decision-ledger.md), verbatim, dated, and sourced to this spec.
 
-Commit `docs/decisions.md` if this run changed it, and nothing else, so `build` and `remote` start from a clean tree; the plan directory stays out of git, because plan files travel with the run instead.
+Commit `docs/decisions.md` if this run changed it, and nothing else, so `build` starts from a clean tree; the plan directory stays out of git, because plan files travel with the run instead.
 Commit on the current work branch; on the default branch, create `dev/{plan-name}` from HEAD first, a branch change that waits for the user's consent where the repository requires it.
 Write the message per the commit skill's [message format](../commit/references/message-format.md), typed `docs`, such as `docs({plan-name}): record the spec's decisions`.
 
-Recommend `build`, or `remote` to run it on a fleet instance; never launch either.
+Recommend `build`; never launch it.
 
 ## From review findings
 

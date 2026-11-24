@@ -71,11 +71,6 @@ PLUGINS = {
                 "Scope, build, and ship one task with no questions",
                 "Use $dev:yolo to take this task from spec to an open pull request without asking me anything.",
             ),
-            "remote": (
-                "Remote",
-                "Run a task or plan on a fleet instance",
-                "Use $dev:remote 1 to run this plan to its pull request on the first fleet instance.",
-            ),
         },
     ),
     "bootstrap": PluginConfig(

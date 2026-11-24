@@ -127,7 +127,7 @@ D-codex-from-portable: Where does the Codex plugin install from? (2026-11-24)
   ✗ keep plugins/dev - the duplicate the research warns about in anthropics/skills
 
 D-claude-keeps-source: Where does the Claude Code plugin install from? (2026-11-24)
-  ✓ dev/, unchanged - disable-model-invocation in each SKILL.md is the only documented way to keep a Claude Code plugin's skills manual-only (skillOverrides does not reach plugin skills), so the Claude copy keeps a field the portable copy may not (auto-applied at Confidence: 70%, per the Claude Code skills and plugin docs) ⚠ dev/skills/ stays a second visible copy of each skill, so gh skill cannot install the whole set from one command
+  ✓ dev/, with its skills moved from dev/skills/ to dev/source/ and plugin.json naming that path - disable-model-invocation in each SKILL.md is the only documented way to keep a Claude Code plugin's skills manual-only (skillOverrides does not reach plugin skills), so the Claude copy keeps a field the portable copy may not, and a folder not called skills/ is one gh skill and npx skills do not scan: with dev/skills/, gh skill install tobrun/workflow scope picked the source copy, broken links and all, and --all refused the duplicated names (auto-applied at Confidence: 70%, per the Claude Code skills and plugin docs and an install against the published repository) ⚠ the name dev/source is load-bearing: renaming it back to skills reintroduces the duplicate
   ✗ install the portable tree into Claude Code too - the skills would become model-invocable, against the rule that every skill here is human-triggered
 
 ## Removed

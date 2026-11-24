@@ -13,6 +13,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from dev.evals.tests.spec_fixtures import verification
+
 REPO_ROOT = Path(__file__).resolve().parents[3]
 SCRIPT = REPO_ROOT / "dev" / "skills" / "scope" / "scripts" / "lint-spec.py"
 
@@ -130,6 +132,59 @@ class LintSpecReviewTagsTest(unittest.TestCase):
     def test_risk_line_inside_a_section_does_not_count(self) -> None:
         text = spec(CHOSEN, "✓ S3").replace("## Scope\n", "## Scope\n\nRisk: high - touches auth\n")
         self.assertIn("no 'Risk: low|medium|high - why' line", self.lint(text))
+
+
+class LintSpecVerificationTest(unittest.TestCase):
+    """Every verification kind is planned yes or no, and the plan agrees with the scenario tags."""
+
+    def lint(self, block: str, tests: str = "[unit] a -> b", extra: str = "") -> str:
+        text = (f"# Title\n\nRisk: low - small\n\n## Research\n\n{CHOSEN.replace('live?', 'live? [impact: low]')}\n"
+                f"## Scope\n\nFiles go where D-storage (✓ S3) says.\n\n### Validation\n\n- `make test`\n\n"
+                f"{block}{extra}## Change plan\n\n1. Store\n   a. `src/store.py` - write - decisions: D-storage (✓ S3)\n"
+                f"   tests: {tests}\n")
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "spec.md"
+            path.write_text(text, encoding="utf-8")
+            return subprocess.run([sys.executable, str(SCRIPT), str(path)], capture_output=True, text=True, check=False).stdout
+
+    def test_a_complete_block_that_matches_the_tags_is_clean(self) -> None:
+        self.assertIn("clean", self.lint(verification("unit")))
+
+    def test_a_spec_without_the_block_is_reported(self) -> None:
+        self.assertIn("no '### Verification' block in the scope section", self.lint(""))
+
+    def test_every_kind_must_be_marked(self) -> None:
+        block = verification("unit").replace("- penetration: no - not touched by this change\n", "")
+        self.assertIn("the Verification block does not mark penetration", self.lint(block))
+
+    def test_a_kind_without_its_reason_is_reported(self) -> None:
+        block = verification("unit").replace("- fuzz: no - not touched by this change", "- fuzz: no")
+        self.assertIn("fuzz: no states no ' - reason'", self.lint(block))
+
+    def test_a_tag_needs_its_kind_marked_yes(self) -> None:
+        self.assertIn("has [fuzz] scenarios but the Verification block marks fuzz: no",
+                      self.lint(verification("unit"), "[unit] a -> b; [fuzz] random bytes -> no crash"))
+
+    def test_a_kind_marked_yes_needs_a_scenario_with_its_tag(self) -> None:
+        self.assertIn("marks property: yes but no change set has a [property] scenario", self.lint(verification("unit", "property")))
+
+    def test_the_new_tags_are_layers(self) -> None:
+        out = self.lint(verification("unit", "smoke", "benchmark"), "[unit] a -> b; [smoke] boot -> 200; [benchmark] 1k items -> under 5ms")
+        self.assertIn("clean", out)
+
+    def test_formal_names_its_mechanism(self) -> None:
+        self.assertIn("formal: yes names no mechanism", self.lint(verification("unit", "formal")))
+        self.assertIn("clean", self.lint(verification("unit", "formal", "property", how={"formal": "stateful [property] test of the order states"}),
+                                         "[unit] a -> b; [property] any command sequence -> no illegal state"))
+
+    def test_a_threat_model_is_required_and_needs_a_penetration_test(self) -> None:
+        out = self.lint(verification("unit", "threat-model"))
+        self.assertIn("threat-model: yes needs a '### Threat model' block", out)
+        self.assertIn("threat-model: yes needs penetration: yes", out)
+        threats = "### Threat model\n\n- upload endpoint: T tampered path -> normalize and reject '..' - tests: [unit] ../x -> 400\n\n"
+        self.assertIn("clean", self.lint(verification("unit", "threat-model", "penetration"), extra=threats))
+        self.assertIn("a Threat model line reads", self.lint(verification("unit", "threat-model", "penetration"),
+                                                             extra="### Threat model\n\n- the endpoint is risky\n\n"))
 
 
 if __name__ == "__main__":

@@ -27,6 +27,8 @@ from pathlib import Path
 HEADING = re.compile(r"^##\s+(.*?)\s*$")
 CHANGE_SET = re.compile(r"^\s*(\d+)\.\s+\S")
 TESTS = re.compile(r"^\s*tests:\s*(.*)$", re.IGNORECASE)
+# The scenario tags lint-spec.py accepts; a receipt's layer must be one of them.
+TAGS = ("unit", "component", "integration", "contract", "property", "fuzz", "e2e", "smoke", "benchmark")
 NOTE_ENTRY = re.compile(r"^##\s+Change set\s+(\d+)\b", re.IGNORECASE)
 NOTE_TESTS = re.compile(r"^\s*-\s*Tests added:\s*(.*)$", re.IGNORECASE)
 # A comma separates two references only when a path::name follows it; a test name may hold commas.
@@ -144,7 +146,7 @@ def scenarios(spec: Path) -> dict[str, tuple[str, str]]:
                 scenario = scenario.strip()
                 if not scenario:
                     continue
-                tag = re.match(r"^\[(unit|integration|e2e)\]\s+", scenario)
+                tag = re.match(r"^\[(" + "|".join(TAGS) + r")\]\s+", scenario)
                 result[f"CS{current}-S{index}"] = (tag.group(1) if tag else "", scenario)
     return result
 
@@ -162,7 +164,7 @@ def runner_cases(report: Path) -> dict[str, bool]:
 
 def capture(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description="Run a test command and bind its JUnit report to source hashes.")
-    parser.add_argument("--layer", choices=("unit", "integration", "e2e"), required=True)
+    parser.add_argument("--layer", choices=TAGS, required=True)
     parser.add_argument("--report", type=Path, required=True)
     parser.add_argument("--receipt", type=Path, required=True)
     parser.add_argument("--source", type=Path, action="append", required=True)

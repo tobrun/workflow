@@ -52,7 +52,7 @@ In a workspace or monorepo, probe the root and every member; a large repository 
 
 A tool counts only when a hook, script, or CI step runs it; one that is merely available (`npm audit`) does not.
 Map each configured tool onto lint and typecheck, secret scanning, dependency audit, SAST, dead code, duplication, dependency rules, coverage and complexity, flakiness, and mutation.
-Only a security gap, neither a secret scan nor a dependency audit, becomes an open item; the other categories are the ship gauntlet's concern, not this file's.
+Only a security gap, neither a secret scan nor a dependency audit, becomes an open item; the other categories are ship's verify phase's concern, not this file's.
 
 ## F. Durable docs and merge input
 

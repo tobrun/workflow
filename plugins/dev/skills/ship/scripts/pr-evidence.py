@@ -4,7 +4,7 @@
     pr-evidence.py extract <e2e-report.json> --out <dir> [--scenario ID ...] [--branch pr-evidence]
                            [--url-template URL]
     pr-evidence.py publish <dir> [--branch pr-evidence] [--remote origin]
-    pr-evidence.py check <pr-body.md> [--kind frontend|non-frontend]
+    pr-evidence.py check <pr-body.md> [--kind frontend|non-frontend] [--spec spec.md]
 
 `extract` reads build's JSON e2e report, decodes every
 screenshot to `<dir>/{plan}/{scenario}/{step}.png`, and writes
@@ -20,7 +20,10 @@ PR, so this is how screenshots become visible.
 
 `check` exits non-zero unless the body has a non-empty "## Evidence" section
 holding real proof: an image served over http(s), or a labeled before/after
-(or merge-base/branch) pair of fenced blocks. Placeholders fail it.
+(or merge-base/branch) pair of fenced blocks. Placeholders fail it. It also
+requires a "## Quality" table with one row per verification kind of
+references/verification.md, each `ran` or `skipped (reason)`; with --spec, a
+kind the spec's Verification block marks yes may not be skipped.
 """
 
 from __future__ import annotations
@@ -182,7 +185,55 @@ def publish(args: argparse.Namespace) -> None:
     print(json.dumps({"branch": args.branch, "commit": commit, "files": [p.relative_to(root).as_posix() for p in files]}, indent=2))
 
 
-def evidence_section(body: str) -> str | None:
+# The verification kinds of references/verification.md, in its order; lint-spec.py holds the same list.
+KINDS = (
+    "unit", "functional", "component", "contract", "property", "fuzz", "formal", "static-analysis", "lint",
+    "coverage", "mutation", "regression", "acceptance", "smoke", "benchmark", "performance", "ui-ux",
+    "usability", "threat-model", "penetration",
+)
+QUALITY_ROW = re.compile(r"^\|\s*`?([a-z-]+)`?\s*\|\s*([^|]*?)\s*\|")
+PLANNED = re.compile(r"^\s*[-*]\s+([a-z-]+):\s*(yes|no)\b")
+
+
+def planned_kinds(spec: Path) -> set[str]:
+    """The kinds a spec's ### Verification block marks yes."""
+    planned, inside = set(), False
+    for line in spec.read_text(encoding="utf-8").splitlines():
+        if line.startswith("#"):
+            inside = line.strip().lower() == "### verification"
+            continue
+        match = PLANNED.match(line) if inside else None
+        if match and match.group(2) == "yes":
+            planned.add(match.group(1))
+    return planned
+
+
+def check_quality(body: str, spec: Path | None, problems: list[str]) -> None:
+    section = evidence_section(body, "Quality")
+    if not section:
+        problems.append("no '## Quality' section; it holds one row per verification kind")
+        return
+    results: dict[str, str] = {}
+    for line in section.splitlines():
+        match = QUALITY_ROW.match(line.strip())
+        if match and match.group(1) in KINDS:
+            kind, result = match.groups()
+            if kind in results:
+                problems.append(f"Quality lists {kind} twice")
+            results[kind] = result
+    for kind in KINDS:
+        result = results.get(kind)
+        if result is None:
+            problems.append(f"Quality has no row for {kind}; every kind is ran or skipped (reason)")
+        elif not (result == "ran" or re.fullmatch(r"skipped \(.*\S.*\)", result)):
+            problems.append(f"Quality row {kind} reads '{result}'; write ran, or skipped (reason)")
+    if spec is not None:
+        for kind in sorted(planned_kinds(spec)):
+            if results.get(kind, "").startswith("skipped"):
+                problems.append(f"the spec plans {kind} (yes in its Verification block), but Quality skips it")
+
+
+def evidence_section(body: str, name: str = "Evidence") -> str | None:
     """Top-level headings inside captured code are evidence, not delimiters."""
     collected = []
     inside, fence = False, None
@@ -197,7 +248,7 @@ def evidence_section(body: str) -> str | None:
         elif fence is None and re.match(r"^##\s+", line):
             if inside:
                 break
-            inside = bool(re.match(r"^##\s+Evidence\s*$", line))
+            inside = bool(re.match(rf"^##\s+{name}\s*$", line))
             continue
         if inside:
             collected.append(line)
@@ -278,6 +329,7 @@ def check(args: argparse.Namespace) -> None:
         problems.append("Evidence holds neither an http(s) image nor a labeled before/after pair")
     if args.require_current:
         check_provenance(section, Path(args.repo_root), problems)
+    check_quality(Path(args.body).read_text(encoding="utf-8"), Path(args.spec) if args.spec else None, problems)
     if problems:
         fail("PR body rejected:\n  - " + "\n  - ".join(problems))
     print(f"pr-evidence: ok ({len(images)} images, pairs: {', '.join(sorted(labels)) or 'none'})")
@@ -305,6 +357,7 @@ def main() -> None:
     ck.add_argument("--kind", choices=["frontend", "non-frontend"])
     ck.add_argument("--require-current", action="store_true", help="require provenance matching current tested sources")
     ck.add_argument("--repo-root", default=".")
+    ck.add_argument("--spec", help="spec.md whose Verification block names the kinds that may not be skipped")
     ck.set_defaults(run=check)
     args = parser.parse_args()
     args.run(args)

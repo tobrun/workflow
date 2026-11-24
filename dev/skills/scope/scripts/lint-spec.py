@@ -22,7 +22,19 @@ RISK = re.compile(r"^Risk:\s*(low|medium|high)\s+-\s+\S", re.IGNORECASE)
 ECHO = re.compile(r"(D-[a-z0-9-]+)\s*\(([^)]*)\)")
 CHANGE_SET = re.compile(r"^\s*(\d+)\.\s+\S")
 TESTS = re.compile(r"^\s*tests:\s*(.*)$", re.IGNORECASE)
-LAYER = re.compile(r"^\[(unit|integration|e2e)\]\s+\S")
+# The scenario tags, one per test layer, and the verification kinds of references/verification.md.
+TAGS = ("unit", "component", "integration", "contract", "property", "fuzz", "e2e", "smoke", "benchmark")
+LAYER = re.compile(r"^\[(" + "|".join(TAGS) + r")\]\s+\S")
+KINDS = (
+    "unit", "functional", "component", "contract", "property", "fuzz", "formal", "static-analysis", "lint",
+    "coverage", "mutation", "regression", "acceptance", "smoke", "benchmark", "performance", "ui-ux",
+    "usability", "threat-model", "penetration",
+)
+# A tag is proof for its kind: a kind marked yes needs a scenario with its tag, and a tag needs its kind marked yes.
+TAG_KIND = {"unit": "unit", "integration": "functional", "component": "component", "contract": "contract",
+            "property": "property", "fuzz": "fuzz", "smoke": "smoke", "benchmark": "benchmark"}
+VERIFICATION_LINE = re.compile(r"^\s*[-*]\s+([a-z-]+):\s*(yes|no)\b\s*(.*)$")
+THREAT_LINE = re.compile(r"^\s*[-*]\s+.+:\s*[STRIDE]+\s+.+->.+tests:\s*\S")
 HEADING = re.compile(r"^##\s+(.*?)\s*$")
 NOTE_ENTRY = re.compile(r"^##\s+Change set\s+(\d+)\b", re.IGNORECASE)
 BACKTICKED = re.compile(r"`([^`\s]+)`")
@@ -180,7 +192,8 @@ def check_change_plan(body: list[tuple[int, str]], built: set[int], problem) -> 
         scenarios = [scenario.strip() for scenario in value.split(";") if scenario.strip()]
         for scenario in scenarios:
             if not LAYER.match(scenario):
-                problem(number, f"scenario '{scenario[:40]}' carries no [unit]/[integration]/[e2e] tag")
+                problem(number, f"scenario '{scenario[:40]}' carries no layer tag; use one of "
+                                + " ".join(f"[{tag}]" for tag in TAGS))
         if len(scenarios) > SCENARIO_LIMIT and current not in built:
             problem(
                 number,
@@ -267,6 +280,74 @@ def check_risk(lines: list[str], problem) -> None:
     problem(None, "no 'Risk: low|medium|high - why' line above the first section")
 
 
+def scope_block(body: list[tuple[int, str]], name: str) -> list[tuple[int, str]] | None:
+    """The lines of a ### block inside the scope section, or None when it is absent."""
+    found, inside = None, False
+    for number, line in body:
+        if line.startswith("### "):
+            inside = line[4:].strip().lower() == name
+            if inside:
+                found = []
+            continue
+        if inside and line.strip():
+            found.append((number, line))
+    return found
+
+
+def used_tags(body: list[tuple[int, str]]) -> set[str]:
+    tags = set()
+    for _, line in body:
+        tests = TESTS.match(line)
+        if tests:
+            tags.update(re.findall(r"\[(" + "|".join(TAGS) + r")\]", tests.group(1)))
+    return tags
+
+
+def check_verification(scope: list[tuple[int, str]], plan: list[tuple[int, str]], problem) -> None:
+    block = scope_block(scope, "verification")
+    if block is None:
+        problem(None, "no '### Verification' block in the scope section; mark each of the "
+                      f"{len(KINDS)} kinds in references/verification.md yes or no with a reason")
+        return
+    planned: dict[str, bool] = {}
+    for number, line in block:
+        match = VERIFICATION_LINE.match(line)
+        if not match:
+            problem(number, "a Verification line reads '- {kind}: yes|no - {how or why not}'")
+            continue
+        kind, answer, rest = match.groups()
+        if kind not in KINDS:
+            problem(number, f"'{kind}' is not a verification kind; use one of {', '.join(KINDS)}")
+            continue
+        if kind in planned:
+            problem(number, f"{kind} is listed twice in the Verification block")
+        planned[kind] = answer == "yes"
+        if not rest.startswith("- ") or not rest[2:].strip():
+            problem(number, f"{kind}: {answer} states no ' - {'how' if answer == 'yes' else 'reason'}'")
+        if kind == "formal" and answer == "yes" and not re.search(r"TLA\+|Alloy|\[property\]|stateful", rest):
+            problem(number, "formal: yes names no mechanism; a TLA+ or Alloy model, or a stateful [property] test")
+    for kind in KINDS:
+        if kind not in planned:
+            problem(None, f"the Verification block does not mark {kind}; every kind is yes or no with a reason")
+    tags = used_tags(plan)
+    for tag, kind in TAG_KIND.items():
+        if tag in tags and planned.get(kind) is False:
+            problem(None, f"the change plan has [{tag}] scenarios but the Verification block marks {kind}: no")
+        if planned.get(kind) and tag not in tags:
+            problem(None, f"the Verification block marks {kind}: yes but no change set has a [{tag}] scenario")
+    if planned.get("threat-model"):
+        threats = scope_block(scope, "threat model")
+        if not threats:
+            problem(None, "threat-model: yes needs a '### Threat model' block in the scope section")
+        else:
+            for number, line in threats:
+                if not THREAT_LINE.match(line):
+                    problem(number, "a Threat model line reads "
+                                    "'- {boundary}: {STRIDE letters} {threat} -> {mitigation} - tests: {scenario}'")
+    if planned.get("penetration") is False and planned.get("threat-model"):
+        problem(None, "threat-model: yes needs penetration: yes; the penetration test tries each threat")
+
+
 def check_validation(lines: list[str], problem) -> None:
     for index, line in enumerate(lines):
         if line.strip().lower() == "### validation":
@@ -297,6 +378,7 @@ def lint(path: Path, lines: list[str]) -> tuple[list[str], dict[str, dict]]:
     check_change_plan(found.get("change plan", []), built_change_sets(path), problem)
     check_risk(lines, problem)
     check_validation(lines, problem)
+    check_verification(found.get("scope", []), found.get("change plan", []), problem)
     return [message for _, message in sorted(problems)], decisions
 
 

@@ -14,6 +14,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from dev.evals.tests.spec_fixtures import verification
+
 REPO_ROOT = Path(__file__).resolve().parents[3]
 SCRIPT = REPO_ROOT / "dev" / "skills" / "scope" / "scripts" / "render-spec.py"
 
@@ -50,7 +52,7 @@ Inputs: tile requests. D-cache-store (✓ SQLite)
 - `npm test`
 - `npm run e2e` (end of build)
 
-## Change plan
+{VERIFICATION}## Change plan
 
 1. Tile cache store
    a. `src/cache/TileCache.ts` - SQLite store - decisions: D-cache-store (✓ SQLite)
@@ -64,6 +66,7 @@ Inputs: tile requests. D-cache-store (✓ SQLite)
    a. `src/settings/strings.json` - label for the cache size
    tests: none - copy only
 """
+SPEC = SPEC.replace("{VERIFICATION}", verification("unit", "functional", "acceptance"))
 
 OPEN = """D-staleness: When does a cached tile get refreshed? [impact: high] [open]
   ? refresh after 24h - fresh enough for road changes
@@ -175,6 +178,24 @@ class RenderSpecTest(unittest.TestCase):
         self.assertIn("⚑ Draft - lint fails", page)
         self.assertIn("no &#x27;Risk: low|medium|high - why&#x27; line", page)
         self.assertIn("rendered as a draft", result.stdout)
+
+    def test_the_verification_plan_shows_every_kind_with_its_reason(self) -> None:
+        _, page = self.render()
+        self.assertIn("3 of 20 kinds apply", page)
+        self.assertIn('<div class="vk yes"><b>✓ unit</b>', page)
+        self.assertIn('<div class="vk no"><b>- fuzz</b><span>not touched by this change</span>', page)
+
+    def test_a_kind_missing_from_the_plan_is_shown_as_a_gap(self) -> None:
+        _, page = self.render(SPEC.replace("- penetration: no - not touched by this change\n", ""))
+        self.assertIn('<div class="vk missing"><b>? penetration</b>', page)
+        self.assertIn("⚑ Draft - lint fails", page)
+
+    def test_the_heatmap_has_a_column_per_tag_the_spec_uses(self) -> None:
+        text = SPEC.replace("[unit] cap exceeded -> oldest region evicted", "[property] any insert order -> cap holds").replace(
+            "- property: no - not touched by this change", "- property: yes - the cap invariant")
+        _, page = self.render(text)
+        head = re.search(r'<table class="heatmap"><thead><tr>(.*?)</tr>', page).group(1)
+        self.assertEqual(re.findall(r"<th>([^<]+)</th>", head), ["Change set", "Unit", "Integration", "Property", "E2E", "Total"])
 
     def test_spec_text_is_escaped_not_executed(self) -> None:
         _, page = self.render(SPEC.replace("How is the cache bounded?", "How is <script>alert(1)</script> bounded?"))

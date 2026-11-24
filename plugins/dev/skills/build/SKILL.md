@@ -1,6 +1,6 @@
 ---
 name: build
-description: Execute the change sets of a spec at .dev/{plan-name}/spec.md, proving every scenario with a test at its tagged layer across unit/integration/e2e, running independent change sets in parallel, and looping until every change set is committed and the e2e run passes. Use when the user asks to build or implement a spec or its change sets.
+description: Execute the change sets of a spec at .dev/{plan-name}/spec.md, proving every scenario with a test at its tagged layer, from unit and component through contract, property, fuzz, and benchmark to e2e and smoke, running independent change sets in parallel, and looping until every change set is committed and the e2e run passes. Use when the user asks to build or implement a spec or its change sets.
 ---
 
 # Build
@@ -33,7 +33,7 @@ Each change set, whether you run it or a subagent does:
 
 ## The e2e pass
 
-Run once per spec, after all change sets are committed, covering every `[e2e]` scenario, against the deterministic boundary environment in [references/mocking.md](references/mocking.md#the-e2e-environment).
+Run once per spec, after all change sets are committed, covering every `[e2e]` and `[smoke]` scenario, against the deterministic boundary environment in [references/mocking.md](references/mocking.md#the-e2e-environment).
 
 1. Launch the app from the repository's documented commands with that environment configured; ask the user only when no safe launch command exists.
 2. Drive each scenario and capture evidence from this run: a screenshot per meaningful step for a frontend, through the host's browser integration or Playwright, or the entity's real before/after state otherwise. Never fabricate either.

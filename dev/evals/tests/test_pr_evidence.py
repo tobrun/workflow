@@ -6,6 +6,7 @@ Run from the repo root: python3 -m unittest discover -s dev/evals/tests -t .
 from __future__ import annotations
 
 import json
+import re
 import hashlib
 import subprocess
 import sys
@@ -67,7 +68,28 @@ class ScenarioSelectionTest(unittest.TestCase):
         self.assertIn("login, coupon, regress", result.stderr)
 
 
-class EvidenceGateTest(unittest.TestCase):
+KINDS = (
+    "unit", "functional", "component", "contract", "property", "fuzz", "formal", "static-analysis", "lint",
+    "coverage", "mutation", "regression", "acceptance", "smoke", "benchmark", "performance", "ui-ux",
+    "usability", "threat-model", "penetration",
+)
+
+
+def quality(**rows: str) -> str:
+    """A complete Quality table: each kind ran unless a keyword gives its result."""
+    lines = ["## Quality", "", "| Kind | Result | Found | Fixed | Surviving |", "| --- | --- | --- | --- | --- |"]
+    for kind in KINDS:
+        result = rows.get(kind.replace("-", "_"), "ran")
+        if result is not None:
+            counts = "| 0 | 0 | 0 |" if result == "ran" else "| | | |"
+            lines.append(f"| {kind} | {result} {counts}")
+    return "\n".join(lines) + "\n"
+
+
+EVIDENCE = "## Evidence\n**Before**\n```text\npending\n```\n**After**\n```text\naccepted\n```\n"
+
+
+class GateCase(unittest.TestCase):
     def setUp(self) -> None:
         scratch = tempfile.TemporaryDirectory()
         self.addCleanup(scratch.cleanup)
@@ -76,9 +98,12 @@ class EvidenceGateTest(unittest.TestCase):
         self.source.write_text("def total():\n    return 6\n")
         self.body = self.root / "pr.md"
 
-    def check(self, body: str, current: bool = False) -> subprocess.CompletedProcess[str]:
-        self.body.write_text(body)
+    def check(self, body: str, current: bool = False, spec: str | None = None) -> subprocess.CompletedProcess[str]:
+        self.body.write_text(body if "## Quality" in body else body + "\n" + quality())
         args = [sys.executable, str(SCRIPT), "check", str(self.body)]
+        if spec is not None:
+            (self.root / "spec.md").write_text(spec)
+            args += ["--spec", str(self.root / "spec.md")]
         if current:
             args += ["--require-current", "--repo-root", str(self.root)]
         return subprocess.run(args, capture_output=True, text=True)
@@ -90,10 +115,13 @@ class EvidenceGateTest(unittest.TestCase):
             "sources": {"app.py": hashlib.sha256(self.source.read_bytes()).hexdigest()},
         }) + " -->\n"
 
+
+
+class EvidenceGateTest(GateCase):
     def test_captured_heading_is_not_a_section_delimiter(self) -> None:
         result = self.check(
             "## Evidence\n**Before**\n```text\n## State\npending\n```\n"
-            "**After**\n```text\n## State\naccepted\n```\n## Quality\nRequired checks passed.\n"
+            "**After**\n```text\n## State\naccepted\n```\n" + quality()
         )
         self.assertEqual(result.returncode, 0, result.stderr)
 
@@ -143,6 +171,43 @@ class EvidenceGateTest(unittest.TestCase):
         result = self.check(body, current=True)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("stale for app.py", result.stderr)
+
+
+class QualityGateTest(GateCase):
+    def test_a_table_with_every_kind_passes(self) -> None:
+        result = self.check(EVIDENCE + quality(fuzz="skipped (no parser or untrusted input)"))
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_a_missing_kind_is_rejected(self) -> None:
+        result = self.check(EVIDENCE + quality(penetration=None))
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("Quality has no row for penetration", result.stderr)
+
+    def test_a_skip_needs_its_reason(self) -> None:
+        result = self.check(EVIDENCE + quality(fuzz="skipped"))
+        self.assertIn("Quality row fuzz reads 'skipped'; write ran, or skipped (reason)", result.stderr)
+
+    def test_a_body_without_a_quality_section_is_rejected(self) -> None:
+        self.body.write_text(EVIDENCE)
+        result = subprocess.run([sys.executable, str(SCRIPT), "check", str(self.body)], capture_output=True, text=True)
+        self.assertIn("no '## Quality' section", result.stderr)
+
+    def test_a_kind_the_spec_plans_may_not_be_skipped(self) -> None:
+        spec = "# S\n\n## Scope\n\n### Verification\n\n- fuzz: yes - the parser\n- ui-ux: no - no UI\n\n## Change plan\n"
+        result = self.check(EVIDENCE + quality(fuzz="skipped (ran out of time)", ui_ux="skipped (no UI)"), spec=spec)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("the spec plans fuzz (yes in its Verification block), but Quality skips it", result.stderr)
+        self.assertNotIn("ui-ux", result.stderr)
+
+    def test_the_kind_lists_agree_with_lint_spec_and_the_reference(self) -> None:
+        lint = (SCRIPT.parents[2] / "scope" / "scripts" / "lint-spec.py").read_text(encoding="utf-8")
+        reference = (SCRIPT.parents[3] / "references" / "verification.md").read_text(encoding="utf-8")
+        table = reference[reference.index("## The kinds"):reference.index("## Scenario tags")]
+        listed = re.findall(r"^\| `([a-z-]+)` \|", table, re.MULTILINE)
+        self.assertEqual(tuple(listed), KINDS)
+        for kind in KINDS:
+            self.assertIn(f'"{kind}"', lint)
+            self.assertIn(f'"{kind}"', SCRIPT.read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

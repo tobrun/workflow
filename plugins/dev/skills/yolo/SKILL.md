@@ -8,7 +8,7 @@ description: Take one task from request to an open pull request in a single unat
 Finish the task the user gave you, ending in a pull request, without asking them anything along the way.
 The stages are the sibling skills' bodies, read by path and followed in this session - never launched as skills: `../scope/SKILL.md`, then `../build/SKILL.md`, then `../ship/SKILL.md`, each with its references and scripts resolved from its own directory. Ship honors the target repository's `.dev/config.yaml` mutation setting in this run too, including its default and skip reporting.
 
-Their quality loops - the argued decisions and spec lint, the per-scenario tests and e2e run, the gauntlet, the verified panel, the remediation rounds, the evidence check - run exactly as written. What changes is one thing: wherever a stage would stop for the user, this skill applies the stage's own recommendation, writes down that it did, and keeps going.
+Their quality loops - the argued decisions and spec lint, the per-scenario tests and e2e run, the verify phase's twenty kinds, the verified panel, the remediation rounds, the evidence check - run exactly as written. What changes is one thing: wherever a stage would stop for the user, this skill applies the stage's own recommendation, writes down that it did, and keeps going.
 
 Invoking this skill is the task. The task is the text the user gave with it, or a Markdown file they pointed at; with neither, the one thing you may ask is what the task is, before anything starts.
 
@@ -36,7 +36,7 @@ These rules replace only the moments where a stage would wait on the user:
 - **The next step is the recommended one.** `scope` recommends `build`; skip any optional review it offers as a user choice, since that is not the recommendation.
   `build` ends by recommending `ship`, and `ship` runs its default flow, all three phases.
 - **Choose within authority.** Decide sizing, review scope, and safe launch details. Push, PR creation, branch changes, and hosting run only within the authorization resolved at preflight; a restriction remains a restriction.
-- **Human calls become open calls.** A gauntlet threshold, a suppression, an upgrade that breaks the build, an e2e scenario red three times on one root cause, a reviewer blocker that survives both remediation rounds, a `diverged` ledger classification: never change the threshold, the ledger, the spec, or a contract to clear it.
+- **Human calls become open calls.** A verify threshold, a fix-and-report kind left failing after three rounds, a suppression, an upgrade that breaks the build, an e2e scenario red three times on one root cause, a reviewer blocker that survives both remediation rounds, a `diverged` ledger classification: never change the threshold, the ledger, the spec, or a contract to clear it.
   Record it where the stage already records such things and continue; it reaches the PR's Open calls section.
 - **A missing input is discovered, never requested.** Validation commands, the launch command for e2e, the plan directory: find them from the repository as the stage's fallback says; when none exists, log the gap as a deviation and run what can be run.
 - **The PR is the only publication.** Publish nothing beyond the PR and its evidence images.
@@ -45,7 +45,7 @@ These rules replace only the moments where a stage would wait on the user:
 
 Three things end the run before the PR, with a plain report and no question:
 
-- a secret found by the gauntlet or anywhere else
+- a secret found by the verify phase or anywhere else
 - a step that would need a destructive action: rewriting history, force-pushing, deleting outside the work branch
 - a resource the session cannot reach and the task cannot be done without, such as credentials for a service the change must call
 

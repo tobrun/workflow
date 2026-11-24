@@ -118,7 +118,7 @@ This skips mutation testing in `ship`, including when run by `yolo`.
 With no file or no `mutation_testing` key, it runs by default; set the boolean to `true` to enable it explicitly.
 Enabled runs select changed decision-heavy logic before acquiring a tool. A glue-only change skips acquisition and execution and reports `skipped (no changed decision-heavy logic)`, without counts.
 A skipped check is reported as skipped, and all other checks and CI parity still run.
-Invalid YAML, a non-mapping root, or a non-boolean value stops the ship gauntlet with an error.
+Invalid YAML, a non-mapping root, or a non-boolean value stops ship's verify phase with an error.
 Commit `.dev/config.yaml` to share the settings across contributors and CI.
 Ignore the remaining `.dev/` contents with this root `.gitignore` block, replacing all blanket `.dev/` or `/.dev/` entries:
 

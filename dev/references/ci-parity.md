@@ -25,7 +25,7 @@ of the `pr.md` its run keeps.
 
 A full gate re-proves every package the change never touched, and on a grown
 repository it is most of a run's wall clock. CI runs it anyway, on every push.
-So every local gate - a wave gate, a gauntlet re-run, the parity run below -
+So every local gate - a wave gate, a verify re-run, the parity run below -
 first asks what the change reaches:
 
 ```bash

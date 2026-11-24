@@ -1,6 +1,6 @@
 # tools/harden
 
-Repo-fitted pieces the `ship` gauntlet reuses on every run; the analyzers themselves are the ecosystem's, run through `uvx` or `npx` so nothing is installed globally.
+Repo-fitted pieces `ship`'s verify phase reuses on every run; the analyzers themselves are the ecosystem's, run through `uvx` or `npx` so nothing is installed globally.
 
 - `scope.sh [--python]` - the files the branch added or modified against the default branch, minus the standard exclusions and the generated `plugins/` tree.
 - `added_lines.py` - filters `path:line: ...` findings on stdin to the lines the branch added, so pre-existing findings are counted, not fixed.
@@ -9,7 +9,7 @@ Repo-fitted pieces the `ship` gauntlet reuses on every run; the analyzers themse
 - `flaky.py --runs 5 MODULE ...` - runs unittest modules repeatedly in shuffled order and names any test whose outcome disagrees between runs.
 - `mutate.py FILE FUNC ... --tests MODULE ...` - mutates explicitly selected changed decision-heavy functions one change at a time and runs their relevant fast tests. Skip forwarding/wiring glue. Prefer scoped incremental Stryker, PIT, or mutmut runs where available; survivors guide contract review and regression tests, and this helper's nonzero survivor exit is advisory rather than a ship gate.
 
-The gauntlet, from the repository root:
+The verify phase's analyses, from the repository root:
 
 ```bash
 files=$(tools/harden/scope.sh --python)

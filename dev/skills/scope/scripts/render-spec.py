@@ -28,7 +28,7 @@ ITEM = re.compile(r"^\s+([a-z])\.\s+(.*)$")
 TAG = re.compile(r"\s*\[(?:open|impact:\s*\w+)\]")
 IMPACT_RANK = {"high": 0, "medium": 1, "low": 2}
 IMPACT_PIPS = {"high": 3, "medium": 2, "low": 1}
-LAYERS = ("unit", "integration", "e2e")
+LAYERS = lint.TAGS
 ASK_BELOW = 50  # scope asks the user below this confidence
 
 
@@ -122,7 +122,7 @@ def read_change_plan(body: list[tuple[int, str]]) -> list[dict]:
                 current["none"] = value.partition(" - ")[2].strip() or "no reason given"
                 continue
             for scenario in (s.strip() for s in value.split(";") if s.strip()):
-                layer = re.match(r"^\[(unit|integration|e2e)\]\s*(.*)$", scenario)
+                layer = re.match(r"^\[(" + "|".join(LAYERS) + r")\]\s*(.*)$", scenario)
                 current["tests"].append(
                     {"layer": layer.group(1), "text": layer.group(2)} if layer
                     else {"layer": "untagged", "text": scenario}
@@ -141,7 +141,7 @@ def read_change_plan(body: list[tuple[int, str]]) -> list[dict]:
 
 def read_scope(body: list[tuple[int, str]]) -> dict:
     """The scope section split into prose, non-goals, validation commands, and the flow sketch."""
-    prose, non_goals, validation, flow = [], [], [], []
+    prose, non_goals, validation, flow, verification, threats = [], [], [], [], [], []
     block, fence = None, False
     for _, line in body:
         stripped = line.strip()
@@ -156,7 +156,7 @@ def read_scope(body: list[tuple[int, str]]) -> dict:
             continue
         if stripped.startswith("### "):
             block = stripped[4:].strip().lower()
-            if block in ("validation", "flow"):
+            if block in ("validation", "flow", "verification", "threat model"):
                 continue
         if block == "validation":
             if stripped:
@@ -164,6 +164,16 @@ def read_scope(body: list[tuple[int, str]]) -> dict:
                 late = "(end of build)" in command
                 command = command.replace("(end of build)", "").strip().strip("`").strip()
                 validation.append({"command": command, "late": late})
+            continue
+        if block == "verification":
+            match = lint.VERIFICATION_LINE.match(line)
+            if match:
+                verification.append({"kind": match.group(1), "yes": match.group(2) == "yes",
+                                     "why": match.group(3).removeprefix("- ").strip()})
+            continue
+        if block == "threat model":
+            if stripped:
+                threats.append(stripped.lstrip("-* ").strip())
             continue
         if block == "flow":
             if stripped:
@@ -173,7 +183,8 @@ def read_scope(body: list[tuple[int, str]]) -> dict:
             non_goals.append(stripped.lstrip("-* ").lstrip("⊘").strip())
             continue
         prose.append(line)
-    return {"prose": prose, "non_goals": non_goals, "validation": validation, "flow": "\n".join(flow).strip()}
+    return {"prose": prose, "non_goals": non_goals, "validation": validation, "flow": "\n".join(flow).strip(),
+            "verification": verification, "threats": threats}
 
 
 def read_header(lines: list[str]) -> dict:
@@ -408,22 +419,44 @@ def heat_step(count: int) -> int:
 
 
 def heatmap(change_sets: list[dict]) -> str:
+    used = {t["layer"] for c in change_sets for t in c["tests"]}
+    layers = [layer for layer in LAYERS if layer in used] or ["unit", "integration", "e2e"]
     rows = []
     for change_set in change_sets:
         head = f'<th scope="row"><a href="#cs-{change_set["n"]}" data-tab="plan">{change_set["n"]}. {inline(change_set["title"])}</a></th>'
         if change_set["none"] is not None:
-            rows.append(f'<tr>{head}<td colspan="4" class="none">tests: none - {inline(change_set["none"])}</td></tr>')
+            rows.append(f'<tr>{head}<td colspan="{len(layers) + 1}" class="none">tests: none - {inline(change_set["none"])}</td></tr>')
             continue
-        counts = [sum(1 for t in change_set["tests"] if t["layer"] == layer) for layer in LAYERS]
+        counts = [sum(1 for t in change_set["tests"] if t["layer"] == layer) for layer in layers]
         cells = "".join(f'<td class="heat h{heat_step(c)}" title="{c} {layer} scenario{"s" * (c != 1)}">{c or "-"}</td>'
-                        for c, layer in zip(counts, LAYERS))
+                        for c, layer in zip(counts, layers))
         untagged = sum(1 for t in change_set["tests"] if t["layer"] == "untagged")
         total = sum(counts) + untagged
         rows.append(f'<tr>{head}{cells}<td class="total">{total}{" ⚠" if untagged else ""}</td></tr>')
     legend = "".join(f'<span><i class="heat h{s}"></i>{label}</span>'
                      for s, label in ((0, "0"), (1, "1-2"), (2, "3-5"), (3, "6-10"), (4, "11+")))
-    return (f'<table class="heatmap"><thead><tr><th>Change set</th><th>Unit</th><th>Integration</th><th>E2E</th>'
+    heads = "".join(f"<th>{'E2E' if layer == 'e2e' else layer.title()}</th>" for layer in layers)
+    return (f'<table class="heatmap"><thead><tr><th>Change set</th>{heads}'
             f'<th>Total</th></tr></thead><tbody>{"".join(rows)}</tbody></table><div class="legend">Scenarios {legend}</div>')
+
+
+def verification_html(scope: dict) -> str:
+    """The twenty kinds as a grid: planned ones with how, skipped ones with why; the lint names any missing."""
+    planned = {v["kind"]: v for v in scope["verification"]}
+    tiles = []
+    for kind in lint.KINDS:
+        entry = planned.get(kind)
+        if entry is None:
+            tiles.append(f'<div class="vk missing"><b>? {esc(kind)}</b><span>not planned - lint fails</span></div>')
+        elif entry["yes"]:
+            tiles.append(f'<div class="vk yes"><b>✓ {esc(kind)}</b><span>{inline(entry["why"])}</span></div>')
+        else:
+            tiles.append(f'<div class="vk no"><b>- {esc(kind)}</b><span>{inline(entry["why"])}</span></div>')
+    count = sum(1 for v in scope["verification"] if v["yes"])
+    threats = "".join(f"<li>{inline(t)}</li>" for t in scope["threats"])
+    threat_html = f'<h4>Threat model</h4><ul class="threats">{threats}</ul>' if threats else ""
+    return (f'<p class="muted">{count} of {len(lint.KINDS)} kinds apply; ship runs each one and skips the rest with these reasons.</p>'
+            f'<div class="vgrid">{"".join(tiles)}</div>{threat_html}')
 
 
 def waves_html(data: dict) -> str:
@@ -566,7 +599,8 @@ def render(data: dict) -> str:
   {flow_html(scope["flow"])}
   <section class="two"><div><h2>Will touch</h2><div class="card"><ul class="touches">{touches or '<li class="muted">No files named.</li>'}</ul></div></div>
   <div><h2>Will not do</h2><div class="card"><ul class="nongoals">{non_goals}</ul></div></div></section>
-  <section><h2>Verification</h2><div class="card">{heatmap(change_sets) if change_sets else '<p class="muted">No change sets yet.</p>'}
+  <section><h2>Verification plan</h2><div class="card">{verification_html(scope)}</div></section>
+  <section><h2>Tests per layer</h2><div class="card">{heatmap(change_sets) if change_sets else '<p class="muted">No change sets yet.</p>'}
   <h4>Validation</h4><ul class="validation">{validation or '<li class="muted">No Validation block.</li>'}</ul></div></section>
   <section><h2>Build order</h2><div class="card">{waves_html(data)}</div></section>
   <section><h2>Scope details</h2><div class="card prose">{prose_html(scope["prose"]) or '<p class="muted">Empty.</p>'}</div></section>
@@ -693,6 +727,14 @@ ul { margin: 0; padding-left: 0; list-style: none; } li { padding: 4px 0; }
 .heat.h4 { background: var(--h4); color: var(--h-ink-light); }
 @media (prefers-color-scheme: dark) { .heat.h1, .heat.h2 { color: var(--h-ink-light); } .heat.h4 { color: var(--h-ink-dark); } }
 .heatmap td.total { text-align: center; font-variant-numeric: tabular-nums; width: 70px; } .heatmap td.none { color: var(--muted); }
+.vgrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.vk { border: 1px solid var(--ring); border-radius: 8px; padding: 8px 10px; background: var(--page); font-size: 12.5px; }
+.vk b { display: block; font-size: 13px; } .vk span { color: var(--ink-2); }
+.vk.yes { border-left: 3px solid var(--series); } .vk.yes b { color: var(--ink); }
+.vk.no b { color: var(--muted); font-weight: 500; } .vk.no span { color: var(--muted); }
+.vk.missing { border-color: var(--critical); } .vk.missing b, .vk.missing span { color: var(--critical); }
+.threats li { border-top: 1px solid var(--grid); padding: 6px 0; color: var(--ink-2); }
+@media (max-width: 820px) { .vgrid { grid-template-columns: repeat(2, 1fr); } }
 .legend { display: flex; gap: 12px; align-items: center; margin-top: 10px; color: var(--muted); font-size: 12px; }
 .legend i { display: inline-block; width: 14px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; border: 1px solid var(--ring); }
 .wave { display: grid; grid-template-columns: 70px 1fr; gap: 10px; align-items: center; padding: 6px 0; }

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# In-scope files for a ship gauntlet run: files the local branch added or modified against the default
+# In-scope files for a ship verify run: files the local branch added or modified against the default
 # branch, minus the standard exclusions and the generated plugins/ tree.
 # Usage: tools/harden/scope.sh [--python]   (prints one existing path per line)
 set -euo pipefail

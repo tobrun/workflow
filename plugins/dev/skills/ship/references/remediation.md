@@ -1,7 +1,7 @@
 # Blocker Remediation
 
 How `ship` handles a BLOCK verdict from the review panel: two autonomous rounds of fix and re-review before a blocker is real.
-A confirmed blocker is a defect with a triggering scenario, and a defect with a triggering scenario is work, not a question - the same reasoning that lets the gauntlet loop its fix agents.
+A confirmed blocker is a defect with a triggering scenario, and a defect with a triggering scenario is work, not a question - the same reasoning that lets the verify phase loop its fix agents.
 Only a blocker that survives two rounds on the same root cause is presented as a human call.
 
 ## When it runs
@@ -18,7 +18,7 @@ CONCERNS and PASS skip straight to phase 3; concerns stay in the report and the 
    Each agent gets only its blockers, the relevant file paths, the brief phase 2 built (spec excerpts, decision rationale), and the fix vocabulary below.
    Agents report their changes and leave git state alone; the orchestrator verifies and commits authorized fixes on the work branch, naming the review index and finding in the Why.
    Schedule within available child capacity and keep file ownership disjoint.
-2. **Re-harden.** Run phase 1's four read-only analyzers over the files the round touched, plus the flakiness check over the tests it added; dispatch fixes and loop per [gauntlet.md](gauntlet.md) as usual.
+2. **Re-verify.** Run phase 1's read-only analyzers over the files the round touched, plus the flakiness check over the tests it added and every kind the touched files trigger; dispatch fixes and loop per [verify.md](verify.md) as usual.
    Then run the spec's Validation block (or the repo's test suite) at the round's impact per [../../../references/ci-parity.md](../../../references/ci-parity.md) and re-run the `[e2e]` scenarios when the round touched anything an e2e scenario exercises, overwriting the e2e report.
 3. **Re-review.** Run phase 2 again as a re-review: `review_{N+1}.md`, same lenses, previous findings carried as verification items so the panel states whether each blocker is fixed or still open.
    The summary line names the round: `Remediation round {r} of 2`.
@@ -42,4 +42,4 @@ A re-run of `ship` after the human call starts a fresh budget.
 A real blocker is listed in the PR under Open calls with its history: the finding, the round-1 and round-2 attempts (commit and what each changed), and why it still stands - unfixable in scope, escalated, or a new blocker the fixes introduced.
 Each attempt goes into `pr.md` when its round ends, so the history is a record of the rounds and not a recollection of them.
 Phase 3 opens the PR as a draft.
-The wrap-up presents each real blocker as the human call it is: a real defect the fixes could not reach, a decision worth reopening, or a spec the change outgrew - the same three outcomes the gauntlet's human calls have.
+The wrap-up presents each real blocker as the human call it is: a real defect the fixes could not reach, a decision worth reopening, or a spec the change outgrew - the same three outcomes the verify phase's human calls have.

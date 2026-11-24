@@ -47,7 +47,7 @@ Test quality per this plugin's philosophy, not raw coverage:
 ## simplify
 
 Always include this lens; every diff has simplification surface.
-The gauntlet's duplication, dead code, and complexity checkers are its deterministic front line, so spend this lens on what they cannot see: semantic duplication below the token threshold, generality nothing asked for, indirection that earns nothing.
+The verify phase's duplication, dead code, and complexity checkers are its deterministic front line, so spend this lens on what they cannot see: semantic duplication below the token threshold, generality nothing asked for, indirection that earns nothing.
 
 Unnecessary complexity that a simpler version would avoid, with behavior held constant:
 
@@ -81,7 +81,7 @@ Doc updates promised by the spec belong to spec-conformance, not here.
 
 ## dead-code
 
-The gauntlet's detector already caught provably unreferenced symbols; this lens hunts what needs reading, not reference counting.
+The verify phase's detector already caught provably unreferenced symbols; this lens hunts what needs reading, not reference counting.
 Unreachable branches, commented-out code, leftover debug scaffolding, vestigial parameters, dead flags and config keys, code only its own tests still call.
 Verify with Grep across the whole repo before flagging; check tests, dynamic string-keyed lookups, and external API surface.
 If you cannot prove it dead, report at most a CONCERN and say what you could not rule out.

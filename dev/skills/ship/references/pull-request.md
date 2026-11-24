@@ -6,7 +6,7 @@ A PR without evidence asks the reviewer to trust the description; this phase mak
 ## When it runs
 
 Phase 3 runs in the default flow, after the review report is written and the remediation loop in [remediation.md](remediation.md) has run its course: PASS and CONCERNS open a PR ready for review - a draft until its required checks are green when a check was deferred to CI, per [../../../references/ci-parity.md](../../../references/ci-parity.md) - a real blocker - one that survived both remediation rounds - opens a draft PR with the blockers listed first, so the work is preserved and CI runs while the human call is made.
-It is skipped in "gauntlet only" and "review only" runs and when the user says "no PR" or "local only"; a review-only run on someone else's PR never pushes anything.
+It is skipped in "verify only" and "review only" runs and when the user says "no PR" or "local only"; a review-only run on someone else's PR never pushes anything.
 Never force-push, never rebase, and never touch a branch other than the work branch and the evidence branch.
 
 Follow [../../../references/execution.md](../../../references/execution.md).
@@ -15,7 +15,7 @@ An INCOMPLETE review stays local or draft and never becomes ready.
 
 ## Commit and push
 
-1. Fixes the gauntlet left uncommitted are committed now, one commit per tool, in `commit`'s `type(scope): subject` plus What/Why shape.
+1. Fixes the verify phase left uncommitted are committed now, one commit per kind, in `commit`'s `type(scope): subject` plus What/Why shape.
    Name files explicitly; never `git add -A`, never a `Co-Authored-By` line.
 2. Use the already authorized work branch and PR base; create a branch only when permitted. An explicitly stacked base stays stacked.
 3. `git push -u {remote} {branch}`; a rejected push is reported and stops the phase.
@@ -65,9 +65,9 @@ Plan `.dev/{plan-name}` | Review {N}: {verdict}
 
 ## Quality
 
-| Check | Found | Fixed | Surviving |
-| ----- | ----- | ----- | --------- |
-{one row per gauntlet tool; for skipped mutation testing, write skipped (disabled in .dev/config.yaml) or skipped (no changed decision-heavy logic), with no counts}
+| Kind | Result | Found | Fixed | Surviving |
+| ---- | ------ | ----- | ----- | --------- |
+{one row per kind in verification.md, all twenty, first cell the kind's slug (`unit`, `fuzz`, `ui-ux`, ...): Result is `ran` with the counts, or `skipped ({reason})` with the counts left empty, such as `skipped (no parser or untrusted input)` or `skipped (disabled in .dev/config.yaml)`; rows for further checks (security, dead code, duplication, complexity, flakiness) may follow}
 
 Mutation testing: {selected targets, command, runtime, killed/survived/uncovered counts, regression tests added or strengthened, and reasons for remaining survivors; omit when skipped}.
 
@@ -76,7 +76,7 @@ CI parity ({impact verdict and packages}): {each reproducible required command, 
 
 ## Open calls
 
-{Each surviving human call from the gauntlet, each real blocker with its two-round history, and each concern from the review, one line each, or "none".}
+{Each surviving human or open call from the verify phase with its three-round history, each real blocker with its two-round history, and each concern from the review, one line each, or "none".}
 ```
 
 Title: the change in imperative mood, under 70 characters.

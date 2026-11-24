@@ -15,7 +15,7 @@ Captured: 2026-09-17 (full, scope) - Updated: 2026-11-24 (five skills: the remot
 | dev evals | comprehension evals for the skills | `dev/evals/` | nothing at runtime |
 | generated plugins | the Codex distributions built from each source plugin, with invocation policy in agents/openai.yaml | `plugins/` | Codex plugin marketplace |
 | repo scripts | validation of the whole repository, the plugin generator, and the Pi transport self-test | `scripts/` | every other component |
-| harden tools | optional local analyses a ship gauntlet can draw on: added lines, coverage-weighted complexity, flaky reruns, mutation | `tools/harden/` | nothing; run by hand against a target repository |
+| harden tools | optional local analyses ship's verify phase can draw on: added lines, coverage-weighted complexity, flaky reruns, mutation | `tools/harden/` | nothing; run by hand against a target repository |
 | research and todo | plans, findings, and reading notes | `research/`, `todo/` | nothing |
 | bootstrap plugin | the `agents-md` skill, its references distilled from the dev skills, `bootstrap/skills/agents-md/scripts/check-agents-md.py` that every draft loops against, and the checker's tests | `bootstrap/skills/`, `bootstrap/evals/` | the consuming repository's root AGENTS.md; reads its manifests, CI config, git history, and CLAUDE.md |
 

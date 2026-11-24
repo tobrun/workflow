@@ -43,7 +43,7 @@ PLUGINS = {
         default_prompts=(
             "Scope this change with argued decisions.",
             "Build the current spec with tests at every layer.",
-            "Ship this change with the gauntlet and a verified review.",
+            "Verify this change, review it, and open a pull request with proof.",
         ),
         skill_ui={
             "commit": (
@@ -64,7 +64,7 @@ PLUGINS = {
             "ship": (
                 "Ship",
                 "Harden, review, then open a PR with proof",
-                "Use $dev:ship to run the quality gauntlet, the verified review, and open the pull request with evidence for this change.",
+                "Use $dev:ship to run every kind of verification, the verified review, and open the pull request with evidence for this change.",
             ),
             "bootstrap": (
                 "Bootstrap",

@@ -1,7 +1,7 @@
 {
   "name": "dev",
   "version": "3.10.0",
-  "description": "Development workflow skills: scope changes with argued decisions, build across unit/integration/e2e with every scenario proven by tests, ship with a deterministic quality gauntlet and an adversarially verified review, take a task to a pull request unattended with yolo, enforce a repository's architecture from one file with bootstrap, and create structured commits that feed a decision ledger.",
+  "description": "Development workflow skills: scope changes with argued decisions, build across unit, component, integration, contract, property, fuzz, e2e, smoke, and benchmark scenarios each proven by tests, ship with twenty kinds of verification and an adversarially verified review, take a task to a pull request unattended with yolo, enforce a repository's architecture from one file with bootstrap, and create structured commits that feed a decision ledger.",
   "author": {
     "name": "Tobrun"
   },
@@ -10,7 +10,7 @@
   "interface": {
     "displayName": "Dev Workflow",
     "shortDescription": "Scope, build, and ship tested changes.",
-    "longDescription": "Development workflow skills: scope changes with argued decisions, build across unit/integration/e2e with every scenario proven by tests, ship with a deterministic quality gauntlet and an adversarially verified review, take a task to a pull request unattended with yolo, enforce a repository's architecture from one file with bootstrap, and create structured commits that feed a decision ledger.",
+    "longDescription": "Development workflow skills: scope changes with argued decisions, build across unit, component, integration, contract, property, fuzz, e2e, smoke, and benchmark scenarios each proven by tests, ship with twenty kinds of verification and an adversarially verified review, take a task to a pull request unattended with yolo, enforce a repository's architecture from one file with bootstrap, and create structured commits that feed a decision ledger.",
     "developerName": "Tobrun",
     "category": "Developer Tools",
     "capabilities": [
@@ -20,7 +20,7 @@
     "defaultPrompt": [
       "Scope this change with argued decisions.",
       "Build the current spec with tests at every layer.",
-      "Ship this change with the gauntlet and a verified review."
+      "Verify this change, review it, and open a pull request with proof."
     ]
   }
 }

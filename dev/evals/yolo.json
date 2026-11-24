@@ -16,7 +16,7 @@
     },
     {
       "id": "yolo-stops-and-calls",
-      "prompt": "Answer briefly, from the skill text only. (1) Name the three things that end a yolo run before the PR. (2) The gauntlet reports a complexity violation that a fix agent cannot clear without a higher threshold. What does yolo do with the threshold? (3) Where does each stage write the decisions yolo made in the user's place, and what happens to them before the PR is created? (4) The host has no subagent tool. What happens? (5) What may yolo publish?",
+      "prompt": "Answer briefly, from the skill text only. (1) Name the three things that end a yolo run before the PR. (2) The verify phase reports a complexity violation that a fix agent cannot clear without a higher threshold. What does yolo do with the threshold? (3) Where does each stage write the decisions yolo made in the user's place, and what happens to them before the PR is created? (4) The host has no subagent tool. What happens? (5) What may yolo publish?",
       "fixture": "none - the answers come from the skill text",
       "assertions": [
         "Answer 1: a found secret, a step needing a destructive action such as force-push or history rewrite, and a resource the session cannot reach that the task needs",

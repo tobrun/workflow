@@ -56,10 +56,12 @@ When a later section references a decision, echo the chosen line's leading label
 Second-order work becomes nested sub-efforts with their own decisions; weighed and cut options become `⊘` non-goals with a because clause.
 End with a `### Validation` block of the repository's real typecheck, test, lint, and build commands, discovered from its manifests and CI config, never guessed.
 List each once, and mark `(end of build)` the ones a build wave does not need, such as the e2e suite, benchmarks, or a coverage run that repeats the suite.
+Then a `### Verification` block marking each of the twenty kinds in [../../references/verification.md](../../references/verification.md) `yes - how` or `no - reason`, judged by the triggers there; `formal: yes` names its mechanism as a decision (a TLA+ or Alloy model, or a stateful `[property]` test).
+When `threat-model` applies, a `### Threat model` block: per trust boundary, each STRIDE threat with its mitigation and the scenario that tests it.
 Only when the change adds or reorders calls between components, or moves a boundary, add a `### Flow` block holding one fenced `mermaid` sequence or component diagram of the new flow, with the changed parts named; a local fix gets none.
 
 **Change plan**: short fragments, linking decisions by ID with their echo.
-Each change set ends with exactly one `tests:` line of concrete scenarios, input -> expected outcome, each tagged `[unit]`, `[integration]`, or `[e2e]` and covering the happy path, edge cases, and failure paths; a set with nothing to test says `tests: none - {reason}`.
+Each change set ends with exactly one `tests:` line of concrete scenarios, input -> expected outcome, each tagged with the layer that proves it - `[unit]`, `[component]`, `[integration]`, `[contract]`, `[property]`, `[fuzz]`, `[e2e]`, `[smoke]`, or `[benchmark]` - and covering the happy path, edge cases, and failure paths; a set with nothing to test says `tests: none - {reason}`.
 Order change sets so each builds only on earlier ones, keep their file lists disjoint so build can run them in parallel, and gather edits to a shared file into one change set.
 Past 25 scenarios a change set is several, split along a seam.
 

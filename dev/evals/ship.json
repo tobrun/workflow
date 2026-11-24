@@ -4,8 +4,8 @@
   "note": "A full run depends on a real codebase with a diff, test suite, and toolchain, and fans out its own subagent panel - both too expensive to stage per iteration. These evals check policy comprehension of the skill text directly instead.",
   "evals": [
     {
-      "id": "gauntlet-policy",
-      "prompt": "Answer briefly, from the skill text only: (1) A mutation run leaves three surviving mutants and fixing them is tedious. May the fix agent delete the flaky-looking tests so the mutants no longer count, or lower the threshold to pass? (2) Which analyzers scan together as one parallel batch, and why may they? (3) The repo has no mutation framework. Do you skip mutation testing, hand-roll a full harness, or something else? (4) The complexity threshold of 6 seems too strict for this codebase and the user agrees to 8. What must happen besides using 8? (5) What is the default scope of a run, and when does it widen? (6) A violation has survived two fix rounds on the same root cause. What happens next? (7) After the gauntlet passes, is the change verified? What happens next? (8) The spec E2E is green, but a required PR screenshot workflow is red and the same scenario was previously called flaky. Can ship proceed to review or call the diff PR-ready? (9) The diff edits only packages/api of an npm-workspaces repo, and pr.yml runs every workspace's tests. Which of those does the CI-parity exit run locally, what happens to the rest, and how does phase 3 open the PR? What changes if the diff also touched package-lock.json, or if the user asked for no PR?",
+      "id": "verify-policy",
+      "prompt": "Answer briefly, from the skill text only: (1) A mutation run leaves three surviving mutants and fixing them is tedious. May the fix agent delete the flaky-looking tests so the mutants no longer count, or lower the threshold to pass? (2) Which analyzers scan together as one parallel batch, and why may they? (3) The repo has no mutation framework. Do you skip mutation testing, hand-roll a full harness, or something else? (4) The complexity threshold of 6 seems too strict for this codebase and the user agrees to 8. What must happen besides using 8? (5) What is the default scope of a run, and when does it widen? (6) A static-analysis violation has survived three fix rounds on the same root cause. What happens next? (7) After the verify phase passes, is the change verified? What happens next? (8) The spec E2E is green, but a required PR screenshot workflow is red and the same scenario was previously called flaky. Can ship proceed to review or call the diff PR-ready? (9) The diff edits only packages/api of an npm-workspaces repo, and pr.yml runs every workspace's tests. Which of those does the CI-parity exit run locally, what happens to the rest, and how does phase 3 open the PR? What changes if the diff also touched package-lock.json, or if the user asked for no PR?",
       "fixture": "none - policy questions answered from the skill text",
       "assertions": [
         "Answer 1: no on both; agents never delete tests to moot a mutant, never weaken a check or edit thresholds to pass",
@@ -20,8 +20,20 @@
       ]
     },
     {
+      "id": "verify-kinds",
+      "prompt": "Answer briefly, from the skill text and the references it links only. The spec's Verification block marks fuzz: yes, ui-ux: no - no UI, and penetration: yes. (1) How many rows does pr.md's Quality table have, and what does the ui-ux row say? (2) The fuzz harness crashes on a malformed input and three fix rounds do not stop it. Does the ship block, and where does the crash go? (3) Changed-line coverage is 70% after the fixes. What happens? (4) What may the penetration test target? (5) Could the ship skip fuzz because time ran out?",
+      "fixture": "none - the answers come from the skill text",
+      "assertions": [
+        "Answer 1: twenty, one per kind, the first cell the kind's slug; ui-ux reads skipped (no UI)",
+        "Answer 2: no - fuzz is fix-and-report: after three fix rounds the crash is an Open call and never blocks the ship or by itself makes the PR a draft; its minimized input is kept",
+        "Answer 3: under 80% starts fix agents for up to three rounds; what is left is an Open call, not a block",
+        "Answer 4: only the build this run started on localhost, never a shared, staging, production, or third-party host",
+        "Answer 5: no - the spec plans fuzz, and pr-evidence.py check --spec rejects a Quality table that skips a planned kind"
+      ]
+    },
+    {
       "id": "review-policy",
-      "prompt": "Answer briefly, from the skill text only: (1) After build finishes a task, should ship launch automatically? (2) A finding is BLOCK severity but verification returns PLAUSIBLE (could not refute, could not fully confirm). What severity does it end up as in the report: BLOCK, CONCERN, or dropped entirely? (3) Should the orchestrator read the diff's file contents and form its own opinion on code quality? (4) If one lens agent fails or returns nothing parseable, does the whole review abort? (5) The diff adds new user-facing behavior with a passing unit test but no matching scenario in the spec's e2e report. Is that a pass? (6) implementation-notes.md logs a Deviation for this spec. What must the tests lens or spec-conformance lens do with that information? (7) Besides review_N.md, what else does the review phase produce, and where does the URL for it come from? (8) How does agent execution differ between a host with native subagents and Pi? (9) The user asks for a review only run. Does the gauntlet run? (10) Who numbers the findings for the verifiers and who applies their verdicts - you, another agent, or something else?",
+      "prompt": "Answer briefly, from the skill text only: (1) After build finishes a task, should ship launch automatically? (2) A finding is BLOCK severity but verification returns PLAUSIBLE (could not refute, could not fully confirm). What severity does it end up as in the report: BLOCK, CONCERN, or dropped entirely? (3) Should the orchestrator read the diff's file contents and form its own opinion on code quality? (4) If one lens agent fails or returns nothing parseable, does the whole review abort? (5) The diff adds new user-facing behavior with a passing unit test but no matching scenario in the spec's e2e report. Is that a pass? (6) implementation-notes.md logs a Deviation for this spec. What must the tests lens or spec-conformance lens do with that information? (7) Besides review_N.md, what else does the review phase produce, and where does the URL for it come from? (8) How does agent execution differ between a host with native subagents and Pi? (9) The user asks for a review only run. Does the verify phase run? (10) Who numbers the findings for the verifiers and who applies their verdicts - you, another agent, or something else?",
       "assertions": [
         "Answer 1: no, ship is human-triggered only; it must never be launched automatically",
         "Answer 2: CONCERN (PLAUSIBLE demotes a BLOCK to CONCERN; only REFUTED gets dropped)",
@@ -31,13 +43,13 @@
         "Answer 6: check whether the conservative choice logged under the deviation still satisfies the spec's scope and decisions; an unresolved deviation that changes promised user-facing behavior is at least a CONCERN",
         "Answer 7: a review_N.html rendered via the same schema/template pattern used elsewhere and reported as a local path; it is published only when the user requests a link and the host has a publisher",
         "Answer 8: hosts with native multi-agent support keep the existing plain parallel subagent batches; Pi uses the bundled runner to launch isolated pi --print processes in the same lens-then-verifier batches, never replacing the panel with orchestrator review",
-        "Answer 9: no; a single phase runs on request, and the mutating gauntlet is skipped entirely in a review-only run",
+        "Answer 9: no; a single phase runs on request, and the mutating verify phase is skipped entirely in a review-only run",
         "Answer 10: scripts/aggregate-findings.py does both - plan numbers the BLOCK and CONCERN findings for the verifiers, aggregate applies the verdicts; never another agent, and never hand-aggregation"
       ]
     },
     {
       "id": "ship-files-as-the-run-goes",
-      "prompt": "Answer briefly, from the skill text and the references it links only: (1) In a default run, when is pr.md created, and what is in it after the four read-only analyzers have finished but before the complexity check starts? (2) The user asked for a gauntlet only run. Is pr.md written? (3) When is review_N.md created, and what does it hold while the lens agents are still working? (4) Batch 1 has returned eleven findings and the verifiers have not run yet. Do those findings go into review_N.md's Blockers and Concerns now? (5) The gauntlet has finished and phase 2 has not; someone opens pr.md and sees no Evidence section and no review line. Is that a defect? (6) Remediation round 1 has ended with one blocker still standing. Where and when is that attempt recorded?",
+      "prompt": "Answer briefly, from the skill text and the references it links only: (1) In a default run, when is pr.md created, and what is in it after the read-only analyzers have finished but before the complexity check starts? (2) The user asked for a verify only run. Is pr.md written? (3) When is review_N.md created, and what does it hold while the lens agents are still working? (4) Batch 1 has returned eleven findings and the verifiers have not run yet. Do those findings go into review_N.md's Blockers and Concerns now? (5) The verify phase has finished and phase 2 has not; someone opens pr.md and sees no Evidence section and no review line. Is that a defect? (6) Remediation round 1 has ended with one blocker still standing. Where and when is that attempt recorded?",
       "assertions": [
         "Answer 1: before the first check, by a run that will reach phase 3; it holds the Summary and one Quality row per check of the batched four, each with its found, fixed, and surviving counts, plus any human call raised so far under Open calls - no Evidence, no review line",
         "Answer 2: no - only a run that will reach phase 3 keeps a pr.md, so a partial run cannot overwrite the body an open PR was proposed with",
@@ -90,7 +102,7 @@
     },
     {
       "id": "ship-quick-mode-after-fixes",
-      "prompt": "Answer briefly, from the skill text only. review_1.md ended in BLOCK with two Blockers and one Concern and records a head commit; build has since committed two fix change sets, and a draft pull request exists. The user runs ship in quick mode. (1) Which gauntlet tools run? (2) How many review agents launch, and what do they read? (3) What kinds of new finding may the reviewer raise? (4) Both Blockers are fixed and the Concern is still open: what is the verdict and where is it written? (5) What happens to the pull request body?",
+      "prompt": "Answer briefly, from the skill text only. review_1.md ended in BLOCK with two Blockers and one Concern and records a head commit; build has since committed two fix change sets, and a draft pull request exists. The user runs ship in quick mode. (1) Which verify checks run? (2) How many review agents launch, and what do they read? (3) What kinds of new finding may the reviewer raise? (4) Both Blockers are fixed and the Concern is still open: what is the verdict and where is it written? (5) What happens to the pull request body?",
       "fixture": "none - the answers come from the skill text",
       "assertions": [
         "Answer 1: none; only the repository's required pull-request commands run, once, at the diff's impact",
@@ -108,7 +120,7 @@
         "Answer 1: no - there is no remediation loop; it writes the BLOCK verdict, stops before the pull request step, and recommends scope on its small path, then build, then quick mode again",
         "Answer 2: the whole branch diff",
         "Answer 3: no - never force-push, never rebase",
-        "Answer 4: that the gauntlet and the panel were skipped; a full ship is recommended when the change has grown beyond the findings it set out to fix"
+        "Answer 4: that the verify phase and the panel were skipped; a full ship is recommended when the change has grown beyond the findings it set out to fix"
       ]
     }
   ]

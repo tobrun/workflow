@@ -94,6 +94,18 @@ class ScenarioEvidenceTest(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn('layer disagrees', result.stdout)
 
+    def test_a_property_scenario_is_proven_by_a_property_layer_receipt(self):
+        self.scenario = '[property] any price -> total is twice the price'
+        (self.plan / 'spec.md').write_text('# Coupon\n\n## Change plan\n\n1. Double price\n'
+                                         '   a. app.py - total\n   tests: ' + self.scenario + '\n')
+        self.mapping['scenario'] = self.scenario
+        self.write_manifest()
+        self.assertEqual(self.capture('property').returncode, 0)
+        result = self.check()
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertEqual(self.capture('unit').returncode, 0)
+        self.assertIn('layer disagrees', self.check().stdout)
+
     def test_changed_implementation_invalidates_result(self):
         self.assertEqual(self.capture().returncode, 0)
         (self.root / 'app.py').write_text('def total(price):\n    return price\n')

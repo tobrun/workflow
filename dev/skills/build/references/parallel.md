@@ -17,7 +17,7 @@ Each prompt gives:
 1. The role: it implements exactly one change set of a spec while sibling agents implement others in the same tree.
 2. The absolute paths of `spec.md`, `implementation-notes.md`, this skill's `SKILL.md` (its "The change-set loop" section), `layers.md`, `tests.md`, and `mocking.md`, and the number of the change set it owns.
 3. Constraints:
-   - Implement only this change set's `[unit]` and `[integration]` scenarios; the orchestrator runs `[e2e]` once per spec.
+   - Implement this change set's scenarios at every layer except `[e2e]` and `[smoke]`, which the orchestrator runs once per spec.
    - Do not touch git state or `implementation-notes.md`; report instead.
    - Edit only files in this change set's list; a needed file another change set owns is a conflict to report, not to edit.
    - Run only this change set's tests plus typecheck and lint over the packages it touches - siblings are mid-edit, so a wider run measures their half-finished work. Report commands and real results.

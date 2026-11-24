@@ -1,6 +1,6 @@
 ---
 name: scope
-description: Spec a change at .dev/{plan-name}/spec.md - find the real problem, argue each consequential decision against its alternatives, and write a self-contained spec with a layer-tagged change plan, then record the settled decisions in docs/decisions.md and commit that ledger. Use to plan work before implementation, for a quick plan of a small request or of accepted review findings, or for a deeper verified review of a large spec.
+description: Spec a change at .dev/{plan-name}/spec.md - find the real problem, argue each consequential decision against its alternatives, and write a self-contained spec with a layer-tagged change plan and an HTML review page rendered from it, then record the settled decisions in docs/decisions.md and commit that ledger. Use to plan work before implementation, for a quick plan of a small request or of accepted review findings, or for a deeper verified review of a large spec.
 ---
 
 # Scope
@@ -19,7 +19,7 @@ Tell the user which path you took.
 
 ## 1. Understand the problem
 
-Create `spec.md` as soon as you know what the change is about, with its title, the date, what you understood, and empty `## Research`, `## Scope`, and `## Change plan` sections.
+Create `spec.md` as soon as you know what the change is about, with its title, the date, what you understood in one or two sentences, a `Risk: low|medium|high - why` line naming what raises the stakes (public APIs, schemas, auth, data loss, migrations), and empty `## Research`, `## Scope`, and `## Change plan` sections.
 From then on write each answer, decision, and resolution into the file when it happens, so the file never lags the conversation.
 
 A request often arrives one level too low: a solution hides the problem it solves, and a symptom hides its cause.
@@ -38,7 +38,7 @@ Find every consequential decision: the overall approach, the choices that look s
 How the change is verified is a decision too: which layer to test at, what needs a real dependency, what cannot be tested and why.
 Routine implementation choices need no entry.
 
-Each decision gets a stable `D-` slug, is phrased as a question, and lists at least two alternatives with because clauses, argued against what the codebase already does.
+Each decision gets a stable `D-` slug, is phrased as a question ending in an `[impact: high|medium|low]` tag (how much changes if it is decided wrong), and lists at least two alternatives with because clauses, argued against what the codebase already does.
 Write it as `[open]` when you find it and settle it in the file under the confidence rule above, highest impact first; `⚑` marks a line waiting on the user.
 When you do ask about a taste-driven choice, sketch the alternatives concretely instead of describing them.
 
@@ -53,6 +53,7 @@ When a later section references a decision, echo the chosen line's leading label
 Second-order work becomes nested sub-efforts with their own decisions; weighed and cut options become `⊘` non-goals with a because clause.
 End with a `### Validation` block of the repository's real typecheck, test, lint, and build commands, discovered from its manifests and CI config, never guessed.
 List each once, and mark `(end of build)` the ones a build wave does not need, such as the e2e suite, benchmarks, or a coverage run that repeats the suite.
+Only when the change adds or reorders calls between components, or moves a boundary, add a `### Flow` block holding one fenced `mermaid` sequence or component diagram of the new flow, with the changed parts named; a local fix gets none.
 
 **Change plan**: short fragments, linking decisions by ID with their echo.
 Each change set ends with exactly one `tests:` line of concrete scenarios, input -> expected outcome, each tagged `[unit]`, `[integration]`, or `[e2e]` and covering the happy path, edge cases, and failure paths; a set with nothing to test says `tests: none - {reason}`.
@@ -68,6 +69,10 @@ Past 25 scenarios a change set is several, split along a seam.
 
 Write the spec plainly: no similes or metaphors.
 Loop `python3 {scope-skill-root}/scripts/lint-spec.py .dev/{plan-name}/spec.md` until it exits clean; it prints the build waves the file lists allow, and a change set queued behind a shared file is a hint to regroup.
+
+On the full path, run `python3 {scope-skill-root}/scripts/render-spec.py .dev/{plan-name}/spec.md --open` once lint is clean, and again after every later edit to the spec.
+It writes `spec.html` beside the spec: the decisions waiting on the user, the recommendations applied without asking with reply buttons that overturn them, decisions by impact and confidence, scope, tests per layer, and build waves, all counted from the file.
+Never edit the page by hand; fix the spec and render again.
 
 ## 4. Review (full path)
 
@@ -86,7 +91,7 @@ Commit `docs/decisions.md` if this run changed it, and nothing else, so `build` 
 Commit on the current work branch; on the default branch, create `dev/{plan-name}` from HEAD first, a branch change that waits for the user's consent where the repository requires it.
 Write the message per the commit skill's [message format](../commit/references/message-format.md), typed `docs`, such as `docs({plan-name}): record the spec's decisions`.
 
-Recommend `build`; never launch it.
+Give the user the path to `spec.html` on the full path, and recommend `build`; never launch it.
 
 ## From review findings
 

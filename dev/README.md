@@ -8,7 +8,7 @@ Skills are explicitly invoked and recommend the next step; only `yolo` follows s
 
 | Skill | Use when | Deliverable |
 | --- | --- | --- |
-| [scope](skills/scope/SKILL.md) | The problem or consequential choices need planning. | A settled spec with invariants, argued choices, and layer-tagged scenarios. |
+| [scope](skills/scope/SKILL.md) | The problem or consequential choices need planning. | A settled spec with invariants, argued choices, and layer-tagged scenarios, plus an HTML review page of what needs you, decisions by impact and confidence, and test coverage per layer. |
 | [build](skills/build/SKILL.md) | A spec is ready to implement. | Code, tests, runner receipts, incremental notes, and actual application evidence. |
 | [ship](skills/ship/SKILL.md) | A change needs hardening, independent review, and an authorized PR. | Required checks, verified findings with explicit completeness, and current evidence. |
 | [yolo](skills/yolo/SKILL.md) | One task should run unattended. | The full scope/build/ship contracts, recorded assumptions, and a PR or local handoff within available authority. |

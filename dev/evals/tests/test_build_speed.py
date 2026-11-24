@@ -20,13 +20,15 @@ CHECK = REPO_ROOT / "dev" / "skills" / "build" / "scripts" / "check-tests.py"
 
 HEAD = """# Coupons
 
+Risk: low - a new table and one read path
+
 ## Research
 
-D-coupon-store: Where do coupons live?
+D-coupon-store: Where do coupons live? [impact: high]
   ✓ a table - one query reads them
   ✗ a config file - a redeploy per coupon
 
-D-expiry-clock: Which clock decides expiry?
+D-expiry-clock: Which clock decides expiry? [impact: medium]
   ✓ the server clock - one source of time
   ✗ the client clock - a user can set it back
 

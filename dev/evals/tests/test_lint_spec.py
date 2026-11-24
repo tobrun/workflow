@@ -102,5 +102,35 @@ class LintSpecEchoTest(unittest.TestCase):
         self.assertIn("the change plan links D-storage", result.stdout)
 
 
+class LintSpecReviewTagsTest(unittest.TestCase):
+    """The impact tag and the Risk line feed render-spec.py, so lint requires both."""
+
+    def lint(self, text: str) -> str:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "spec.md"
+            path.write_text(text, encoding="utf-8")
+            return subprocess.run(
+                [sys.executable, str(SCRIPT), str(path)], capture_output=True, text=True, check=False
+            ).stdout
+
+    def test_decision_without_an_impact_tag_is_reported(self) -> None:
+        self.assertIn("D-storage states no [impact: high|medium|low] tag", self.lint(spec(CHOSEN, "✓ S3")))
+
+    def test_decision_with_an_impact_tag_passes(self) -> None:
+        tagged = CHOSEN.replace("live?", "live? [impact: low]")
+        self.assertNotIn("impact", self.lint(spec(tagged, "✓ S3")))
+
+    def test_spec_without_a_risk_line_is_reported(self) -> None:
+        self.assertIn("no 'Risk: low|medium|high - why' line", self.lint(spec(CHOSEN, "✓ S3")))
+
+    def test_risk_line_above_the_first_section_passes(self) -> None:
+        text = spec(CHOSEN, "✓ S3").replace("# Title\n", "# Title\n\nRisk: high - touches auth\n")
+        self.assertNotIn("Risk:", self.lint(text))
+
+    def test_risk_line_inside_a_section_does_not_count(self) -> None:
+        text = spec(CHOSEN, "✓ S3").replace("## Scope\n", "## Scope\n\nRisk: high - touches auth\n")
+        self.assertIn("no 'Risk: low|medium|high - why' line", self.lint(text))
+
+
 if __name__ == "__main__":
     unittest.main()

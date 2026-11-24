@@ -8,6 +8,7 @@ This reference owns the layout, the locating convention, and the diff scope; ski
 | File | Written by | Read by |
 | ---- | ---------- | ------- |
 | `spec.md` | `scope` (from the interview on; on its small path, minimal change sets appended when a spec exists) | everyone downstream |
+| `spec.html` | `render-spec.py`, run by `scope` on its full path (regenerated from `spec.md`, never edited) | the engineer reviewing the plan |
 | `implementation-notes.md` | `build` (append-only) | `ship` |
 | `review_N.md` | `ship` (next free index, opened when the panel is selected, or by quick mode) | `scope` (remediation), re-reviews |
 | `pr.md` | `ship` (opened at the start of a run that reaches phase 3, overwritten per run); quick mode updates only the review line and Open calls | the PR tool via `--body-file`; re-runs |

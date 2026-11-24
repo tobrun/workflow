@@ -17,6 +17,8 @@ SLUG = re.compile(r"^(D-[a-z0-9]+(?:-[a-z0-9]+)*):\s*(.+)$")
 BAD_SLUG = re.compile(r"^(D-\S+):")
 ALTERNATIVE = re.compile(r"^\s+([✓✗?⊘])\s+(.*)$")
 FLAG = re.compile(r"^\s+⚑")
+IMPACT = re.compile(r"\[impact:\s*(high|medium|low)\]")
+RISK = re.compile(r"^Risk:\s*(low|medium|high)\s+-\s+\S", re.IGNORECASE)
 ECHO = re.compile(r"(D-[a-z0-9-]+)\s*\(([^)]*)\)")
 CHANGE_SET = re.compile(r"^\s*(\d+)\.\s+\S")
 TESTS = re.compile(r"^\s*tests:\s*(.*)$", re.IGNORECASE)
@@ -70,6 +72,8 @@ def read_decisions(research: list[tuple[int, str]], problem) -> dict[str, dict]:
             current = decisions.setdefault(
                 slug, {"line": number, "open": "[open]" in question, "marks": [], "flagged": False}
             )
+            if not IMPACT.search(question):
+                problem(number, f"{slug} states no [impact: high|medium|low] tag")
             continue
         if current is None:
             continue
@@ -254,6 +258,15 @@ def wave_report(body: list[tuple[int, str]], built: set[int]) -> list[str]:
     return lines
 
 
+def check_risk(lines: list[str], problem) -> None:
+    for line in lines:
+        if HEADING.match(line):
+            break
+        if RISK.match(line):
+            return
+    problem(None, "no 'Risk: low|medium|high - why' line above the first section")
+
+
 def check_validation(lines: list[str], problem) -> None:
     for index, line in enumerate(lines):
         if line.strip().lower() == "### validation":
@@ -264,16 +277,8 @@ def check_validation(lines: list[str], problem) -> None:
     problem(None, "no '### Validation' block in the scope section")
 
 
-def main(argv: list[str]) -> int:
-    if len(argv) != 2:
-        print("usage: lint-spec.py <path to spec.md>", file=sys.stderr)
-        return 2
-    path = Path(argv[1])
-    if not path.is_file():
-        print(f"no spec at {path}", file=sys.stderr)
-        return 2
-    lines = path.read_text(encoding="utf-8").splitlines()
-
+def lint(path: Path, lines: list[str]) -> tuple[list[str], dict[str, dict]]:
+    """Every problem in the spec, in line order, and the decisions it argues; render-spec.py reuses this."""
     problems: set[tuple[int, str]] = set()
 
     def problem(number: int | None, message: str) -> None:
@@ -289,17 +294,29 @@ def main(argv: list[str]) -> int:
     check_decisions(decisions, problem)
     check_echoes(found.get("scope", []), decisions, False, problem)
     check_echoes(found.get("change plan", []), decisions, True, problem)
-    built = built_change_sets(path)
-    check_change_plan(found.get("change plan", []), built, problem)
+    check_change_plan(found.get("change plan", []), built_change_sets(path), problem)
+    check_risk(lines, problem)
     check_validation(lines, problem)
+    return [message for _, message in sorted(problems)], decisions
 
-    for _, message in sorted(problems):
+
+def main(argv: list[str]) -> int:
+    if len(argv) != 2:
+        print("usage: lint-spec.py <path to spec.md>", file=sys.stderr)
+        return 2
+    path = Path(argv[1])
+    if not path.is_file():
+        print(f"no spec at {path}", file=sys.stderr)
+        return 2
+    lines = path.read_text(encoding="utf-8").splitlines()
+    problems, decisions = lint(path, lines)
+    for message in problems:
         print(message)
     if problems:
         print(f"\n{len(problems)} problem(s); the spec is not final.")
         return 1
     print(f"{path}: clean - {len(decisions)} decisions argued.")
-    for line in wave_report(found.get("change plan", []), built):
+    for line in wave_report(sections(lines).get("change plan", []), built_change_sets(path)):
         print(line)
     return 0
 

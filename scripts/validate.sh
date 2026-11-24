@@ -673,6 +673,9 @@ PYEOF
 # ===========================================================================
 # Main
 # ===========================================================================
+# Detect here, not inside yaml_field's subshell, so a missing yq stops the run
+# instead of every field reading as empty.
+detect_yq
 check_01
 check_02
 check_03

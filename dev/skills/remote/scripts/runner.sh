@@ -315,10 +315,11 @@ open_view() {
 }
 
 setup_env() {
-  if [ -r /etc/fleet/computer-use.env ]; then
+  local fleet_env="${DEV_REMOTE_FLEET_ENV:-/etc/fleet/computer-use.env}"
+  if [ -r "$fleet_env" ]; then
     set -a
-    # shellcheck disable=SC1091
-    . /etc/fleet/computer-use.env
+    # shellcheck disable=SC1090
+    . "$fleet_env"
     set +a
   fi
   # How long a headless session waits for its background agents before Claude Code ends it.

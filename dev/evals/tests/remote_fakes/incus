@@ -29,6 +29,7 @@ def vm_env(vm: Path) -> dict:
     if os.environ.get("FAKE_DISPLAY"):  # a desktop session, as /etc/fleet/computer-use.env sets on a workspace
         keep["DISPLAY"] = os.environ["FAKE_DISPLAY"]
     return {**keep, "PATH": path, "HOME": str(vm / "home"), "DEV_REMOTE_TMP": str(vm / "tmp"),
+            "DEV_REMOTE_FLEET_ENV": str(vm / "etc" / "computer-use.env"),  # never the machine running the tests
             "FAKE_VM": str(vm), "GIT_CONFIG_NOSYSTEM": "1", "LANG": "C.UTF-8"}
 
 

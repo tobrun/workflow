@@ -28,6 +28,23 @@ D-verify-name: What is ship's first phase called? (2026-11-24, user)
   ✗ gauntlet - the user dislikes the word
   ✗ harden or checks - the user chose verify
 
+D-pr-evidence-split: How does a PR show that its verification is real? (2026-11-24, user)
+  ✓ split the body: everything the agent writes (summary, acceptance criteria, evidence, what was not verified, the twenty kinds) is a claim, and a DEV-EVIDENCE block that only CI's ci-evidence.py writes at the head commit is the evidence - test totals from CI's JUnit, a test-diff guard, fails-on-revert against the base, changed-line coverage, each acceptance criterion's status, and the mismatches between the claims and those measurements (user, 2026-11-24; the user's research on proof of verification) ⚠ the block in the body mirrors the CI run; a body edit between pushes could alter it, so the run it links, and its attestation when enabled, is the authority
+  ✗ the agent writes its own verification table - forgeable, and often honestly wrong
+  ✗ a sticky PR comment instead of the body - reviewers would read the claims and the evidence in two places (auto-applied at Confidence: 60%)
+
+D-evidence-gates: Does the CI evidence job fail the pull request? (2026-11-24)
+  ✓ no, it reports by default and fails only with --strict; ship treats what it reports as verify-phase violations, fixed and pushed for up to three rounds, then Open calls - this follows D-verification-gates, fixing and reporting instead of blocking (auto-applied at Confidence: 60%) ⚠ a repository that wants the guard to block merges must pass --strict and make the job required
+  ✗ fail on every guard finding - a test legitimately rewritten would block without a human to label it
+
+D-evidence-attestation: Is the evidence signed? (2026-11-24)
+  ✓ the job writes an in-toto test-result predicate on every run and leaves the actions/attest step commented out - artifact attestations need a public repository or a plan that includes them for private ones, and the research advises them once evidence must travel (auto-applied at Confidence: 70%)
+  ✗ sign by default - fails in private repositories without the plan
+
+D-evidence-acceptance: What counts as an acceptance criterion in the PR? (2026-11-24)
+  ✓ each spec scenario by its positional id (CS1-S1), mapped to the runner case build recorded in test-evidence.json; CI looks each case up in its own JUnit, and a case no report contains is a mismatch (auto-applied at Confidence: 75%)
+  ✗ free-text checkboxes - nothing to look up, so CI cannot check them
+
 D-complexity-threshold: Where does the ship gauntlet's coverage-weighted complexity line sit in this repository? (2026-09-18)
   ✓ 10 per function, applied to functions a branch adds - holding pre-existing functions a diff only brushes to any line would turn every change into a refactor of code it did not write (user, 2026-09-18); the evidence was the factory runner's established functions sitting far above the default, measured with radon 2026-09-18, and that code was removed 2026-09-20 ⚠ touched pre-existing functions stay over the line until a change that owns them splits them
   ✗ 6 on new functions - splits nearly every new function into helpers that each earn nothing on their own, against keeping indirection earned

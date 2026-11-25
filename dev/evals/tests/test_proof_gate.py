@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -38,7 +39,7 @@ if args[:2] == ["env", "lean"]:
         name, index, statement, proof = match.groups()
         outcome = proofs.get(statement, "proved")
         if outcome == "missing":
-            print(f"{path}:{number}:31: error: unknown identifier '{proof}'")
+            print(f"{path}:{number}:31: error(lean.unknownIdentifier): Unknown identifier `{proof}`")
             print(f"'{name}' depends on axioms: [sorryAx]")
         elif outcome == "mismatch":
             print(f"{path}:{number}:31: error: type mismatch\n  {proof}\nhas type\n  True : Prop")
@@ -201,6 +202,7 @@ class ProofGateTest(unittest.TestCase):
         cases = {
             "axiom": "axiom cheat : ∀ t : Tile, decode (encode t) = some t",
             "native_decide": "example : 2 + 2 = 4 := by native_decide",
+            "decide +native": "example : 2 + 2 = 4 := by decide +native",
             "implemented_by": "@[implemented_by fastDecode] def decode' := decode",
             "extern": '@[extern "lean_decode"] opaque decodeC : Nat → Nat',
             "unsafe": "unsafe def peek : Nat := 0",
@@ -212,7 +214,8 @@ class ProofGateTest(unittest.TestCase):
             "compiler trust": "theorem y : True := Lean.ofReduceBool _ _ rfl",
         }
         for rule, line in cases.items():
-            with self.subTest(rule=rule):
+            rule = "native_decide" if rule == "decide +native" else rule
+            with self.subTest(rule=rule, line=line):
                 self.inject(line)
                 code, report, _ = self.gate()
                 self.assertEqual(code, 1)
@@ -294,12 +297,13 @@ class ProofGateTest(unittest.TestCase):
 
 @unittest.skipUnless(shutil.which("lake"), "no Lean toolchain installed")
 class RealLeanTest(unittest.TestCase):
-    def test_real_lean_tells_proved_from_sorry_from_native_decide(self) -> None:
+    def test_real_lean_tells_each_outcome_apart(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             project = Path(tmp)
             toolchain = subprocess.run(["lean", "--version"], capture_output=True, text=True).stdout
-            version = toolchain.split()[3].rstrip(",") if len(toolchain.split()) > 3 else "stable"
-            (project / "lean-toolchain").write_text(f"leanprover/lean4:v{version}\n", encoding="utf-8")
+            version = re.search(r"version (\d[^,\s]*)", toolchain)
+            pin = f"leanprover/lean4:v{version.group(1)}" if version else "leanprover/lean4:stable"
+            (project / "lean-toolchain").write_text(pin + "\n", encoding="utf-8")
             (project / "lakefile.toml").write_text('name = "demo"\n[[lean_lib]]\nname = "Demo"\n', encoding="utf-8")
             (project / "Demo").mkdir()
             (project / "Demo/Spec.lean").write_text(
@@ -307,8 +311,8 @@ class RealLeanTest(unittest.TestCase):
                 encoding="utf-8")
             proofs = project / "Demo/Theorems.lean"
 
-            def gate(proof: str) -> int:
-                proofs.write_text(f"import Demo.Spec\n\nnamespace Demo.Spec\n\ntheorem add_zero_holds : add_zero := {proof}\n\nend Demo.Spec\n",
+            def gate(proof: str, declaration: str = "theorem add_zero_holds : add_zero") -> int:
+                proofs.write_text(f"import Demo.Spec\n\nnamespace Demo.Spec\n\n{declaration} := {proof}\n\nend Demo.Spec\n",
                                   encoding="utf-8")
                 return subprocess.run([sys.executable, str(SCRIPT), "check", "--project", str(project)],
                                       capture_output=True, text=True).returncode
@@ -316,6 +320,8 @@ class RealLeanTest(unittest.TestCase):
             self.assertEqual(gate("fun n => rfl"), 0)
             self.assertEqual(gate("sorry"), 2)
             self.assertEqual(gate("by intro n; native_decide"), 1)
+            self.assertEqual(gate("trivial", "theorem other : True"), 2)
+            self.assertEqual(gate("trivial", "theorem add_zero_holds : True"), 1)
 
 
 if __name__ == "__main__":

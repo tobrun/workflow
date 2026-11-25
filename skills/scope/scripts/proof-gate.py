@@ -11,7 +11,7 @@ and proofs elsewhere, each named `NAME_holds` in the statement's namespace.
 `check` scans every source with comments and strings stripped for constructs that
 widen the trusted base or bend the syntax (axiom, native_decide, implemented_by,
 extern, unsafe, debug options, notation, macros, syntax, elaborators, run_cmd),
-runs `lake build`, then elaborates a generated file that restates each Spec
+builds every module with `lake build`, then elaborates a generated file that restates each Spec
 constant as a theorem proved by its `_holds` proof and prints its axioms. Only
 propext, Classical.choice, and Quot.sound may appear; sorryAx marks a proof as
 unfinished. With --spec it compares Spec.lean with the spec's `### Theorems` block;
@@ -43,7 +43,7 @@ SORRY_AXIOM = "sorryAx"
 # Each banned construct, the token that marks it, and why it is banned.
 BANNED = (
     (r"\baxiom\b", "axiom", "a new axiom can prove anything"),
-    (r"\bnative_decide\b", "native_decide", "trusts the compiler through Lean.ofReduceBool"),
+    (r"\bnative_decide\b|\+native\b", "native_decide", "trusts the compiler through Lean.ofReduceBool"),
     (r"\bimplemented_by\b", "implemented_by", "runs code other than the definition the proofs see"),
     (r"@\[\s*extern\b|\bextern\b", "extern", "runs foreign code the proofs never see"),
     (r"\bunsafe\b", "unsafe", "escapes the kernel's checks"),
@@ -63,7 +63,8 @@ COMMAND = re.compile(
 NAMESPACE = re.compile(r"^(namespace|section|end)\b\s*([\w.']*)", re.MULTILINE)
 DEPENDS = re.compile(r"'([^']+)' depends on axioms: \[([^\]]*)\]", re.DOTALL)
 NO_AXIOMS = re.compile(r"'([^']+)' does not depend on any axioms")
-LOCATED = re.compile(r"^(?:.*?):(\d+):\d+: error:\s*(.*)$", re.MULTILINE)
+# Lean 4.36 writes `error(lean.unknownIdentifier): Unknown identifier`; older releases write `error: unknown identifier`.
+LOCATED = re.compile(r"^(?:.*?):(\d+):\d+: error(?:\([^)]*\))?:\s*(.*)$", re.MULTILINE)
 
 
 @dataclass
@@ -212,6 +213,11 @@ def module(project: Path, path: Path) -> str:
     return ".".join(path.relative_to(project).with_suffix("").parts)
 
 
+def modules(project: Path) -> list[str]:
+    """Every module the proofs may live in; the oracle's Main is an executable root, not a library module."""
+    return [module(project, p) for p in sources(project) if p.name != "Main.lean"]
+
+
 def scan(project: Path, report: Report) -> None:
     for path in sources(project):
         text = path.read_text(encoding="utf-8")
@@ -249,8 +255,7 @@ def gate_file(theorems: list[Theorem], modules: list[str]) -> tuple[str, dict[in
 
 
 def check_axioms(project: Path, report: Report) -> None:
-    modules = [module(project, p) for p in sources(project) if p.name != "Main.lean"]
-    text, at = gate_file(report.theorems, modules)
+    text, at = gate_file(report.theorems, modules(project))
     with tempfile.TemporaryDirectory() as tmp:
         gate = Path(tmp) / "ProofGate.lean"
         gate.write_text(text, encoding="utf-8")
@@ -262,7 +267,7 @@ def check_axioms(project: Path, report: Report) -> None:
         if theorem is None:
             if int(line) - 1 not in at:
                 report.errors.append(message.strip())
-        elif re.search(r"unknown (?:identifier|constant)", message):
+        elif re.search(r"unknown (?:identifier|constant)", message, re.IGNORECASE):
             theorem.status = "unfinished"
             report.unfinished.append(Finding("no proof", "Spec.lean", 0, f"{theorem.name} has no {theorem.name}_holds"))
         else:
@@ -357,7 +362,8 @@ def check(args: argparse.Namespace) -> Report:
         report.errors.append("lake is not on PATH; install elan and the pinned toolchain")
         report.result = "not run"
         return report
-    built = lake(project, "build")
+    # Build the very modules the gate imports; a package's default targets may cover none of them.
+    built = lake(project, "build", *modules(project))
     if built.returncode:
         report.unfinished.append(Finding("build", "lake build", 0, (built.stdout + built.stderr).strip()[-2000:]))
         for theorem in report.theorems:
@@ -367,7 +373,7 @@ def check(args: argparse.Namespace) -> Report:
         if args.recheck and shutil.which("lean4checker") is None:
             report.notes.append("lean4checker is not installed; the kernel replay was skipped")
         elif args.recheck:
-            replay = lake(project, "env", "lean4checker", *[module(project, p) for p in sources(project) if p.name != "Main.lean"])
+            replay = lake(project, "env", "lean4checker", *modules(project))
             if replay.returncode:
                 report.integrity.append(Finding("recheck", "lean4checker", 0, (replay.stdout + replay.stderr).strip()[-500:]))
     if report.integrity:

@@ -3,7 +3,7 @@
 Twenty kinds of verification, each with what it proves, when it applies, where it is written, and what a failure does.
 `scope` plans them in the spec's `### Verification` block, `build` writes the tests they need, and `ship`'s verify phase runs or checks every one and records it as one row of `pr.md`'s Quality table.
 A kind that does not apply is skipped with a reason, never left out: `lint-spec.py` refuses a spec missing one, and `pr-evidence.py check` refuses a Quality table missing one.
-That table is the agent's account. In the PR, CI's `ci-evidence.py` re-measures what it can at the head commit - tests, test edits, fails-on-revert, changed-line coverage, the acceptance criteria - in a block only CI writes, per [../skills/ship/references/pull-request.md](../../ship/references/pull-request.md).
+That table is the agent's account. In the PR, CI's `ci-evidence.py` re-measures what it can at the head commit - tests, test edits, fails-on-revert, changed-line coverage, the acceptance criteria - in a block only CI writes, per [../source/ship/references/pull-request.md](../../ship/references/pull-request.md).
 
 ## The kinds
 
@@ -33,7 +33,7 @@ That table is the agent's account. In the PR, CI's `ci-evidence.py` re-measures 
 ## Scenario tags
 
 A `tests:` scenario carries one tag, the layer whose test proves it: `[unit]`, `[component]`, `[integration]`, `[contract]`, `[property]`, `[fuzz]`, `[e2e]`, `[smoke]`, or `[benchmark]`.
-`[integration]` is how this workflow writes functional tests, and `[e2e]` scenarios are the acceptance journeys; [../skills/build/references/layers.md](layers.md) says what belongs at each layer.
+`[integration]` is how this workflow writes functional tests, and `[e2e]` scenarios are the acceptance journeys; [../source/build/references/layers.md](layers.md) says what belongs at each layer.
 A kind marked `yes` in the Verification block that has a tag needs at least one scenario with that tag, and a tag needs its kind marked `yes`.
 
 ## The spec's Verification block
@@ -54,7 +54,7 @@ Under `## Scope`, one line per kind, every kind exactly once:
 
 ## Tools
 
-Use the repository's own tool first, then the ecosystem's established one, per [../skills/ship/references/tools.md](../../ship/references/tools.md).
+Use the repository's own tool first, then the ecosystem's established one, per [../source/ship/references/tools.md](../../ship/references/tools.md).
 
 | Kind | Python | TS/JS | Go | JVM | Rust | C/C++ |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -70,12 +70,12 @@ Use the repository's own tool first, then the ecosystem's established one, per [
 
 ## Gates
 
-Every failure first goes to fix agents and is re-run, up to three rounds, per [../skills/ship/references/verify.md](../../ship/references/verify.md).
+Every failure first goes to fix agents and is re-run, up to three rounds, per [../source/ship/references/verify.md](../../ship/references/verify.md).
 What happens after the third round depends on the kind:
 
 - **Must pass**: `unit`, `functional`, `component`, `contract`, `acceptance`, `regression`, `smoke`, `static-analysis`, and `lint`. A failure left after three rounds is a human call, and the PR stays a draft.
 - **Fix and report**: `coverage` under 80% of changed lines, a `benchmark` or `performance` regression over 10% against the base, any `fuzz` crash or hang, a `property` or `formal` counterexample, any medium-or-higher `penetration` finding, a serious or critical `ui-ux` accessibility violation, and `usability` findings. What survives three rounds is listed under Open calls; it never blocks the ship and never by itself makes the PR a draft.
-- **Reported**: `mutation`, per [../skills/ship/references/verify.md](../../ship/references/verify.md).
+- **Reported**: `mutation`, per [../source/ship/references/verify.md](../../ship/references/verify.md).
 - `threat-model` is checked, not run: a mitigation with no passing test is a `penetration` finding.
 
 The margins are recorded decisions like every threshold; a repository's own `D-` entry replaces them.

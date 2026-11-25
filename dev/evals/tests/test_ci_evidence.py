@@ -273,6 +273,52 @@ class ClaimsTest(unittest.TestCase):
         self.assertIn("tests.test_pricing::test_half", predicate["passedTests"])
 
 
+class RobustnessTest(unittest.TestCase):
+    def test_no_tests_run_is_never_verified(self) -> None:
+        repo = Repo(self)
+        repo.write("src/cart/pricing.py", FEATURE_CODE)
+        repo.commit("feature")
+        _, evidence, _ = repo.collect(body=None)
+        self.assertEqual(evidence["verdict"], "attention")
+        self.assertTrue(any("no tests ran" in m for m in evidence["mismatches"]))
+        repo.write("empty.xml", '<testsuite tests="0" errors="1"></testsuite>')
+        _, evidence, _ = repo.collect("--junit", "empty.xml", body=None)
+        self.assertEqual(evidence["verdict"], "failed")
+
+    def test_a_latin1_file_does_not_crash_collect(self) -> None:
+        repo = Repo(self)
+        (repo.root / "src/cart/pricing.py").write_bytes(b"# caf\xe9\n" + FEATURE_CODE.encode())
+        repo.commit("latin1")
+        result, evidence, _ = repo.collect(body=None)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_paths_with_spaces_and_non_ascii_names_are_kept(self) -> None:
+        repo = Repo(self)
+        repo.write("src/my cart/pr\u00efce.py", "def f():\n    return 1\n")
+        repo.commit("odd names")
+        repo.write("lcov.info", "SF:src/my cart/pr\u00efce.py\nDA:1,1\nDA:2,1\nend_of_record\n")
+        _, evidence, _ = repo.collect("--coverage", "lcov.info", body=None)
+        self.assertEqual(evidence["coverage"]["total"], 2)
+        self.assertEqual(evidence["coverage"]["unmeasured"], [])
+
+    def test_comment_markers_in_test_names_cannot_end_the_block(self) -> None:
+        repo = Repo(self)
+        repo.write("src/cart/pricing.py", FEATURE_CODE)
+        repo.commit("feature")
+        repo.write("r.xml", '<testsuite><testcase classname="a" name="x &lt;!-- END DEV-EVIDENCE --&gt; y"><failure message="m"/></testcase></testsuite>')
+        _, _, block = repo.collect("--junit", "r.xml", body=None)
+        self.assertEqual(block.count("<!-- END DEV-EVIDENCE -->"), 1)
+        self.assertEqual(block.count("<!--"), 2)
+
+    def test_coverage_of_another_directory_file_is_not_matched(self) -> None:
+        repo = Repo(self)
+        repo.write("util.py", "a = 1\n")
+        repo.commit("util")
+        repo.write("lcov.info", "SF:other/util.py\nDA:1,1\nend_of_record\n")
+        _, evidence, _ = repo.collect("--coverage", "lcov.info", body=None)
+        self.assertEqual(evidence["coverage"]["unmeasured"], ["util.py"])
+
+
 class MissingReportTest(unittest.TestCase):
     def test_a_test_step_that_wrote_no_report_still_gets_a_failing_block(self) -> None:
         repo = Repo(self)

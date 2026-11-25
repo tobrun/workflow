@@ -40,8 +40,11 @@ SHARED = ("references", "scripts")
 # Not "skills": installers scan a repository for skills/ folders, and must find only the portable copy.
 SOURCE_SKILLS = "source"
 JUNK = shutil.ignore_patterns(".DS_Store", "__pycache__")
-LINK = re.compile(r"\]\(([^)\s#]+)(#[^)\s]*)?\)")
-SKILL_ROOT = re.compile(r"\{([a-z]+)-skill-root\}(/[^\s`'\")\]]*)?")
+# A link outside code: fenced blocks and inline code are matched first so their text is left alone.
+LINK = re.compile(r"(?P<code>```.*?```|~~~.*?~~~|`[^`\n]+`)|\]\((?P<target>[^)\s#]+)(?P<anchor>#[^)\s]*)?(?P<title>\s+\"[^\"]*\")?\)", re.DOTALL)
+SCHEME = re.compile(r"^[a-z][a-z0-9+.-]*:|^/|^\{", re.IGNORECASE)
+KEBAB = r"[a-z0-9]+(?:-[a-z0-9]+)*"
+SKILL_ROOT = re.compile(r"\{(" + KEBAB + r")-skill-root\}(/[^\s`'\")\]]*)?")
 NEEDS_SIBLINGS = "Reads the scope, build, and ship skills installed beside it; install the whole set."
 
 
@@ -122,12 +125,26 @@ def split_frontmatter(text: str, where: str) -> tuple[dict[str, str], str]:
         raise ValueError(f"{where}: no YAML frontmatter")
     fields = {}
     for line in match.group(1).splitlines():
-        key, _, value = line.partition(":")
-        fields[key.strip()] = value.strip()
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        if line[0] in " \t":
+            raise ValueError(f"{where}: frontmatter line {line.strip()!r} is indented or continues a multi-line value; "
+                             "write each field on one line")
+        key, sep, value = line.partition(":")
+        if not sep:
+            raise ValueError(f"{where}: frontmatter line {line!r} is not 'key: value'")
+        value = value.strip()
+        if re.match(r"^[>|][+-]?\d*$", value):
+            raise ValueError(f"{where}: frontmatter field '{key.strip()}' uses a block scalar ({value}); "
+                             "write the value on one line")
+        fields[key.strip()] = value
+    for required in ("name", "description"):
+        if not fields.get(required):
+            raise ValueError(f"{where}: frontmatter is missing a non-empty '{required}'")
     return fields, text[match.end():]
 
 
-def portable_frontmatter(fields: dict[str, str], name: str, skill: SkillConfig, version: str) -> str:
+def portable_frontmatter(fields: dict[str, str], name: str, skill: SkillConfig, version: str, license_id: str) -> str:
     """The six spec fields only; Claude's disable-model-invocation stays in the Claude plugin."""
     if fields.get("disable-model-invocation") != "true":
         raise ValueError(f"{name}: the source SKILL.md must set disable-model-invocation: true")
@@ -135,7 +152,7 @@ def portable_frontmatter(fields: dict[str, str], name: str, skill: SkillConfig, 
         "---\n"
         f"name: {fields['name']}\n"
         f"description: {fields['description']}\n"
-        "license: MIT\n"
+        f"license: {license_id}\n"
         f"compatibility: {skill.compatibility}\n"
         "metadata:\n"
         f"  version: {json.dumps(version)}\n"
@@ -171,16 +188,25 @@ class Portable:
                 if own.exists() and own.resolve() != source:
                     raise ValueError(f"{where}: shared {source.name} collides with the skill's own {own}")
                 if target not in self.origin:
-                    target.parent.mkdir(parents=True, exist_ok=True)
-                    if source.is_dir():
-                        shutil.copytree(source, target, ignore=JUNK, dirs_exist_ok=True)
-                    else:
-                        shutil.copy2(source, target)
-                    self.origin[target] = source
-                    if target.suffix == ".md":
-                        self.rewrite(target)
+                    self.vendor(source, target)
                 return target
         raise ValueError(f"{where}: links to {source}, outside the plugin's skills and shared folders")
+
+    def vendor(self, source: Path, target: Path) -> None:
+        """Copy a shared file, or every file of a shared directory, rewriting the markdown it brings."""
+        if source.is_dir():
+            self.origin[target] = source
+            for inner in sorted(source.rglob("*")):
+                if inner.is_file() and not any(part in (".DS_Store", "__pycache__") for part in inner.parts):
+                    self.vendor(inner, target / inner.relative_to(source))
+            return
+        if target in self.origin and target.is_file():
+            return
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
+        self.origin[target] = source
+        if target.suffix == ".md":
+            self.rewrite(target)
 
     def rewrite(self, path: Path) -> None:
         source = self.origin[path]
@@ -188,11 +214,12 @@ class Portable:
         where = os.path.relpath(source, ROOT)
 
         def link(match: re.Match) -> str:
-            target, anchor = match.group(1), match.group(2) or ""
-            if re.match(r"^[a-z]+:|^/|^\{", target):
+            target = match.group("target")
+            if match.group("code") or SCHEME.match(target):
                 return match.group(0)
+            anchor, title = match.group("anchor") or "", match.group("title") or ""
             new = self.place(source.parent.resolve() / target, where)
-            return f"]({os.path.relpath(new, path.parent)}{anchor})"
+            return f"]({os.path.relpath(new, path.parent)}{anchor}{title})"
 
         def skill_root(match: re.Match) -> str:
             owner, rest = match.group(1), match.group(2) or ""
@@ -208,7 +235,7 @@ class Portable:
         text = SKILL_ROOT.sub(skill_root, text)
         path.write_text(text, encoding="utf-8")
 
-    def build(self, version: str) -> None:
+    def build(self, version: str, license_id: str) -> None:
         source_root = self.source_skills / self.name
         shutil.copytree(source_root, self.root, ignore=JUNK)
         for path in sorted(self.root.rglob("*")):
@@ -218,12 +245,20 @@ class Portable:
             self.rewrite(path)
         skill_md = self.root / "SKILL.md"
         fields, body = split_frontmatter(skill_md.read_text(encoding="utf-8"), f"{self.name}/SKILL.md")
-        skill_md.write_text(portable_frontmatter(fields, self.name, self.plugin.skills[self.name], version) + body,
+        skill_md.write_text(portable_frontmatter(fields, self.name, self.plugin.skills[self.name], version, license_id) + body,
                             encoding="utf-8")
 
 
+def license_of(manifest: dict, name: str) -> str:
+    license_id = manifest.get("license")
+    if not isinstance(license_id, str) or not license_id:
+        raise ValueError(f"{name}/.claude-plugin/plugin.json: set a \"license\" (SPDX identifier)")
+    return license_id
+
+
 def build_portable(plugin: PluginConfig, out: Path) -> list[str]:
-    version = json.loads((plugin.source / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))["version"]
+    manifest = json.loads((plugin.source / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
+    version, license_id = manifest["version"], license_of(manifest, plugin.name)
     names = sorted(p.name for p in (plugin.source / SOURCE_SKILLS).iterdir() if (p / "SKILL.md").is_file())
     unlisted = [n for n in names if n not in plugin.skills]
     orphaned = [n for n in plugin.skills if n not in names]
@@ -231,7 +266,7 @@ def build_portable(plugin: PluginConfig, out: Path) -> list[str]:
         raise ValueError(f"skill configs out of sync with {plugin.name}/{SOURCE_SKILLS}/: missing {unlisted}, stale {orphaned}")
     out.mkdir(parents=True, exist_ok=True)
     for name in names:
-        Portable(plugin, out, name).build(version)
+        Portable(plugin, out, name).build(version, license_id)
     (out / "README.md").write_text(
         f"# Portable skills\n\nGenerated from `{plugin.name}/{SOURCE_SKILLS}/` by `{GENERATOR}`; do not edit.\n"
         "Each folder is a self-contained Agent Skill (agentskills.io). Install the whole set - `yolo` reads `scope`,\n"
@@ -269,6 +304,7 @@ def build_codex(plugin: PluginConfig, portable: Path, destination: Path) -> None
         "version": manifest_source["version"],
         "description": description,
         "author": manifest_source["author"],
+        "license": license_of(manifest_source, plugin.name),
         "repository": REPOSITORY,
         "skills": "./skills/",
         "interface": {

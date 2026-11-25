@@ -70,7 +70,7 @@ def split_alternative(mark: str, text: str) -> dict:
         "because": because.strip(),
         "downsides": [d.strip() for d in downsides if d.strip()],
         "verify": text.count("? verify:"),
-        "confidence": int(confidence.group(1)) if confidence else None,
+        "confidence": min(int(confidence.group(1)), 100) if confidence else None,
         "user": bool(USER_CITED.search(text)),
     }
 
@@ -127,7 +127,7 @@ def read_change_plan(body: list[tuple[int, str]]) -> list[dict]:
     for _, line in body:
         change_set = lint.CHANGE_SET.match(line)
         if change_set:
-            title = re.sub(r"^\s*\d+\.\s+", "", line).strip()
+            title = re.sub(r"^\d+\.\s+", "", line).strip()
             sets.append({"n": int(change_set.group(1)), "title": title, "items": [], "tests": [],
                          "none": None, "echoes": [s for s, _ in lint.ECHO.findall(line)]})
             continue
@@ -836,7 +836,11 @@ def main(argv: list[str]) -> int:
     if not path.is_file():
         print(f"no spec at {path}", file=sys.stderr)
         return 2
-    data = read_spec(path)
+    try:
+        data = read_spec(path)
+    except UnicodeDecodeError as error:
+        print(f"{path} is not valid UTF-8: {error}", file=sys.stderr)
+        return 2
     out = path.with_suffix(".html")
     out.write_text(render(data), encoding="utf-8")
     print(out)

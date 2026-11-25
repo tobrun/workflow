@@ -18,14 +18,25 @@ import re
 import sys
 from pathlib import Path
 
-FENCE = re.compile(r"```(?:json)?\s*(.*?)```", re.DOTALL)
+FENCE = re.compile(r"```(?:json)?[ \t]*\n?(.*)```", re.DOTALL)
 RESULT_SUFFIXES = (".json", ".out")
+
+
+def candidates(text: str):
+    """The whole text, the outermost fence, then the first-to-last brace span."""
+    yield text
+    match = FENCE.search(text)
+    if match:
+        yield match.group(1)
+    start, end = text.find("{"), text.rfind("}")
+    if 0 <= start < end:
+        yield text[start:end + 1]
 
 
 def load_json(path: Path):
     """Result files are JSON, or a final message wrapping one fenced block."""
     text = path.read_text(encoding="utf-8", errors="replace").strip()
-    for candidate in [text, *FENCE.findall(text)]:
+    for candidate in candidates(text):
         candidate = candidate.strip()
         if not candidate:
             continue
@@ -44,6 +55,10 @@ def read_results(directory: Path) -> tuple[dict[str, object], list[str]]:
         return {}, [f"{directory}: missing results directory"]
     for path in sorted(directory.iterdir()):
         if not path.is_file() or path.suffix not in RESULT_SUFFIXES:
+            continue
+        if (directory / f"{path.stem}.failed").exists():
+            if path.stem not in unreadable:
+                unreadable.append(path.stem)
             continue
         payload = load_json(path)
         if path.stem in parsed:

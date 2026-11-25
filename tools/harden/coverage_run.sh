@@ -13,9 +13,15 @@
 # Usage: tools/harden/coverage_run.sh OUT_JSON -- <unittest args>
 #   tools/harden/coverage_run.sh /tmp/coverage.json -- discover -s dev/evals/tests -t .
 set -euo pipefail
+if [ $# -lt 1 ] || [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
+  echo "usage: $0 OUT_JSON -- <unittest args>" >&2
+  exit 2
+fi
+# Resolve OUT_JSON against the caller's directory before the cd below.
+case "$1" in /*) out=$1 ;; *) out="$PWD/$1" ;; esac
+shift
 cd "$(git rev-parse --show-toplevel)"
 root=$(pwd)
-out=$1; shift
 [ "${1:-}" = "--" ] && shift
 
 work=$(mktemp -d)

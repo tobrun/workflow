@@ -5,7 +5,7 @@ One plugin lives here: `dev`, the hand-invoked development workflow (scope, buil
 A person invokes each `dev` skill by hand; skills never invoke each other, and each one recommends the next step instead. The `dev` `yolo` skill is not an invoker: it reads the scope, build, and ship bodies by path and follows them inline in one session, answering each of their user questions with the stage's own recommendation.
 The portable skills under `skills/` and the Codex manifest under `.codex-plugin/` are generated from `dev/` and never edited by hand.
 
-Captured: 2026-09-17 (full, scope) - Updated: 2026-11-24 (five skills: the remote skill removed per D-remove-remote)
+Captured: 2026-09-17 (full, scope) - Updated: 2026-11-24 (six skills: the remote skill removed per D-remove-remote)
 
 ## Components
 
@@ -21,12 +21,12 @@ Captured: 2026-09-17 (full, scope) - Updated: 2026-11-24 (five skills: the remot
 ## Flows
 
 ### A dev skill run
-1. A person invokes `/dev:scope`, `/dev:build`, `/dev:ship`, or `/dev:commit` in Claude Code (or the Codex, opencode, or Pi equivalent).
+1. A person invokes `/dev:scope`, `/dev:build`, `/dev:ship`, `/dev:commit`, `/dev:yolo`, or `/dev:bootstrap` in Claude Code (or the Codex, opencode, or Pi equivalent).
 2. The skill reads its SKILL.md and references, writes plan files under .dev/{plan-name}/ in the consuming repository, and recommends the next skill; skills never invoke each other.
 
 ### Building the distributions
-1. `scripts/build_distributions.py` copies each skill of `dev/source/` into `skills/{name}/`, vendors the shared references and scripts it links to, rewrites the links, keeps only the Agent Skills frontmatter fields, adds the Codex sidecar, and writes `.codex-plugin/plugin.json`; it removes generated plugins left under `plugins/`.
-2. `scripts/validate.sh` checks structure, links, skill length, the generated distributions (C01), the portable skills against the spec (S01), the Pi package and transport (P01) and the dev tests (D01); `--check` mode of the generator fails when `plugins/` is stale, including a retired generated distribution.
+1. `scripts/build_distributions.py` copies each skill of `dev/source/` into `skills/{name}/`, vendors the shared references and scripts it links to, rewrites the links, keeps only the Agent Skills frontmatter fields, adds the Codex sidecar, and writes `.codex-plugin/plugin.json`; it removes retired generated plugins left under `plugins/` (the generator no longer writes there).
+2. `scripts/validate.sh` checks structure, links, skill length, the generated distributions (C01), the portable skills against the spec (S01), the Pi package and transport (P01) and the dev tests (D01); `--check` mode of the generator fails when `skills/` or `.codex-plugin/` is stale or a retired generated distribution remains under `plugins/`.
 
 ### An unattended dev run
 1. A person invokes `/dev:yolo "a request"` (or `$dev:yolo`).
@@ -49,4 +49,4 @@ Rules: no em dash anywhere, SKILL.md under roughly 150 lines, every skill `disab
 
 ## Entry points
 
-`scripts/validate.sh`, `scripts/build_distributions.py`, `scripts/check_skills.py`, `scripts/test_pi_runner.sh`, `dev/scripts/skill-metrics.py`, `dev/scripts/claims.py`.
+`scripts/validate.sh`, `scripts/build_distributions.py`, `scripts/check_skills.py`, `scripts/test_pi_runner.sh`, `dev/scripts/arch.py`, `dev/scripts/ci-evidence.py`, `dev/scripts/impact-scope.py`.

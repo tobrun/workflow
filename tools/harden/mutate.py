@@ -10,7 +10,7 @@ for explicit function selection in this repository, whose integration tests can 
 Survivors guide contract review and regression tests; this helper's exit status is advisory, not a ship gate.
 Operators: comparison flips, `and`/`or` swaps, dropped `not`, arithmetic swaps, integer and boolean constant
 changes, and returns replaced by `None`. The file is restored after every mutant, also on interrupt.
-Exit 1 when any mutant survives; survivors print as `file:line operator (function)`.
+Exit 2 when the baseline fails or times out or a named function is not found. Exit 1 when any mutant survives; survivors print as `file:line operator (function)`.
 """
 
 from __future__ import annotations
@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import ast
 import os
+import signal
 import subprocess
 import sys
 from pathlib import Path
@@ -40,10 +41,14 @@ ARITH = {ast.Add: ast.Sub, ast.Sub: ast.Add, ast.Mult: ast.Div, ast.Div: ast.Mul
 def sites(tree: ast.Module, names: set[str]) -> list[tuple[ast.AST, str, str]]:
     """(node, operator label, enclosing function) for every mutable node inside the named functions."""
     found = []
+    seen: set[int] = set()  # a nested function named too is walked from its outer one; count each node once
     for func in ast.walk(tree):
         if not isinstance(func, (ast.FunctionDef, ast.AsyncFunctionDef)) or func.name not in names:
             continue
         for node in ast.walk(func):
+            if id(node) in seen:
+                continue
+            seen.add(id(node))
             if isinstance(node, ast.Compare) and type(node.ops[0]) in COMPARE:
                 found.append((node, f"{type(node.ops[0]).__name__} -> {COMPARE[type(node.ops[0])].__name__}", func.name))
             elif isinstance(node, ast.BoolOp):
@@ -77,6 +82,10 @@ def mutate(node: ast.AST) -> ast.AST:
     return node
 
 
+def terminate(signum: int, _frame: object) -> None:
+    raise SystemExit(128 + signum)  # unwinds through the finally block that restores the source
+
+
 class Swap(ast.NodeTransformer):
     def __init__(self, target_index: int, order: list[ast.AST]):
         self.target = order[target_index]
@@ -94,15 +103,29 @@ def main() -> int:
     parser.add_argument("--timeout", type=float, default=120)
     args = parser.parse_args()
     path = Path(args.path)
-    original = path.read_text(encoding="utf-8")
+    original_bytes = path.read_bytes()
+    original = original_bytes.decode("utf-8")
+    newline = "\r\n" if b"\r\n" in original_bytes else "\n"
+    defined = {n.name for n in ast.walk(ast.parse(original)) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
+    missing = [name for name in args.functions if name not in defined]
+    if missing:
+        print(f"{path}: function(s) not found: {', '.join(missing)}", file=sys.stderr)
+        return 2
     command = [sys.executable, "-m", "unittest", "-q", *args.tests]
     drop_bytecode(path)
-    baseline = subprocess.run(command, capture_output=True, text=True, timeout=args.timeout, check=False, env=ENV)
+    try:
+        baseline = subprocess.run(command, capture_output=True, text=True, timeout=args.timeout, check=False, env=ENV)
+    except subprocess.TimeoutExpired:
+        print(f"baseline timed out after {args.timeout:g}s before any mutation", file=sys.stderr)
+        return 2
     if baseline.returncode != 0:
         print(f"the tests fail before any mutation:\n{baseline.stderr[-2000:]}")
         return 2
     count = len(sites(ast.parse(original), set(args.functions)))
     survivors, killed = [], 0
+    for name in ("SIGTERM", "SIGHUP"):
+        if hasattr(signal, name):
+            signal.signal(getattr(signal, name), terminate)
     try:
         for index in range(count):
             tree = ast.parse(original)
@@ -110,7 +133,7 @@ def main() -> int:
             line = node.lineno
             order = [site[0] for site in sites(tree, set(args.functions))]
             mutated = ast.unparse(ast.fix_missing_locations(Swap(index, order).visit(tree)))
-            path.write_text(mutated + "\n", encoding="utf-8")
+            path.write_bytes((mutated + "\n").replace("\n", newline).encode("utf-8"))
             drop_bytecode(path)
             try:
                 result = subprocess.run(command, capture_output=True, text=True, timeout=args.timeout, check=False,
@@ -123,7 +146,7 @@ def main() -> int:
             else:
                 killed += 1
     finally:
-        path.write_text(original, encoding="utf-8")
+        path.write_bytes(original_bytes)
         drop_bytecode(path)
     for survivor in survivors:
         print(f"SURVIVED {survivor}")

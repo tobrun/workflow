@@ -31,7 +31,7 @@ The default runs all three phases. On request: "verify only" runs phase 1, "revi
 Run every check the repository already requires, then each of the twenty kinds in [../../references/verification.md](references/verification.md) - unit, functional, component, contract, acceptance, regression, smoke, static analysis, lint, coverage, property, fuzz, formal, mutation, benchmark, performance, UI/UX, usability, threat model, and penetration - in the order and loop of [references/verify.md](references/verify.md), with the tools in [references/tools.md](references/tools.md).
 
 - The spec's `### Verification` block says which kinds apply; a kind it marks `no` is skipped with its reason, unless the diff shows the reason false. A kind with nothing meaningful to check is skipped with a reason, never reported as passed.
-- Each failure goes to fix agents per independent area and is re-run, up to three rounds. After that, a must-pass kind becomes a human call and a fix-and-report kind (coverage, benchmark, performance, fuzz, property, formal, penetration, accessibility, usability) becomes an Open call that never blocks the ship.
+- Each failure goes to fix agents per independent area and is re-run, up to three rounds. After that, a must-pass kind becomes a human call and a fix-and-report kind (coverage, benchmark, performance, fuzz, property, formal, penetration, usability) becomes an Open call that never blocks the ship.
 - A found secret escalates at once and is never fix-agent work.
 - Penetration tests target only the build this run started on localhost.
 
@@ -58,7 +58,7 @@ Per [references/pull-request.md](references/pull-request.md):
 
 1. Commit authorized fixes and push only within the authority already resolved, keeping the intended base. Without publication capability, finish `pr.md` and deliver locally.
 2. Build the Evidence section with `python3 {ship-skill-root}/scripts/pr-evidence.py extract`, passing `--scenario` for only the scenarios that show what this diff changed, and publish frontend screenshots with its `publish` command. Without an e2e report, capture evidence now: screenshots for a UI, a labeled before/after pair otherwise, and a red-on-base, green-on-branch reproducing test for every bug fix.
-3. Run `pr-evidence.py summarize` on `pr.md`, then loop `pr-evidence.py check --require-current --spec .dev/{plan-name}/spec.md` until it passes; the check decides whether the proof is real, whether every kind has its row and every scenario its acceptance row, and that the CI evidence block is left empty for CI.
+3. Run `pr-evidence.py summarize` on `pr.md`, then loop `pr-evidence.py check --require-current --kind {frontend|non-frontend} --spec .dev/{plan-name}/spec.md` until it passes (`--kind` is the e2e report's `kind`); the check decides whether the proof is real, whether every kind has its row and every scenario its acceptance row, and that the CI evidence block is left empty for CI.
 4. Create the PR - a draft when a real blocker survived or a required check was deferred to CI - or update the existing one, splicing in the CI evidence block it already has, then follow its required checks to green per [../../references/ci-parity.md](references/ci-parity.md).
 5. Read the evidence block CI wrote at the head commit. It, not the agent's sections, is the proof: a failure, a weakened test, a new test that passes on the base, a coverage gap, or a claims mismatch it reports is fixed and pushed for CI to re-measure, up to three rounds, per [references/pull-request.md](references/pull-request.md).
 

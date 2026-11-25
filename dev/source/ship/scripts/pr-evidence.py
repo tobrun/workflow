@@ -2,7 +2,7 @@
 """Turn e2e evidence into a PR-ready Evidence section, publish its images, and gate the body.
 
     pr-evidence.py extract <e2e-report.json> --out <dir> [--scenario ID ...] [--branch pr-evidence]
-                           [--url-template URL]
+                           [--url-template URL] [--remote origin]
     pr-evidence.py publish <dir> [--branch pr-evidence] [--remote origin]
     pr-evidence.py check <pr-body.md> [--kind frontend|non-frontend] [--spec spec.md]
     pr-evidence.py summarize <pr-body.md>
@@ -51,6 +51,7 @@ from pathlib import Path
 IDENT = re.compile(r"[A-Za-z_$][A-Za-z0-9_$]*")
 # TODO and TBD count only in capitals, the way placeholders are written, so an app named todo is not one.
 PLACEHOLDERS = re.compile(r"\bTODO\b|\bTBD\b|(?i:\{[a-z][a-z0-9-]*\}|<[^>]*placeholder[^>]*>|screenshot here|data:image/)")
+INLINE_CODE = re.compile(r"(`+)(?:(?!\1).)+?\1")
 PROVENANCE_COMMENT = re.compile(r"<!--\s*dev-evidence:.*?-->", re.DOTALL)
 IMAGE = re.compile(r"!\[[^\]]*\]\((https?://[^)\s]+)\)")
 PAIR_LABELS = {
@@ -112,13 +113,15 @@ def url_template(args: argparse.Namespace) -> str | None:
 
 def fenced(value: object, language: str = "json") -> str:
     text = value if isinstance(value, str) else json.dumps(value, indent=2, ensure_ascii=False)
-    return f"```{language}\n{text.rstrip()}\n```"
+    longest = max((len(run) for run in re.findall(r"`+", text)), default=0)
+    fence = "`" * max(3, longest + 1)
+    return f"{fence}{language}\n{text.rstrip()}\n{fence}"
 
 
 def extract(args: argparse.Namespace) -> None:
     data = load_e2e_data(Path(args.report))
     kind = data.get("kind", "non-frontend")
-    plan = data.get("planName") or slug(data.get("title", ""), "plan")
+    plan = slug(str(data.get("planName") or data.get("title") or ""), "plan")
     scenarios = data.get("scenarios", []) or []
     summary = data.get("summary") or {}
     if args.scenario:
@@ -147,13 +150,16 @@ def extract(args: argparse.Namespace) -> None:
                   f"Given {scenario.get('given', '?')}, when {scenario.get('when', '?')}, then {scenario.get('then', '?')}.", ""]
         for step_index, shot in enumerate(scenario.get("screenshots", []) or [], 1):
             uri = shot.get("dataUri", "")
-            if not uri.startswith("data:image/"):
-                fail(f"{scenario_id} step {step_index} has no data URI screenshot")
-            ext = "." + uri[len("data:image/"):uri.index(";")].replace("jpeg", "jpg")
+            if not isinstance(uri, str) or not uri.startswith("data:image/") or ";" not in uri or "," not in uri.split(";", 1)[1]:
+                fail(f"{scenario_id} step {step_index} has no well-formed base64 data URI screenshot (data:image/TYPE;base64,DATA)")
+            ext = "." + slug(uri[len("data:image/"):uri.index(";")].replace("jpeg", "jpg"), "png")
             relative = Path(plan) / scenario_id / f"{step_index:02d}-{slug(shot.get('step', ''), 'step')}{ext}"
             target = out / relative
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(base64.b64decode(uri.split(",", 1)[1]))
+            try:
+                target.write_bytes(base64.b64decode(uri.split(",", 1)[1], validate=True))
+            except ValueError as error:
+                fail(f"{scenario_id} step {step_index} has an undecodable data URI screenshot: {error}")
             written.append(relative.as_posix())
             url = template.replace("{path}", relative.as_posix())
             lines += [f"**{shot.get('step', 'step')}** - {shot.get('caption', '')}", "",
@@ -261,7 +267,7 @@ def spec_scenarios(spec: Path) -> list[str]:
             continue
         if not in_plan:
             continue
-        change_set = re.match(r"^\s*(\d+)\.\s+\S", line)
+        change_set = re.match(r"^(\d+)\.\s+\S", line)
         if change_set:
             current = int(change_set.group(1))
         tests = SCENARIO_TESTS.match(line)
@@ -425,21 +431,46 @@ def check_provenance(section: str, repo_root: Path, problems: list[str]) -> None
         problems.append(str(error))
 
 
+def prose(section: str) -> str:
+    """The section without fenced blocks or inline code: captured evidence may hold braces, only prose is checked."""
+    kept, fence = [], None
+    for line in section.splitlines():
+        match = FENCE.match(line)
+        if match:
+            token, suffix = match.groups()
+            if fence is None:
+                fence = token
+            elif token[0] == fence[0] and len(token) >= len(fence) and not suffix.strip():
+                fence = None
+            continue
+        if fence is None:
+            kept.append(INLINE_CODE.sub("", line))
+    return "\n".join(kept)
+
+
+def derived_kind(spec: Path | None) -> str | None:
+    """A spec that marks ui-ux yes has a UI a screenshot can show; anything else is not derivable."""
+    if spec is not None and "ui-ux" in planned_kinds(spec):
+        return "frontend"
+    return None
+
+
 def check(args: argparse.Namespace) -> None:
     section = evidence_section(Path(args.body).read_text(encoding="utf-8"))
     problems: list[str] = []
     if section is None or not section.strip():
         problems.append("no non-empty '## Evidence' section")
         section = ""
-    placeholder = PLACEHOLDERS.search(PROVENANCE_COMMENT.sub("", section))  # the marker holds file paths, not prose
+    placeholder = PLACEHOLDERS.search(prose(PROVENANCE_COMMENT.sub("", section)))  # the marker holds file paths, not prose
     if placeholder:
         problems.append(f"placeholder or inline data URI in Evidence: {placeholder.group(0)!r}")
+    kind = args.kind or derived_kind(Path(args.spec) if args.spec else None)
     images = IMAGE.findall(section)
     labels = labeled_pairs(section)
     pair = {"before", "after"} <= labels or {"base", "branch"} <= labels
-    if args.kind == "frontend" and not images:
+    if kind == "frontend" and not images:
         problems.append("frontend change but no http(s) image in Evidence")
-    if args.kind == "non-frontend" and not pair:
+    if kind == "non-frontend" and not pair:
         problems.append("non-frontend change but no labeled Before/After or merge-base/branch pair in Evidence")
     if not images and not pair:
         problems.append("Evidence holds neither an http(s) image nor a labeled before/after pair")
@@ -472,7 +503,8 @@ def main() -> None:
     pub.set_defaults(run=publish)
     ck = sub.add_parser("check")
     ck.add_argument("body")
-    ck.add_argument("--kind", choices=["frontend", "non-frontend"])
+    ck.add_argument("--kind", choices=["frontend", "non-frontend"],
+                    help="gate the evidence by the e2e report's kind; derived as frontend from --spec when it marks ui-ux yes")
     ck.add_argument("--require-current", action="store_true", help="require provenance matching current tested sources")
     ck.add_argument("--repo-root", default=".")
     ck.add_argument("--spec", help="spec.md whose Verification block names the kinds that may not be skipped")

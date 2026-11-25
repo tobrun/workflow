@@ -187,5 +187,27 @@ class LintSpecVerificationTest(unittest.TestCase):
                                                              extra="### Threat model\n\n- the endpoint is risky\n\n"))
 
 
+class LintSpecInputTest(unittest.TestCase):
+    def test_a_non_utf8_spec_is_an_input_error(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "spec.md"
+            path.write_bytes(b"# T\n\xff\xfe bad\n")
+            result = subprocess.run([sys.executable, str(SCRIPT), str(path)], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("UTF-8", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+
+    def test_a_nested_numbered_list_is_not_a_change_set(self) -> None:
+        import importlib.util
+        module = importlib.util.spec_from_file_location("lint_spec", SCRIPT)
+        lint = importlib.util.module_from_spec(module)
+        module.loader.exec_module(lint)
+        self.assertIsNotNone(lint.CHANGE_SET.match("1. Change set"))
+        self.assertIsNone(lint.CHANGE_SET.match("   1. nested step"))
+        body = [(1, "1. Change set"), (2, "   a. app.py - edit"), (3, "      1. nested step"),
+                (4, "      2. second nested"), (5, "   tests: [unit] a -> b")]
+        self.assertEqual(set(lint.change_set_files(body)), {1})
+
+
 if __name__ == "__main__":
     unittest.main()

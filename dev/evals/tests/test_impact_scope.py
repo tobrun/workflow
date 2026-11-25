@@ -57,10 +57,10 @@ class ImpactScopeTest(unittest.TestCase):
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(body, encoding="utf-8")
 
-    def scope(self, *args: str) -> dict:
+    def scope(self, *args: str, cwd: Path | None = None) -> dict:
         result = subprocess.run(
             [sys.executable, str(SCRIPT), "--json", *args],
-            cwd=self.repo, check=False, capture_output=True, text=True,
+            cwd=cwd or self.repo, check=False, capture_output=True, text=True,
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         return json.loads(result.stdout)
@@ -84,6 +84,36 @@ class ImpactScopeTest(unittest.TestCase):
         self.write("README.md", "# changed")
         self.write("docs/guide.md", "new")
         self.assertEqual(self.scope()["verdict"], "docs")
+
+    def test_txt_manifests_and_notice_named_code_are_not_docs(self) -> None:
+        for path in ("requirements.txt", "CMakeLists.txt", "tests/data/cases.txt", "src/notice.py", "src/license.go"):
+            self.write(path, "x")
+            self.assertNotEqual(self.scope()["verdict"], "docs", path)
+            git(self.repo, "add", "-A")
+            git(self.repo, "commit", "-q", "-m", path)
+            git(self.repo, "checkout", "-q", "main")
+            git(self.repo, "branch", "-q", "-D", "work")
+            git(self.repo, "checkout", "-q", "-b", "work")
+        for path in ("LICENSE", "NOTICE.txt", "AUTHORS"):
+            self.write(path, "y")
+            self.assertEqual(self.scope()["verdict"], "docs", path)
+            self.repo.joinpath(path).unlink()
+
+    def test_untracked_file_is_found_from_a_subdirectory(self) -> None:
+        self.write("packages/web/src/new.ts", "export {}")
+        report = self.scope(cwd=self.repo / "packages" / "api")
+        self.assertEqual(report["files"], ["packages/web/src/new.ts"])
+
+    def test_a_rename_reports_old_and_new_path(self) -> None:
+        git(self.repo, "mv", "packages/api/src/index.ts", "packages/web/src/moved.ts")
+        git(self.repo, "add", "-A")
+        files = self.scope()["files"]
+        self.assertIn("packages/api/src/index.ts", files)
+        self.assertIn("packages/web/src/moved.ts", files)
+
+    def test_non_ascii_paths_are_not_quoted(self) -> None:
+        self.write("packages/web/src/caf\u00e9 app.ts", "export {}")
+        self.assertIn("packages/web/src/caf\u00e9 app.ts", self.scope()["files"])
 
     def test_no_change_is_docs(self) -> None:
         self.assertEqual(self.scope()["verdict"], "docs")

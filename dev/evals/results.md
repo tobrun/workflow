@@ -3,7 +3,7 @@
 Status: no full run recorded for the current skill set; two partial runs below.
 
 The last recorded run (2026-07-24) covered the pre-pivot five-skill chain and was invalidated by the pivot to the scope pipeline; its scores were removed rather than left to invite false confidence.
-The current catalog has 11 skills. Retain dated historical runs and add new records rather than presenting the old six-skill subset as current coverage.
+The current catalog has six skills (bootstrap, build, commit, scope, ship, yolo). Retain dated historical runs and add new records rather than presenting an older, narrower subset as current coverage.
 
 ## Partial run, 2026-10-01: build `parallel-wave`, before and after the build-speed change
 
@@ -24,7 +24,7 @@ Every run of a Validation command was written to a log by the fixture's package 
 | Three change-set commits in spec order, `check-tests.py` clean | pass | pass |
 | Runs of the full Validation block (log) | 4 | 2 |
 | Extra break-and-rerun cycles to see a test red | 2 | 2 |
-| Duration by `skill-metrics.py` | 7m 10s | 8m 55s |
+| Duration by `skill-metrics.py` (since removed) | 7m 10s | 8m 55s |
 
 Findings:
 

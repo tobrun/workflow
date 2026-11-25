@@ -223,5 +223,19 @@ class RenderSpecTest(unittest.TestCase):
         self.assertIn("&lt;script&gt;alert(1)&lt;/script&gt;", page)
 
 
+class RenderSpecInputTest(RenderSpecTest):
+    def test_a_non_utf8_spec_is_an_input_error(self) -> None:
+        spec = self.plan / "spec.md"
+        spec.write_bytes(b"# T\n\xff\xfe\n")
+        result = subprocess.run([sys.executable, str(SCRIPT), str(spec)], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("UTF-8", result.stderr)
+
+    def test_confidence_above_100_is_clamped(self) -> None:
+        _, page = self.render(SPEC.replace("72%", "999%"))
+        self.assertNotIn("width:999%", page)
+        self.assertIn("width:100%", page)
+
+
 if __name__ == "__main__":
     unittest.main()

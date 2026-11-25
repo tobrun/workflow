@@ -421,13 +421,8 @@ check_12() {
 # ===========================================================================
 check_13() {
   while IFS= read -r -d '' file; do
-    local ft
-    ft=$(file "$file" 2>/dev/null || echo "unknown")
-    case "$ft" in
-      *binary*|*image*|*archive*|*executable*|*compressed*|*font*)
-        continue
-        ;;
-    esac
+    # Skip binaries (a NUL byte), not by exec bit or `file` output, so executable scripts are scanned.
+    grep -Iq . "$file" 2>/dev/null || continue
     if grep -E "$(printf '\xE2\x80\x94')" "$file" 2>/dev/null; then
       fail "R13" "$file" \
         "Contains em dash (Unicode U+2014). Use two plain dashes instead."
@@ -436,7 +431,7 @@ check_13() {
 }
 
 # ===========================================================================
-# R00 (bonus): Warn if SKILL.md is over ~200 lines
+# R00 (bonus): Fail if a SKILL.md body is over ~150 lines
 # ===========================================================================
 check_skill_length() {
   local sources
@@ -450,11 +445,12 @@ check_skill_length() {
       [ ! -d "$skilldir" ] && continue
       local sf="${skilldir%/}/SKILL.md"
       [ ! -f "$sf" ] && continue
-      local total
-      total=$(wc -l < "$sf")
-      if [ "$total" -gt 200 ]; then
+      local body
+      # Body lines: everything after the closing --- of the frontmatter.
+      body=$(awk 'BEGIN{n=0} NR==1 && $0=="---"{fm=1; next} fm==1 && $0=="---"{fm=2; next} fm!=1{n++} END{print n}' "$sf")
+      if [ "$body" -gt 150 ]; then
         fail "R00" "$sf" \
-          "Body is $total lines (recommend under 150; move detail to references/)"
+          "Body is $body lines (keep under about 150; move detail to references/)"
       fi
     done
   done <<< "$sources"
@@ -464,22 +460,34 @@ check_skill_length() {
 # R15: every relative markdown link under every marketplace source resolves
 # ===========================================================================
 check_links() {
-  local broken
-  broken=$(marketplace_source_dirs | python3 -c '
+  local broken status=0
+  broken=$( { marketplace_source_dirs; echo "."; } | python3 -c '
 import re, pathlib, sys
 
-link_re = re.compile(r"\]\(([^)#\s]+)(?:#[^)]*)?\)")
-sources = [line.strip() for line in sys.stdin if line.strip()]
-paths = sorted(p for source in sources for p in pathlib.Path(source).rglob("*.md"))
-for path in paths:
-    text = path.read_text(encoding="utf-8")
+link_re = re.compile(r"\]\(([^)#\s]+)(?:#[^)]*)?(?:\s+\"[^\"]*\")?\)")
+sources = sorted({line.strip() for line in sys.stdin if line.strip()})
+paths = set()
+for source in sources:
+    if source == ".":
+        paths.add(pathlib.Path("README.md"))
+    else:
+        paths.update(pathlib.Path(source).rglob("*.md"))
+for path in sorted(paths):
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (UnicodeDecodeError, OSError) as error:
+        print(f"{path}: unreadable markdown ({error})")
+        continue
     for target in link_re.findall(text):
-        if target.startswith(("http://", "https://", "mailto:", "/")):
+        if re.match(r"^[A-Za-z][A-Za-z0-9+.-]*:|^/", target):
             continue
         resolved = (path.parent / target).resolve()
         if not resolved.exists():
             print(f"{path}: broken link -> {target}")
-')
+') || status=$?
+  if [ "$status" -ne 0 ]; then
+    fail "R15" "README.md" "Link checker crashed or python3 is missing (exit $status)"
+  fi
   if [ -n "$broken" ]; then
     while IFS= read -r line; do
       fail "R15" "${line%%:*}" "${line#*: }"
@@ -493,9 +501,10 @@ for path in paths:
 check_codex() {
   local marketplace=".agents/plugins/marketplace.json"
 
-  if ! python3 scripts/build_distributions.py --check >/dev/null 2>&1; then
+  if ! python3 scripts/build_distributions.py --check >"$LOG_DIR/build-check.log" 2>&1; then
+    tail -40 "$LOG_DIR/build-check.log" >&2
     fail "C01" "skills, .codex-plugin" \
-      "Generated distributions are stale; run python3 scripts/build_distributions.py"
+      "Generated distributions are stale or the generator failed (see output above); run python3 scripts/build_distributions.py"
   fi
 
   if ! jq -e '.name == "nurbot" and (.plugins | length > 0)' \
@@ -559,6 +568,10 @@ check_codex() {
       local skill_md="${skilldir%/}/SKILL.md"
       local agent_yaml="${skilldir%/}/agents/openai.yaml"
 
+      if [ ! -f "$skill_md" ]; then
+        fail "C01" "$skill_md" "Missing SKILL.md"
+        continue
+      fi
       if grep -q '^disable-model-invocation: true$' "$skill_md"; then
         fail "C01" "$skill_md" \
           "Codex skill must not contain Claude invocation frontmatter"
@@ -608,10 +621,17 @@ check_pi() {
 
   if [ ! -x "$runner" ]; then
     fail "P01" "$runner" "Pi agent runner must be executable"
-  elif ! bash -n "$runner" scripts/test_pi_runner.sh; then
-    fail "P01" "$runner" "Pi agent runner scripts have invalid shell syntax"
-  elif ! bash scripts/test_pi_runner.sh >/dev/null 2>&1; then
-    fail "P01" "$runner" "Pi agent runner self-test failed"
+  else
+    local script
+    for script in "$runner" scripts/test_pi_runner.sh; do
+      if ! bash -n "$script"; then
+        fail "P01" "$script" "Invalid shell syntax"
+      fi
+    done
+    if ! bash scripts/test_pi_runner.sh >"$LOG_DIR/pi-runner-test.log" 2>&1; then
+      tail -40 "$LOG_DIR/pi-runner-test.log" >&2
+      fail "P01" "$runner" "Pi agent runner self-test failed (full output: $LOG_DIR/pi-runner-test.log)"
+    fi
   fi
 
   if ! grep -q 'Native transport (preferred)' \
@@ -639,6 +659,22 @@ check_portable_skills() {
       fail "S01" "$tree" "Portable skills break the Agent Skills spec or link outside their folder; run python3 scripts/check_skills.py $tree"
     fi
   done
+}
+
+# ===========================================================================
+# L01: one license across the package, the plugin, and the LICENSE file
+# ===========================================================================
+check_license() {
+  local pkg plugin
+  pkg=$(jq -r '.license // empty' package.json 2>/dev/null || true)
+  plugin=$(jq -r '.license // empty' dev/.claude-plugin/plugin.json 2>/dev/null || true)
+  if [ -z "$pkg" ] || [ "$pkg" != "$plugin" ]; then
+    fail "L01" "package.json" \
+      "license ('$pkg') must be set and match dev/.claude-plugin/plugin.json ('$plugin')"
+  fi
+  if [ ! -s LICENSE ]; then
+    fail "L01" "LICENSE" "LICENSE file is missing or empty"
+  fi
 }
 
 # ===========================================================================
@@ -687,6 +723,7 @@ check_links
 check_codex
 check_pi
 check_portable_skills
+check_license
 check_dev_script
 
 if [ -s "$ERROR_FILE" ]; then

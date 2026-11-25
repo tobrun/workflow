@@ -3,11 +3,11 @@
 Repo-fitted pieces `ship`'s verify phase reuses on every run; the analyzers themselves are the ecosystem's, run through `uvx` or `npx` so nothing is installed globally.
 
 - `scope.sh [--python]` - the files the branch added or modified against the default branch, minus the standard exclusions and the generated `plugins/` tree.
-- `added_lines.py` - filters `path:line: ...` findings on stdin to the lines the branch added, so pre-existing findings are counted, not fixed.
-- `complexity_coverage.py RADON_JSON COVERAGE_JSON [--prefix pkg/]` - coverage-weighted complexity (complexity squared scaled down by line coverage) for functions the branch added; the line is 10 per D-complexity-threshold in `docs/decisions.md`.
+- `added_lines.py` - (base..HEAD only, so commit first; exits 2 without a merge base) filters `path:line: ...` findings on stdin to the lines the branch added, so pre-existing findings are counted, not fixed.
+- `complexity_coverage.py RADON_JSON COVERAGE_JSON [--prefix pkg/] [--touched] [--all]` - coverage-weighted complexity (complexity squared scaled down by line coverage) for functions the branch added (`--touched` also judges pre-existing functions the branch edited; `--all` prints every judged function, not only offenders; paths missing from the coverage report warn on stderr); the line is 10 per D-complexity-threshold in `docs/decisions.md`.
 - `coverage_run.sh OUT_JSON -- <unittest args>` - coverage for a suite whose subject scripts run as subprocesses; a plain `coverage run` traces only the parent, so a script the tests invoke through `subprocess.run` reads 0% and its complexity score collapses to complexity squared.
-- `flaky.py --runs 5 MODULE ...` - runs unittest modules repeatedly in shuffled order and names any test whose outcome disagrees between runs.
-- `mutate.py FILE FUNC ... --tests MODULE ...` - mutates explicitly selected changed decision-heavy functions one change at a time and runs their relevant fast tests. Skip forwarding/wiring glue. Prefer scoped incremental Stryker, PIT, or mutmut runs where available; survivors guide contract review and regression tests, and this helper's nonzero survivor exit is advisory rather than a ship gate.
+- `flaky.py --runs 5 MODULE ...` - runs unittest modules repeatedly in shuffled order and names any test whose outcome disagrees between runs. Module, class, and in-class order are shuffled (classes stay grouped); all runs share one process; skipped tests are excluded; fixture errors fail their whole class; `--runs` must be at least 2.
+- `mutate.py FILE FUNC ... --tests MODULE ...` - mutates explicitly selected changed decision-heavy functions one change at a time and runs their relevant fast tests. Skip forwarding/wiring glue. Prefer scoped incremental Stryker, PIT, or mutmut runs where available; survivors guide contract review and regression tests, and this helper's nonzero survivor exit is advisory rather than a ship gate. Exits 2 for a failing or timed-out baseline or an unknown function name; SIGTERM and SIGHUP restore the file.
 
 The verify phase's analyses, from the repository root:
 

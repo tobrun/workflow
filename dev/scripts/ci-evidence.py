@@ -69,10 +69,10 @@ THRESHOLD = re.compile(r"(fail[_-]under|threshold|minimum|branches|lines|functio
 
 
 def git(*args: str, cwd: Path | None = None, check: bool = True) -> str:
-    result = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, check=False)
+    result = subprocess.run(["git", "-c", "core.quotePath=false", *args], cwd=cwd, capture_output=True, check=False)
     if check and result.returncode != 0:
-        raise SystemExit(f"git {' '.join(args)} failed: {result.stderr.strip()}")
-    return result.stdout
+        raise SystemExit(f"git {' '.join(args)} failed: {result.stderr.decode('utf-8', 'replace').strip()}")
+    return result.stdout.decode("utf-8", "replace")
 
 
 # ---------------------------------------------------------------------------
@@ -108,6 +108,21 @@ def read_junit(paths: list[Path]) -> dict[str, Case]:
     return cases
 
 
+def empty_suite_errors(paths: list[Path]) -> int:
+    """Errors a report states for a suite that holds no testcase (a run that crashed before any test)."""
+    total = 0
+    for path in paths:
+        root = ET.parse(path).getroot()
+        for suite in root.iter("testsuite"):
+            if suite.find(".//testcase") is None:
+                for key in ("errors", "failures"):
+                    try:
+                        total += int(suite.get(key, "0"))
+                    except ValueError:
+                        pass
+    return total
+
+
 def changed_lines(base: str, head: str, root: Path) -> dict[str, set[int]]:
     """Lines the head adds or modifies, per file that still exists."""
     out = git("diff", "-U0", "--no-color", "--no-renames", f"{base}...{head}", cwd=root)
@@ -115,7 +130,7 @@ def changed_lines(base: str, head: str, root: Path) -> dict[str, set[int]]:
     current = None
     for line in out.splitlines():
         if line.startswith("+++ "):
-            current = None if line[4:] == "/dev/null" else line[6:]
+            current = None if line[4:] == "/dev/null" else line[6:].rstrip("\t")
             if current:
                 lines.setdefault(current, set())
         elif line.startswith("@@") and current:
@@ -132,8 +147,9 @@ def diff_hunks(base: str, head: str, root: Path) -> dict[str, tuple[list[tuple[i
     current, number = None, 0
     for line in out.splitlines():
         if line.startswith("diff --git"):
-            match = re.search(r" b/(.+)$", line)
-            current = match.group(1) if match else None
+            rest = line[len("diff --git "):]  # "a/P b/P": without renames both halves are the same path
+            size = (len(rest) - 5) // 2
+            current = rest[2 + size + 3:] if size > 0 and rest[:2] == "a/" else None
             if current:
                 files.setdefault(current, ([], []))
         elif line.startswith(("+++", "---")):
@@ -246,8 +262,10 @@ def read_coverage(paths: list[Path], root: Path) -> dict[str, dict[int, bool]]:
 def match_report(path: str, report: dict[str, dict[int, bool]]) -> dict[int, bool] | None:
     if path in report:
         return report[path]
-    candidates = [name for name in report if path.endswith("/" + name) or name.endswith("/" + path) or name == path]
-    return report[max(candidates, key=len)] if candidates else None
+    # A report may name a file by a shorter path, or (a Go profile) behind a module path like example.com/x/.
+    candidates = [name for name in report
+                  if path.endswith("/" + name) or (name.endswith("/" + path) and "." in name.split("/")[0])]
+    return report[candidates[0]] if len(candidates) == 1 else None
 
 
 @dataclass
@@ -422,6 +440,7 @@ def collect(args: argparse.Namespace) -> int:
     junit_files = expand(args.junit, missing)
     coverage_files = expand(args.coverage, missing)
     cases = read_junit(junit_files)
+    suite_errors = empty_suite_errors(junit_files)
     body = Path(args.body).read_text(encoding="utf-8") if args.body else ""
     changed = changed_lines(base, head, root)
     guarded = guard(base, head, root)
@@ -433,7 +452,10 @@ def collect(args: argparse.Namespace) -> int:
         criterion["status"] = case.status if case else "not found"
     claimed = claims(body)
     counts = {s: sum(1 for c in cases.values() if c.status == s) for s in ("passed", "failed", "skipped")}
+    counts["failed"] += suite_errors
     mismatches = []
+    if counts["passed"] + counts["failed"] == 0:
+        mismatches.append("no tests ran: CI reported no executed test" if junit_files else "no tests ran: no JUnit report was given")
     test_kinds = ("unit", "functional", "component", "contract", "acceptance", "regression", "smoke")
     if counts["failed"]:
         for kind in test_kinds:
@@ -566,7 +588,8 @@ def render(evidence: dict) -> str:
         lines += ["", "<details><summary>Details</summary>", ""] + details + ["</details>"]
     lines += ["", f"<sub>Written by ci-evidence.py in CI from the commit's own runs; anything edited here by hand is replaced on the next push. "
               f"The agent-written sections above are claims; this block is what CI measured.</sub>", END]
-    return "\n".join(lines) + "\n"
+    inner = [line.replace("<!--", "&lt;!--").replace("-->", "--&gt;") for line in lines[1:-1]]
+    return "\n".join([lines[0], *inner, lines[-1]]) + "\n"
 
 
 def pending_block(sha: str) -> str:

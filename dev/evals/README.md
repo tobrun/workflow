@@ -1,13 +1,13 @@
 # Evals
 
-Eval definitions cover all 11 dev skills.
+Eval definitions cover all six dev skills (bootstrap, build, commit, scope, ship, yolo).
 Each `{skill}.json` gives realistic prompts, fixture requirements, and observable assertions.
 `results.md` records dated runs and their limits; it distinguishes full skill runs, comprehension checks, and deterministic protocol fixtures.
 
 ## Layers of validation
 
 - `tests/` runs the deterministic script fixtures through their real CLIs as check D01 of `scripts/validate.sh`.
-  These cover spec mechanics, wave briefs, runner receipts, PR evidence, review completeness, single-writer refinement, impact scope, packaging, and memory records.
+  These cover spec linting and rendering, build-speed wave briefs, PR evidence, scenario evidence, review protocol completeness, impact scope, architecture enforcement, CI evidence, and the portable-skills and Codex generators.
 - Policy comprehension prompts test routing and stated authority.
   They do not prove that an agent performs the workflow correctly under pressure.
 - Functional skill runs use isolated repositories, actual implementation and application execution, and outputs graded against the requested behavior.

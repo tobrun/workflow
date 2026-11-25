@@ -46,7 +46,7 @@ EOF
 ```
 
 - Name files explicitly; never `git add -A` or `git add .`.
-- Never add a `Co-Authored-By` line: the user is the author.
+- Add no `Co-Authored-By` or other attribution trailer unless the host or repository explicitly requires one; the user is the author.
 - Never amend without asking. When a pre-commit hook fails, fix the cause, re-stage, and make a new commit, up to three tries.
 
 ## 4. Sync documentation and the ledger

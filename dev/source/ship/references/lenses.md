@@ -51,7 +51,7 @@ The verify phase's duplication, dead code, and complexity checkers are its deter
 
 Unnecessary complexity that a simpler version would avoid, with behavior held constant:
 
-- Reinvented helpers: logic the codebase or standard library already provides; Grep for the existing helper before flagging and name it in the finding.
+- Reinvented helpers: logic the codebase or standard library already provides; search for the existing helper before flagging and name it in the finding.
 - Duplication introduced by the diff: the same logic now living in two places that will silently diverge.
 - Speculative generality: abstractions, parameters, or config with exactly one caller and no planned second one.
 - Needless indirection: layers that only forward calls, wrappers that wrap nothing.
@@ -83,7 +83,7 @@ Doc updates promised by the spec belong to spec-conformance, not here.
 
 The verify phase's detector already caught provably unreferenced symbols; this lens hunts what needs reading, not reference counting.
 Unreachable branches, commented-out code, leftover debug scaffolding, vestigial parameters, dead flags and config keys, code only its own tests still call.
-Verify with Grep across the whole repo before flagging; check tests, dynamic string-keyed lookups, and external API surface.
+Verify by searching across the whole repo before flagging; check tests, dynamic string-keyed lookups, and external API surface.
 If you cannot prove it dead, report at most a CONCERN and say what you could not rule out.
 
 ## Shared rules (include in every lens prompt)

@@ -6,23 +6,33 @@ import json
 import os
 from pathlib import Path
 import platform
+import re
 import shutil
 import statistics
 import subprocess
 import sys
 import time
+import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parent
+TIMEOUT_STATUS = 124
 
 
 def command(args, cwd, log, acceptable=(0,)):
     start = time.perf_counter()
-    result = subprocess.run(
-        args, cwd=cwd, text=True, stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT, timeout=300,
-        env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1",
-             "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1"},
-    )
+    try:
+        result = subprocess.run(
+            args, cwd=cwd, text=True, stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT, timeout=300,
+            env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1",
+                 "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1"},
+        )
+    except subprocess.TimeoutExpired as expired:
+        partial = expired.stdout or ""
+        log.write_text((partial.decode() if isinstance(partial, bytes) else partial) + "\nTIMEOUT\n")
+        if TIMEOUT_STATUS not in acceptable:
+            raise RuntimeError(f"{args}: timed out; see {log}") from expired
+        return time.perf_counter() - start, TIMEOUT_STATUS
     log.write_text(result.stdout)
     if result.returncode not in acceptable:
         raise RuntimeError(f"{args}: exit {result.returncode}; see {log}")
@@ -56,7 +66,6 @@ def run(output, suites, projects):
                 shutil.copy(source / f"{suite}.py", work / "test_extra.py")
             # Warm once, then three separately started ordinary runs.
             command([sys.executable, "-m", "pytest", "-q"], work, work / "warmup.log")
-            import re
             collected = re.search(r"(\d+) passed", (work / "warmup.log").read_text())
             assert collected, "Test count not found"
             timings = [
@@ -86,7 +95,6 @@ def run(output, suites, projects):
                     work, work / "mutants.xml")
             command([str(Path(sys.executable).parent / "mutmut"), "show", "all"],
                     work, work / "mutants.diff")
-            import xml.etree.ElementTree as ET
             cases = ET.parse(work / "mutants.xml").getroot().findall(".//testcase")
             counts = {"killed": 0, "survived": 0, "other": 0}
             for case in cases:
@@ -106,9 +114,9 @@ def run(output, suites, projects):
                     (work / "app.py").write_text(changed)
                     _, status = command(
                         [sys.executable, "-m", "pytest", "-x", "-q"],
-                        work, work / f"fault-{fault['id']}.log", acceptable=(0, 1),
+                        work, work / f"fault-{fault['id']}.log", acceptable=(0, 1, TIMEOUT_STATUS),
                     )
-                    outcomes.append({"id": fault["id"], "detected": status == 1})
+                    outcomes.append({"id": fault["id"], "detected": status != 0})
             finally:
                 (work / "app.py").write_text(original)
             row = {

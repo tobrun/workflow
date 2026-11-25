@@ -14,6 +14,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from dev.evals.tests.spec_fixtures import verification
+
 REPO_ROOT = Path(__file__).resolve().parents[3]
 SCRIPT = REPO_ROOT / "dev" / "source" / "ship" / "scripts" / "pr-evidence.py"
 PIXEL = "data:image/png;base64,iVBORw0KGgo="
@@ -268,6 +270,59 @@ class BodyStructureTest(GateCase):
         self.check(EVIDENCE)
         edited = self.body.read_text().replace("⏭️", "✅").replace("✅ Unit", "✅ Unit (all good)")
         self.assertIn("the QUALITY-SUMMARY block does not match the Quality table", self.check(edited).stderr)
+
+
+class HardeningTest(GateCase):
+    def run_extract(self, data: dict) -> tuple[subprocess.CompletedProcess[str], Path]:
+        report = self.root / "report.json"
+        report.write_text(json.dumps(data), encoding="utf-8")
+        out = self.root / "out"
+        result = subprocess.run([sys.executable, str(SCRIPT), "extract", str(report), "--out", str(out),
+                                 "--url-template", "https://x/{path}"], capture_output=True, text=True)
+        return result, out
+
+    def test_route_templates_in_captured_evidence_are_not_placeholders(self) -> None:
+        result = self.check(
+            "## Evidence\n**Before**\n```text\nGET /users/{id} -> 404\n```\n"
+            "**After**\n```text\nGET /users/{id} -> 200\n```\nInline `{id}` too.\n")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_a_placeholder_in_prose_is_still_rejected(self) -> None:
+        result = self.check(
+            "## Evidence\nFill in {screenshot}\n**Before**\n```text\na\n```\n**After**\n```text\nb\n```\n")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("placeholder", result.stderr)
+
+    def test_a_ui_spec_derives_the_frontend_kind(self) -> None:
+        body = "## Evidence\n**Before**\n```text\na\n```\n**After**\n```text\nb\n```\n"
+        result = self.check(body, spec="# S\n\n" + verification("ui-ux"))
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("frontend change but no http(s) image", result.stderr)
+
+    def test_fence_outgrows_backticks_in_the_content(self) -> None:
+        data = {"kind": "non-frontend", "planName": "p", "scenarios": [{
+            "id": "a", "title": "A", "status": "pass",
+            "dataModelState": [{"step": "s", "entity": "e", "before": "x\n```\ny", "after": "ok"}]}]}
+        result, out = self.run_extract(data)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("````json\nx\n```\ny\n````", (out / "evidence.md").read_text())
+
+    def test_malformed_data_uris_fail_cleanly(self) -> None:
+        for uri in ("data:image/png", "data:image/png;base64", None, "data:image/png;base64,@@@"):
+            shot = {"step": "s", "caption": "c", "dataUri": uri}
+            result, _ = self.run_extract({"kind": "frontend", "planName": "p", "scenarios": [
+                {"id": "a", "title": "A", "status": "pass", "screenshots": [shot]}]})
+            self.assertEqual(result.returncode, 1, uri)
+            self.assertNotIn("Traceback", result.stderr, uri)
+            self.assertIn("pr-evidence:", result.stderr)
+
+    def test_plan_name_cannot_escape_the_output_directory(self) -> None:
+        data = {"kind": "frontend", "planName": f"../../{self.root.name}-esc", "scenarios": [scenario("a")]}
+        result, out = self.run_extract(data)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse((self.root.parent / f"{self.root.name}-esc").exists())
+        self.assertTrue(all(out in p.parents for p in out.rglob("*.png")))
+        self.assertTrue(list(out.rglob("*.png")))
 
 
 if __name__ == "__main__":

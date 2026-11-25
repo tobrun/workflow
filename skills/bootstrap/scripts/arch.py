@@ -766,13 +766,23 @@ def gen_go(arch: Architecture) -> dict[str, str]:
     return {f"{OUT}/go-arch-lint.yml": "\n".join(lines) + "\n"}
 
 
+def common_segments(paths: list[list[str]]) -> list[str]:
+    """The leading dot-separated segments every package shares (not characters: com.a.service and com.a.store share com.a)."""
+    shared = []
+    for parts in zip(*paths):
+        if len(set(parts)) != 1:
+            break
+        shared.append(parts[0])
+    return shared
+
+
 def gen_jvm(arch: Architecture) -> dict[str, str]:
     modules = arch.in_language("jvm")
     if not modules:
         return {}
     test_file = arch.setting("jvm", "test_file", "src/test/java/arch/ArchitectureTest.java")
     test_package = arch.setting("jvm", "test_package", "arch")
-    base = arch.setting("jvm", "base_package") or os.path.commonprefix([m.package for m in modules]).rstrip(".")
+    base = arch.setting("jvm", "base_package") or ".".join(common_segments([m.package.split(".") for m in modules]))
     frozen = {b["rule"] for b in arch.baseline}
     rules = []
     for module in modules:
@@ -872,10 +882,13 @@ def source_files(root: Path, directory: str, language: str) -> list[Path]:
     base = root / directory
     if not base.is_dir():
         return []
-    skip = {"node_modules", ".git", "target", "build", "dist", "vendor", "__pycache__", ".venv"}
+    skip = {"node_modules", "__pycache__", ".venv"}
+    # build output sits at the top of a repo-wide scan; inside a module a build/ or vendor/ folder can be source
+    top_skip = {"target", "build", "dist", "vendor"} if base.resolve() == root.resolve() else set()
     found = []
     for dirpath, dirnames, filenames in os.walk(base):
-        dirnames[:] = [d for d in dirnames if d not in skip and not d.startswith(".")]
+        blocked = skip | (top_skip if Path(dirpath) == base else set())
+        dirnames[:] = [d for d in dirnames if d not in blocked and not d.startswith(".")]
         found += [Path(dirpath) / f for f in filenames if f.endswith(EXTENSIONS[language])]
     return sorted(found)
 
@@ -952,11 +965,13 @@ class Violation:
     source: str
     target: str
 
+    def matches(self, entry: dict) -> bool:
+        return (entry["rule"] == self.rule and entry["from"] == self.source
+                and (entry["to"] == self.target or self.target.startswith(entry["to"].rstrip("/") + "/")
+                     or entry["to"] == self.target.split(".")[0]))
+
     def baselined(self, arch: Architecture) -> bool:
-        return any(b["rule"] == self.rule and b["from"] == self.source
-                   and (b["to"] == self.target or self.target.startswith(b["to"].rstrip("/") + "/")
-                        or b["to"] == self.target.split(".")[0])
-                   for b in arch.baseline)
+        return any(self.matches(b) for b in arch.baseline)
 
 
 def builtin_violations(arch: Architecture) -> list[Violation]:
@@ -967,12 +982,38 @@ def builtin_violations(arch: Architecture) -> list[Violation]:
     return found
 
 
+def python_locals(directory: Path) -> set[str]:
+    """Names importable from the Python root: .py files and directories that hold Python."""
+    if not directory.is_dir():
+        return set()
+    found = set()
+    for entry in directory.iterdir():
+        if entry.is_file() and entry.suffix == ".py":
+            found.add(entry.stem)
+        elif entry.is_dir() and ((entry / "__init__.py").is_file() or any(entry.glob("*.py"))):
+            found.add(entry.name)
+    return found
+
+
+def python_syntax_problems(arch: Architecture) -> list[str]:
+    """Files the import checks cannot read; skipping them would hide their imports."""
+    problems = []
+    for module in arch.in_language("python"):
+        for path in source_files(arch.root, module.path, "python"):
+            try:
+                ast.parse(path.read_text(encoding="utf-8"))
+            except (SyntaxError, UnicodeDecodeError, ValueError) as error:
+                problems.append(f"{os.path.relpath(path, arch.root)}: cannot be parsed ({type(error).__name__}), "
+                                f"so its imports are unchecked; fix the file")
+    return problems
+
+
 def python_dependency_violations(arch: Architecture) -> list[Violation]:
     allowlist = next((a for a in arch.allowlists if a.language == "python"), None)
     if not allowlist:
         return []
     package_root = arch.setting("python", "root", ".")
-    local = {p.name.removesuffix(".py") for p in (arch.root / package_root).iterdir()} if (arch.root / package_root).is_dir() else set()
+    local = python_locals(arch.root / package_root)
     allowed = {name.replace("-", "_").lower() for name in allowlist.allow}
     found = []
     for module in arch.in_language("python"):
@@ -1053,7 +1094,15 @@ def drift(arch: Architecture) -> list[str]:
     return problems
 
 
-def git_show(root: Path, ref: str, path: str) -> str | None:
+MISSING_REF = object()
+
+
+def git_show(root: Path, ref: str, path: str) -> str | None | object:
+    """The file at the ref; None when the ref resolves but lacks the file; MISSING_REF when the ref is unusable."""
+    probe = subprocess.run(["git", "rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}"], cwd=root,
+                           capture_output=True, text=True, check=False)
+    if probe.returncode != 0:
+        return MISSING_REF
     result = subprocess.run(["git", "show", f"{ref}:{path}"], cwd=root, capture_output=True, text=True, check=False)
     return result.stdout if result.returncode == 0 else None
 
@@ -1090,6 +1139,20 @@ def loosenings(old: dict, new: dict) -> list[str]:
             found.append(f"the {language} dependency allowlist was removed")
         elif new_allow[language] - allowed:
             found.append(f"the {language} dependency allowlist adds {', '.join(sorted(new_allow[language] - allowed))}")
+    if old.get("layers", []) != new.get("layers", []):
+        old_layers, new_layers = old.get("layers", []), new.get("layers", [])
+        for layer in old_layers:
+            if layer not in new_layers:
+                found.append(f"layer {layer} was removed")
+        if [x for x in old_layers if x in new_layers] != [x for x in new_layers if x in old_layers]:
+            found.append("the layer order changed")
+    if old.get("decisions") != new.get("decisions"):
+        found.append("the decisions ledger path changed")
+    for table in ("tools", "settings"):
+        before, after = old.get(table, {}), new.get(table, {})
+        for key in sorted(set(before) | set(after)):
+            if before.get(key) != after.get(key):
+                found.append(f"[{table}] {key} changed; a different command or setting can disable enforcement")
     old_concerns = set((old.get("providers") or {}).get("concerns", []))
     if old_concerns - set((new.get("providers") or {}).get("concerns", [])):
         found.append("cross-cutting concerns left the providers rule")
@@ -1102,20 +1165,24 @@ def loosenings(old: dict, new: dict) -> list[str]:
 
 def check(arch: Architecture, base: str | None, allow_loosening: bool) -> list[str]:
     problems = validate(arch)
-    problems += drift(arch)
+    if not problems:  # generated() needs a valid file (for one, a known ast-grep language)
+        problems += drift(arch)
     if base:
         old = git_show(arch.root, base, SOURCE)
-        if old is not None:
+        if old is MISSING_REF:
+            problems.append(f"cannot read {SOURCE} at {base}; fetch the ref (a shallow clone lacks it) or drop --base")
+        elif old is not None:  # None: the file is new at the ref, so there was no policy to loosen
             for loosening in loosenings(toml_loads(old), arch.raw):
                 if not allow_loosening:
                     problems.append(f"loosening needs a human-reviewed change: {loosening}")
+    problems += python_syntax_problems(arch)
     violations = builtin_violations(arch)
     for violation in violations:
         if not violation.baselined(arch):
             problems.append(f"{violation.source} -> {violation.target}: {arch.rules[violation.rule].message}")
     for entry in arch.baseline:
         if entry["rule"].startswith(("dependencies:python", "dependencies:rust")) or is_builtin(arch, entry["rule"]):
-            if not any(v.baselined(arch) and v.rule == entry["rule"] and v.source == entry["from"] for v in violations):
+            if not any(v.matches(entry) for v in violations):
                 problems.append(f"baseline entry {entry['rule']} {entry['from']} -> {entry['to']} no longer matches "
                                 f"a violation; delete it so the ratchet tightens")
     return problems
@@ -1340,8 +1407,13 @@ def fired(arch: Architecture, plant: Plant) -> tuple[bool, str]:
     marker = plant.rule
     if plant.language == "go":  # go-arch-lint names the component, not the rule
         marker = f"Component {plant.rule.partition(':')[2]} shouldn't depend"
-    named = marker in failing_part(output)
+    named = names_marker(marker, failing_part(output))
     return code != 0 and named, f"{command} exited {code}" + ("" if named else f" without naming {plant.rule}")
+
+
+def names_marker(marker: str, output: str) -> bool:
+    """Whether the output names the rule itself, not a longer id that starts with it (boundary:api-v2)."""
+    return re.search(r"(?<![\w-])" + re.escape(marker) + r"(?![\w-])", output) is not None
 
 
 def redteam(arch: Architecture) -> int:
@@ -1403,6 +1475,7 @@ def infer(root: Path, language: str, base: str, depth: int) -> int:
     while (import_root / "__init__.py").is_file():  # python imports are relative to the top package's parent
         import_root = import_root.parent
     import_root_name = os.path.relpath(import_root, root)
+    module_path = go_module_path_raw(root) if language == "go" else None
 
     def module_of(path: str) -> str | None:
         return next((name for directory, name in modules.items() if path == directory or path.startswith(directory + "/")), None)
@@ -1419,7 +1492,6 @@ def infer(root: Path, language: str, base: str, depth: int) -> int:
                     targets.append(os.path.relpath(os.path.normpath(path.parent / spec), root))
             elif language == "go":
                 text = path.read_text(encoding="utf-8", errors="replace")
-                module_path = go_module_path_raw(root)
                 for spec in re.findall(r'^\s*(?:import\s+)?(?:\w+\s+)?"([^"]+)"', text, re.MULTILINE):
                     if module_path and spec.startswith(module_path + "/"):
                         targets.append(spec[len(module_path) + 1:])
@@ -1461,6 +1533,13 @@ def go_module_path_raw(root: Path) -> str | None:
 # ---------------------------------------------------------------------------
 
 
+def positive_int(text: str) -> int:
+    value = int(text)
+    if value < 1:
+        raise argparse.ArgumentTypeError("must be 1 or more")
+    return value
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(prog="arch.py", description=__doc__.split("\n")[0])
     parser.add_argument("command", choices=("validate", "generate", "check", "run", "redteam", "infer"))
@@ -1469,7 +1548,7 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--allow-loosening", action="store_true", help="accept a wider rule set (human-reviewed changes only)")
     parser.add_argument("--language", choices=LANGUAGES, help="infer: the language to read")
     parser.add_argument("--dir", default=".", help="infer: the directory whose subdirectories are candidate modules")
-    parser.add_argument("--depth", type=int, default=1, help="infer: how many levels below --dir a module sits")
+    parser.add_argument("--depth", type=positive_int, default=1, help="infer: how many levels below --dir a module sits")
     args = parser.parse_args(argv[1:])
     root = Path(args.root).resolve()
     if args.command == "infer":
@@ -1490,7 +1569,8 @@ def main(argv: list[str]) -> int:
         elif args.command == "run":
             return run(arch, args.base, args.allow_loosening)
         else:
-            problems = validate(arch) + drift(arch)
+            problems = validate(arch)
+            problems += [] if problems else drift(arch)
             if not problems:
                 return redteam(arch)
     except ArchError as error:

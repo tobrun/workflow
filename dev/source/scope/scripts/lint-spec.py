@@ -20,7 +20,7 @@ FLAG = re.compile(r"^\s+⚑")
 IMPACT = re.compile(r"\[impact:\s*(high|medium|low)\]")
 RISK = re.compile(r"^Risk:\s*(low|medium|high)\s+-\s+\S", re.IGNORECASE)
 ECHO = re.compile(r"(D-[a-z0-9-]+)\s*\(([^)]*)\)")
-CHANGE_SET = re.compile(r"^\s*(\d+)\.\s+\S")
+CHANGE_SET = re.compile(r"^(\d+)\.\s+\S")  # unindented; nested numbered lists are not change sets
 TESTS = re.compile(r"^\s*tests:\s*(.*)$", re.IGNORECASE)
 # The scenario tags, one per test layer, and the verification kinds of references/verification.md.
 TAGS = ("unit", "component", "integration", "contract", "property", "fuzz", "e2e", "smoke", "benchmark")
@@ -390,7 +390,11 @@ def main(argv: list[str]) -> int:
     if not path.is_file():
         print(f"no spec at {path}", file=sys.stderr)
         return 2
-    lines = path.read_text(encoding="utf-8").splitlines()
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except UnicodeDecodeError as error:
+        print(f"{path} is not valid UTF-8: {error}", file=sys.stderr)
+        return 2
     problems, decisions = lint(path, lines)
     for message in problems:
         print(message)

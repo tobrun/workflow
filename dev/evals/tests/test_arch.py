@@ -404,6 +404,96 @@ class RatchetTest(unittest.TestCase):
         self.assertIn("no longer matches a violation; delete it so the ratchet tightens", self.repo.arch("check").stdout)
 
 
+class RatchetEdgeTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.repo = Repo(self, PY_TOML, PY_DECISIONS, PY_FILES)
+        self.repo.arch("generate")
+        self.repo.commit()
+
+    def test_an_unresolvable_base_ref_is_a_problem_not_a_skip(self) -> None:
+        result = self.repo.arch("check", "--base", "no-such-ref")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("cannot read docs/architecture.toml at no-such-ref", result.stdout)
+
+    def test_a_file_absent_at_the_base_has_no_policy_to_loosen(self) -> None:
+        self.repo.git("rm", "-q", "--cached", "docs/architecture.toml")
+        self.repo.git("-c", "user.email=a@b", "-c", "user.name=t", "commit", "-qm", "drop")
+        self.repo.git("add", "-A")
+        self.repo.git("-c", "user.email=a@b", "-c", "user.name=t", "commit", "-qm", "readd")
+        self.assertEqual(self.repo.arch("check", "--base", "HEAD~1").returncode, 0)
+
+    def test_tools_settings_and_layers_count_as_loosening(self) -> None:
+        self.repo.append("docs/architecture.toml", '\n[tools]\npython = "true"\n')
+        self.repo.replace("docs/architecture.toml", 'root = "src"', 'root = "src"\nextra = 1')
+        self.repo.replace("docs/architecture.toml", 'layers = ["domain", "telemetry", ', 'layers = ["telemetry", ')
+        out = self.repo.arch("check", "--base", "HEAD").stdout
+        self.assertIn("[tools] python changed", out, out)
+        self.assertIn("[settings] python changed", out)
+        self.assertIn("layer domain was removed", out)
+
+    def test_a_stale_baseline_entry_is_not_hidden_by_another_entry(self) -> None:
+        self.repo.append("src/app/ui/view.py", "import leftpad\n")
+        self.repo.append("docs/architecture.toml",
+                         '\n[[baseline]]\nrule = "dependencies:python"\nfrom = "src/app/ui/view.py"\nto = "leftpad"\nreason = "x"\n'
+                         '\n[[baseline]]\nrule = "dependencies:python"\nfrom = "src/app/ui/view.py"\nto = "gone"\nreason = "x"\n')
+        self.repo.arch("generate")
+        out = self.repo.arch("check").stdout
+        self.assertIn("view.py -> gone no longer matches", out)
+        self.assertNotIn("view.py -> leftpad no longer matches", out)
+
+
+class HardeningTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("arch_under_test", SCRIPT)
+        cls.arch = importlib.util.module_from_spec(spec)
+        sys.modules["arch_under_test"] = cls.arch
+        spec.loader.exec_module(cls.arch)
+
+    def test_jvm_common_prefix_is_by_segment(self) -> None:
+        shared = self.arch.common_segments([["com", "example", "service"], ["com", "example", "store"]])
+        self.assertEqual(".".join(shared), "com.example")
+
+    def test_a_longer_rule_id_does_not_satisfy_the_redteam(self) -> None:
+        self.assertFalse(self.arch.names_marker("boundary:api", "boundary:api-v2 broken"))
+        self.assertTrue(self.arch.names_marker("boundary:api", "name = boundary:api - x"))
+
+    def test_build_folders_inside_a_module_are_scanned(self) -> None:
+        repo = Repo(self, PY_TOML, PY_DECISIONS, {"pkg/build/gen.py": "x = 1\n", "build/out.py": "y = 1\n"})
+        inside = self.arch.source_files(repo.root, "pkg", "python")
+        self.assertEqual([p.name for p in inside], ["gen.py"])
+        top = self.arch.source_files(repo.root, ".", "python")
+        self.assertEqual(sorted(p.name for p in top), ["gen.py"])
+
+    def test_a_python_file_that_does_not_parse_is_reported(self) -> None:
+        repo = Repo(self, PY_TOML, PY_DECISIONS, PY_FILES)
+        repo.write("src/app/ui/broken.py", "def (:\n")
+        repo.arch("generate")
+        self.assertIn("src/app/ui/broken.py: cannot be parsed", repo.arch("check").stdout)
+
+    def test_an_unknown_banned_language_is_reported_not_a_crash(self) -> None:
+        repo = Repo(self, PY_TOML.replace('language = "python"\npattern', 'language = "cobol"\npattern'), PY_DECISIONS, PY_FILES)
+        for command in ("check", "run"):
+            result = repo.arch(command)
+            self.assertEqual(result.returncode, 1, result.stderr)
+            self.assertIn("unknown ast-grep language 'cobol'", result.stdout)
+            self.assertNotIn("Traceback", result.stderr)
+
+    def test_infer_rejects_depth_zero(self) -> None:
+        repo = Repo(self, PY_TOML, PY_DECISIONS, PY_FILES)
+        result = repo.arch("infer", "--language", "python", "--dir", "src/app", "--depth", "0")
+        self.assertEqual(result.returncode, 2)
+        self.assertNotIn("Traceback", result.stderr)
+
+    def test_an_import_named_like_a_non_python_root_entry_is_not_local(self) -> None:
+        repo = Repo(self, PY_TOML, PY_DECISIONS, PY_FILES)
+        repo.write("src/docs/notes.txt", "x\n")
+        repo.append("src/app/ui/view.py", "import docs\n")
+        repo.arch("generate")
+        self.assertIn("src/app/ui/view.py -> docs", repo.arch("check").stdout)
+
+
 class BuiltinChecksTest(unittest.TestCase):
     def test_an_unlisted_python_package_is_reported_with_its_remediation(self) -> None:
         repo = Repo(self, PY_TOML, PY_DECISIONS, PY_FILES)

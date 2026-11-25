@@ -32,11 +32,12 @@ def write(root: Path, files: dict[str, str]) -> None:
 
 MINI = {
     "mini/.claude-plugin/plugin.json": json.dumps({"name": "mini", "version": "1.2.3", "description": "d",
-                                                   "author": {"name": "T"}}),
+                                                   "author": {"name": "T"}, "license": "Apache-2.0"}),
     "mini/source/alpha/SKILL.md": "---\nname: alpha\ndescription: Does alpha. Use when alpha.\n"
                                   "disable-model-invocation: true\n---\n\n# Alpha\n\n"
                                   "Follow [the rules](../../references/rules.md) and run "
-                                  "`python3 {alpha-skill-root}/../../scripts/tool.py`; see [beta](../beta/SKILL.md).\n",
+                                  "`python3 {alpha-skill-root}/../../scripts/tool.py`; see [beta](../beta/SKILL.md \"Beta\") and the "
+                                  "[pack](../../references/pack). Example only: `[x](missing.md)`.\n",
     "mini/source/beta/SKILL.md": "---\nname: beta\ndescription: Does beta. Use when beta.\n"
                                  "disable-model-invocation: true\n---\n\n# Beta\n\nRead [local](references/local.md).\n",
     "mini/source/beta/references/local.md": "Local detail.\n",
@@ -44,6 +45,8 @@ MINI = {
     "mini/references/more.md": "More.\n",
     "mini/references/unused.md": "Nobody links here.\n",
     "mini/scripts/tool.py": "print('tool')\n",
+    "mini/references/pack/index.md": "Pack index links [sibling](deep/leaf.md) and [rules](../rules.md).\n",
+    "mini/references/pack/deep/leaf.md": "Leaf.\n",
 }
 
 
@@ -72,9 +75,29 @@ class GeneratorTest(unittest.TestCase):
         skill = (self.out / "alpha" / "SKILL.md").read_text(encoding="utf-8")
         self.assertIn("[the rules](references/rules.md)", skill)
         self.assertIn("`python3 {alpha-skill-root}/scripts/tool.py`", skill)
-        self.assertIn("[beta](../beta/SKILL.md)", skill)
+        self.assertIn("[beta](../beta/SKILL.md \"Beta\")", skill)
         rules = (self.out / "alpha" / "references" / "rules.md").read_text(encoding="utf-8")
         self.assertIn("[beta's detail](../../beta/references/local.md)", rules)
+
+    def test_a_linked_shared_directory_is_vendored_with_its_links_rewritten(self) -> None:
+        index = self.out / "alpha" / "references" / "pack" / "index.md"
+        self.assertTrue((index.parent / "deep" / "leaf.md").is_file())
+        self.assertIn("[rules](../rules.md)", index.read_text(encoding="utf-8"))
+        skill = (self.out / "alpha" / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn('[beta](../beta/SKILL.md "Beta")', skill)
+        self.assertIn("`[x](missing.md)`", skill, "links in inline code are left alone")
+
+    def test_the_license_comes_from_the_plugin_manifest(self) -> None:
+        self.assertIn("license: Apache-2.0", (self.out / "beta" / "SKILL.md").read_text(encoding="utf-8"))
+        self.assertEqual(json.loads((self.root / ".codex-plugin" / "plugin.json").read_text())["license"], "Apache-2.0")
+
+    def test_frontmatter_the_parser_cannot_read_is_refused(self) -> None:
+        for bad in ("name: a\ndescription: >-\n  folded\n", "name: a\ndescription: |\n  lit\n",
+                    "name: a\ndescription: one\n  two\n", "name: a\n", "description: only\n"):
+            with self.assertRaises(ValueError, msg=bad):
+                generator.split_frontmatter(f"---\n{bad}---\nbody\n", "x")
+        fields, _ = generator.split_frontmatter("---\nname: a\ndescription: Does a.\n---\nbody\n", "x")
+        self.assertEqual(fields["description"], "Does a.")
 
     def test_frontmatter_keeps_only_spec_fields(self) -> None:
         skill = (self.out / "beta" / "SKILL.md").read_text(encoding="utf-8")
@@ -133,6 +156,12 @@ class CheckerTest(unittest.TestCase):
         out = self.check({"one/SKILL.md": GOOD.format(name="one", body="[a](../../references/a.md) [b](references/b.md)")}).stdout
         self.assertIn("leaves the skills tree; vendor the file into the skill", out)
         self.assertIn("references/b.md does not exist", out)
+
+    def test_links_in_code_and_uppercase_schemes_are_ignored_and_directories_count_as_reached(self) -> None:
+        body = "[web](HTTPS://example.com) `[x](gone.md)`\n```\n[y](gone2.md)\n```\n[dir](references/) [t](references/a.md \"T\")"
+        result = self.check({"one/SKILL.md": GOOD.format(name="one", body=body),
+                             "one/references/a.md": "a", "one/references/b.md": "b"})
+        self.assertEqual(result.returncode, 0, result.stdout)
 
     def test_a_sibling_skill_link_is_allowed_but_an_unknown_skill_root_is_not(self) -> None:
         files = {"one/SKILL.md": GOOD.format(name="one", body="[two](../two/SKILL.md) `{zed-skill-root}/x.py`"),

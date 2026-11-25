@@ -1,4 +1,4 @@
-name: Validate Marketplace Structure
+name: Validate
 
 on:
   push:
@@ -9,10 +9,14 @@ on:
     # Weekly, so platform drift (new runner images, Python patch releases) surfaces without a code change.
     - cron: "17 5 * * 1"
 
+permissions:
+  contents: read
+
 jobs:
   validate:
     name: validate (${{ matrix.os }}, Python ${{ matrix.python }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:

@@ -13,7 +13,7 @@ For each commit just created:
 
 1. **Decisions.**
    If the body's `Why:`/`Considered:` content records a choice that passes the ledger's promotion test, write a `D-` entry to the matching area section of `docs/decisions.md`, in ledger notation: the chosen alternative `✓` with its because clause from `Why:`, rejected alternatives `✗` from `Considered:`, known downsides after `⚠`, dated and sourced to the commit hash.
-   Grep for an existing slug first - a commit revisiting a recorded decision updates that entry, never duplicates it.
+   Search for an existing slug first - a commit revisiting a recorded decision updates that entry, never duplicates it.
    The bar is high: most commits don't qualify.
    A choice qualifies when someone could plausibly argue it differently later (`Considered:` exists, or the `Why:` defends a tradeoff); routine implementation choices don't.
    Apply evidence marks per the ledger's Notation, sourcing observed facts to the commit hash.

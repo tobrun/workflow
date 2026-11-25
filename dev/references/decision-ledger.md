@@ -104,7 +104,7 @@ The order is the point:
    Analysis that reads recorded conclusions before forming its own inherits them instead of testing them; a fresh pass that collides with a recorded decision is signal, not waste.
    When wiring a new consumer, sequence it so the ledger's first mention is its first use - earlier phases never name it, and never carry a "don't read it yet" guard, which only advertises the file where it must stay out of scope.
 2. **Reconcile.**
-   Grep the ledger sections for the touched areas and classify every finding that collides with an entry:
+   Search the ledger sections for the touched areas and classify every finding that collides with an entry:
    - `still-holds` - a `⊘` or accepted `⚠` covers the finding and its reopen condition isn't met.
      Suppress the finding but report the check ("D-rate-limit-login still holds - failed logins ~20/day").
      A silent suppression is indistinguishable from never having checked.

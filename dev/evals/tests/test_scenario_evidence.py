@@ -167,3 +167,27 @@ class ScenarioEvidenceTest(unittest.TestCase):
         # Actual runner-generated parameter titles can differ from source literals.
         (self.plan / 'implementation-notes.md').write_text('## Change set 1\n- Tests added: tests.py::human summary\n')
         self.assertEqual(self.check().returncode, 0)
+
+
+    def test_a_nested_numbered_list_does_not_start_a_change_set(self):
+        (self.plan / 'spec.md').write_text('# Coupon\n\n## Change plan\n\n1. Double price\n'
+                                         '   a. app.py - total\n      1. nested step\n      2. another\n'
+                                         '   tests: ' + self.scenario + '\n')
+        self.assertEqual(self.capture().returncode, 0)
+        result = self.check()
+        self.assertEqual(result.returncode, 0, result.stdout)
+
+    def test_all_tests_none_does_not_claim_runner_evidence(self):
+        (self.plan / 'spec.md').write_text('# Coupon\n\n## Change plan\n\n1. Docs\n'
+                                         '   a. README.md - text\n   tests: none - docs only\n')
+        result = self.check()
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertNotIn('runner evidence verified', result.stdout)
+        self.assertIn('no scenarios owed', result.stdout)
+
+    def test_an_untagged_scenario_is_reported_as_untagged(self):
+        (self.plan / 'spec.md').write_text('# Coupon\n\n## Change plan\n\n1. Double price\n'
+                                         '   a. app.py - total\n   tests: price 3 -> total 6\n')
+        result = self.check()
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('no layer tag', result.stdout)

@@ -21,8 +21,10 @@ from pathlib import Path
 
 FIELDS = {"name", "description", "license", "compatibility", "metadata", "allowed-tools"}
 NAME = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
-LINK = re.compile(r"\]\(([^)\s#]+)(?:#[^)\s]*)?\)")
-SKILL_ROOT = re.compile(r"\{([a-z]+)-skill-root\}(/[^\s`'\")\]]*)?")
+# Fenced blocks and inline code are matched first so a link-shaped example is not checked.
+LINK = re.compile(r"(?P<code>```.*?```|~~~.*?~~~|`[^`\n]+`)|\]\((?P<target>[^)\s#]+)(?:#[^)\s]*)?(?:\s+\"[^\"]*\")?\)", re.DOTALL)
+SCHEME = re.compile(r"^[a-z][a-z0-9+.-]*:|^/|^\{", re.IGNORECASE)
+SKILL_ROOT = re.compile(r"\{([a-z0-9]+(?:-[a-z0-9]+)*)-skill-root\}(/[^\s`'\")\]]*)?")
 
 
 def frontmatter(text: str) -> tuple[dict[str, object], int] | None:
@@ -75,7 +77,8 @@ def check_skill(tree: Path, folder: Path, problems: list[str]) -> None:
     while queue:
         path = queue.pop()
         content = path.read_text(encoding="utf-8", errors="replace")
-        targets = [path.parent / m.group(1) for m in LINK.finditer(content) if not re.match(r"^[a-z]+:|^/|^\{", m.group(1))]
+        targets = [path.parent / m.group("target") for m in LINK.finditer(content)
+                   if m.group("target") and not SCHEME.match(m.group("target"))]
         for match in SKILL_ROOT.finditer(content):
             owner, rest = match.group(1), (match.group(2) or "").lstrip("/")
             if not (tree / owner / "SKILL.md").is_file():
@@ -92,8 +95,12 @@ def check_skill(tree: Path, folder: Path, problems: list[str]) -> None:
                 problems.append(f"{label} does not exist")
             elif resolved.is_relative_to(folder.resolve()) and resolved not in reached:
                 reached.add(resolved)
-                if resolved.is_file() and resolved.suffix == ".md":
-                    queue.append(resolved)
+                inside = sorted(p for p in resolved.rglob("*") if p.is_file()) if resolved.is_dir() else [resolved]
+                for found in inside:
+                    if found.resolve() not in reached:
+                        reached.add(found.resolve())
+                    if found.suffix == ".md":
+                        queue.append(found)
     for path in sorted(folder.rglob("*")):
         if path.is_file() and path.resolve() not in reached and "agents" not in path.relative_to(folder).parts:
             problems.append(f"{where}/{path.relative_to(folder)} is bundled but nothing links to it from SKILL.md")

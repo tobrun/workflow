@@ -31,7 +31,8 @@ MANIFESTS = (
     "pom.xml", "build.gradle", "build.gradle.kts", "Gemfile", "composer.json", "mix.exs",
     "deno.json", "pubspec.yaml", "Package.swift", "CMakeLists.txt", "BUILD.bazel",
 )
-DOC_SUFFIXES = {".md", ".mdx", ".rst", ".txt", ".adoc"}
+DOC_SUFFIXES = {".md", ".mdx", ".rst", ".adoc"}
+PROSE_SUFFIXES = {"", ".md", ".txt", ".rst"}
 DOC_NAMES = {"LICENSE", "LICENCE", "NOTICE", "AUTHORS", "CODEOWNERS", "CHANGELOG"}
 DOC_DIRS = {"docs", "doc", ".dev"}
 # A change under one of these reaches every package, wherever it sits.
@@ -48,10 +49,14 @@ CONFIG_SUFFIXES = {".json", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".conf", "
 
 
 def git(*args: str) -> str:
-    result = subprocess.run(["git", *args], check=False, capture_output=True, text=True)
+    result = subprocess.run(["git", "-c", "core.quotePath=false", *args], check=False, capture_output=True)
     if result.returncode != 0:
-        raise RuntimeError(result.stderr.strip() or f"git {' '.join(args)} failed")
-    return result.stdout
+        raise RuntimeError(result.stderr.decode("utf-8", "replace").strip() or f"git {' '.join(args)} failed")
+    return result.stdout.decode("utf-8", "replace")
+
+
+def top_level() -> str:
+    return git("rev-parse", "--show-toplevel").strip()
 
 
 def default_base() -> str:
@@ -70,8 +75,9 @@ def default_base() -> str:
 
 
 def changed_files(base: str) -> list[str]:
-    tracked = git("diff", "--name-only", base).splitlines()
-    untracked = git("ls-files", "--others", "--exclude-standard").splitlines()
+    top = top_level()
+    tracked = git("-C", top, "diff", "--name-only", "--no-renames", "-z", base).split("\0")
+    untracked = git("-C", top, "ls-files", "--others", "--exclude-standard", "--full-name", "-z").split("\0")
     return sorted({path for path in tracked + untracked if path})
 
 
@@ -79,7 +85,11 @@ def is_doc(path: str) -> bool:
     pure = PurePosixPath(path)
     if pure.parts and pure.parts[0] in DOC_DIRS:
         return True
-    return pure.suffix.lower() in DOC_SUFFIXES or pure.stem.upper() in DOC_NAMES
+    if pure.name in MANIFESTS:
+        return False
+    if pure.suffix.lower() in DOC_SUFFIXES:
+        return True
+    return pure.stem in DOC_NAMES and pure.suffix.lower() in PROSE_SUFFIXES
 
 
 def global_reason(path: str) -> str | None:
@@ -118,7 +128,9 @@ def owning_package(path: str, manifest_dirs: set[str]) -> str:
 
 def tracked_manifest_dirs() -> set[str]:
     dirs = set()
-    for path in git("ls-files").splitlines():
+    for path in git("-C", top_level(), "ls-files", "--full-name", "-z").split("\0"):
+        if not path:
+            continue
         pure = PurePosixPath(path)
         if pure.name in MANIFESTS:
             dirs.add(str(pure.parent))

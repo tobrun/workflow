@@ -18,17 +18,16 @@ a fresh spawn has none of the original context and its output must not be used.
 2. **Pi transport:** when `PI_CODING_AGENT=true` and `pi` is available, write
    one prompt file per agent and run
    [scripts/run-pi-agents.sh](../scripts/run-pi-agents.sh). The runner launches
-   one isolated `pi --print` process per prompt concurrently and inherits the
-   current provider, model, and reasoning level.
+   one isolated `pi --print` process per prompt, at most `--jobs` at a time
+   (default 4), and inherits the current provider, model, and reasoning level.
 3. **Unavailable:** if neither transport exists, stop. The orchestrator must
    not impersonate the panel or review the code itself.
 
 ## Native transport
 
-Use the host's plain subagent tool exactly as provided (the Agent tool on
-Claude Code, `spawn_agent` on Codex, the `task` tool on opencode). Launch independent agents with bounded concurrency; queue the rest of the batch and preserve the barrier before verifiers.
-Use opencode's default general subagent. Native subagents receive the prompt contracts below directly.
-Give each a fresh context with only its role, source paths, brief, and result contract; on Codex use `fork_turns="none"` so it does not inherit the orchestrator's conclusions.
+Use the host's native subagent or task-spawning tool exactly as provided. Launch independent agents with bounded concurrency; queue the rest of the batch and preserve the barrier before verifiers.
+Use the host's default general-purpose subagent type. Native subagents receive the prompt contracts below directly.
+Give each a fresh context with only its role, source paths, brief, and result contract; spawn it with no inherited conversation context, using the host's option for that if it has one, so it does not inherit the orchestrator's conclusions.
 
 Result delivery is file-based, because on some hosts subagents run in the
 background and their final message never reaches the orchestrator:
@@ -62,8 +61,13 @@ Use the shared scratch root. For each batch:
      {batch-root}/results
    ```
 
+   Pass `--timeout SECONDS` (default 900) or `--jobs N` to change the per-agent
+   deadline or concurrency; `PI_AGENT_TIMEOUT` and `PI_AGENT_JOBS` set the same.
+   The runner clears each agent's earlier results before starting it and stops
+   its children when interrupted.
 4. Read each `{safe-agent-name}.out` as that agent's final response. A matching
-   `.err` or missing/unparseable `.out` marks only that agent as failed.
+   `.failed` marker (non-zero exit or timeout), or a missing or unparseable
+   `.out`, marks only that agent as failed; the aggregator treats it as incomplete.
 5. Keep the scratch files until aggregation is complete so malformed output is
    auditable, then remove them.
 

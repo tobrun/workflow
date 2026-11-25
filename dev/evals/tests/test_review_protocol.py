@@ -112,3 +112,27 @@ class ReviewProtocolTest(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertFalse(report['complete'])
 
+
+    def test_a_code_fence_inside_a_detail_does_not_make_the_lens_unparseable(self):
+        payload = {'lens': 'simplify', 'verdict': 'CONCERNS', 'good': [], 'findings': [
+            {'severity': 'CONCERN', 'file': 'a.py', 'line': 1, 'title': 't',
+             'detail': 'use\n```py\nx=1\n```\nbad'}]}
+        (self.lenses / 'simplify.out').write_text('Done.\n```json\n' + json.dumps(payload, indent=2) + '\n```\n')
+        result = subprocess.run([sys.executable, str(AGGREGATE), 'plan', str(self.lenses)],
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn('unparseable', result.stderr)
+        self.assertEqual(len(json.loads(result.stdout)), 1)
+
+    def test_prose_around_bare_json_is_parsed_by_brace_span(self):
+        (self.lenses / 'security.out').write_text('Result: ' + json.dumps(self.lens()) + ' end')
+        result, report = self.aggregate()
+        self.assertTrue(report['complete'], report)
+
+    def test_a_failed_agent_marker_makes_its_lens_incomplete(self):
+        (self.lenses / 'security.out').write_text(json.dumps(self.lens()))
+        (self.lenses / 'security.failed').write_text('7\n')
+        result, report = self.aggregate()
+        self.assertEqual(result.returncode, 1)
+        self.assertFalse(report['complete'])
+        self.assertEqual(report['failedLenses'], ['security'])

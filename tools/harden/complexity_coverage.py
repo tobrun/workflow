@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Coverage-weighted complexity for the functions the local branch touched.
 
-    tools/harden/complexity_coverage.py RADON_JSON COVERAGE_JSON [--threshold 6]
+    tools/harden/complexity_coverage.py RADON_JSON COVERAGE_JSON [--threshold 10]
 
 RADON_JSON is `radon cc -j <files>`; COVERAGE_JSON is `coverage json` from a run of the suite. A function's score
 is its cyclomatic complexity squared scaled down by its line coverage p: c*c*(1-p) + c*p, so a fully covered
@@ -10,6 +10,7 @@ as `file:line function score (complexity N, coverage P%)` and exits 1 when any i
 
 Per D-complexity-threshold in docs/decisions.md the line is 10 and applies to functions the branch added (their
 name did not exist in the file at the merge base); `--touched` widens it to every function with an added line.
+Added lines come from base..HEAD, so uncommitted edits are not included. Exits 2 when there is no merge base.
 """
 
 import argparse
@@ -20,21 +21,17 @@ import subprocess
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from added_lines import added_lines  # noqa: E402
+from added_lines import added_lines, merge_base  # noqa: E402
 
 
 def base_names(path: str) -> set[str]:
     """Function and method names the file already defined at the merge base; empty for a new file."""
-    default = subprocess.run(["git", "symbolic-ref", "--short", "refs/remotes/origin/HEAD"], capture_output=True,
-                             text=True, check=False).stdout.strip() or "origin/main"
-    base = subprocess.run(["git", "merge-base", "HEAD", default], capture_output=True, text=True,
-                          check=False).stdout.strip()
-    shown = subprocess.run(["git", "show", f"{base}:{path}"], capture_output=True, text=True, check=False)
+    shown = subprocess.run(["git", "show", f"{merge_base()}:{path}"], capture_output=True, text=True, check=False)
     return set(re.findall(r"^\s*def (\w+)", shown.stdout, re.MULTILINE)) if shown.returncode == 0 else set()
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("radon")
     parser.add_argument("coverage")
     parser.add_argument("--threshold", type=float, default=10)
@@ -44,14 +41,25 @@ def main() -> int:
                         "such as pkg/ when radon and coverage ran inside pkg/")
     args = parser.parse_args()
     with open(args.radon, encoding="utf-8") as handle:
-        radon = {args.prefix + path: blocks for path, blocks in json.load(handle).items()}
+        radon = {}
+        for path, blocks in json.load(handle).items():
+            if not isinstance(blocks, list):
+                print(f"warning: radon could not analyze {path}: {blocks}", file=sys.stderr)
+                continue
+            radon[args.prefix + path] = blocks
     with open(args.coverage, encoding="utf-8") as handle:
         files = json.load(handle)["files"]
     covered = {args.prefix + path: data for path, data in files.items()}
+    if radon and not any(path in covered for path in radon):
+        print(f"warning: no radon path matches a coverage path (--prefix {args.prefix!r})", file=sys.stderr)
     added = added_lines()
     offenders = 0
     for path, blocks in sorted(radon.items()):
-        cov = covered.get(path) or {}
+        cov = covered.get(path)
+        if cov is None:
+            print(f"warning: no coverage entry for {path}; treating it as 0% covered (check --prefix)",
+                  file=sys.stderr)
+            cov = {}
         executed, missing = set(cov.get("executed_lines", [])), set(cov.get("missing_lines", []))
         existing = base_names(path)
         stack = list(blocks)

@@ -25,7 +25,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 HEADING = re.compile(r"^##\s+(.*?)\s*$")
-CHANGE_SET = re.compile(r"^\s*(\d+)\.\s+\S")
+CHANGE_SET = re.compile(r"^(\d+)\.\s+\S")  # unindented; nested numbered lists are not change sets
 TESTS = re.compile(r"^\s*tests:\s*(.*)$", re.IGNORECASE)
 # The scenario tags lint-spec.py accepts; a receipt's layer must be one of them.
 TAGS = ("unit", "component", "integration", "contract", "property", "fuzz", "e2e", "smoke", "benchmark")
@@ -221,7 +221,9 @@ def check_evidence(plan: Path, repo_root: Path, problem) -> None:
                 raise ValueError(f"unknown or duplicate scenario id {scenario_id!r}")
             seen.add(scenario_id)
             layer, text = expected[scenario_id]
-            if not layer or mapping.get("scenario") != text:
+            if not layer:
+                raise ValueError(f"{scenario_id}: scenario has no layer tag; tag it with one of {', '.join(TAGS)}")
+            if mapping.get("scenario") != text:
                 raise ValueError(f"{scenario_id}: scenario text or layer changed")
             receipt_path = plan / mapping["receipt"]
             receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
@@ -322,7 +324,10 @@ def main(argv: list[str]) -> int:
     if problems:
         print(f"\n{len(problems)} problem(s); the spec is not fully implemented.")
         return 1
-    proof = "inventory only; execution and layers NOT verified" if inventory_only else "runner evidence verified; assertion semantics require review"
+    owed = any(counts.values())
+    proof = ("inventory only; execution and layers NOT verified" if inventory_only
+             else "runner evidence verified; assertion semantics require review" if owed
+             else "no scenarios owed (every change set is tests: none)")
     print(f"{plan}: clean - {len(counts)} change sets, {proof}.")
     return 0
 

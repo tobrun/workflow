@@ -112,7 +112,7 @@ Title: the change in imperative mood, under 70 characters.
 
 ## Create or update
 
-Before creating or updating, run `pr-evidence.py summarize .dev/{plan-name}/pr.md`, then loop `pr-evidence.py check --require-current --spec .dev/{plan-name}/spec.md` until it passes.
+Before creating or updating, run `pr-evidence.py summarize .dev/{plan-name}/pr.md`, then loop `pr-evidence.py check --require-current --kind {frontend|non-frontend} --spec .dev/{plan-name}/spec.md` until it passes; `--kind` is the e2e report's `kind`, and a frontend kind requires an http(s) image, a non-frontend kind a labeled pair.
 When the repository has `.verify/ci-evidence.py`, run its `collect` locally against the base as a preflight (`--out /tmp/{project-slug}/ci-evidence`) and fix what it finds before pushing; its local block never goes into the body.
 
 - No PR for the branch: `gh pr create --title ... --body-file .dev/{plan-name}/pr.md` (`--draft` on BLOCK or a deferred check), base = the authorized intended base, defaulting to the default branch only when none was specified.

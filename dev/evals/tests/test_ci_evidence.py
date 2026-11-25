@@ -273,6 +273,60 @@ class ClaimsTest(unittest.TestCase):
         self.assertIn("tests.test_pricing::test_half", predicate["passedTests"])
 
 
+class ProofsTest(unittest.TestCase):
+    """The proof gate's report joins the block; the statements it lists are what a person reviews."""
+
+    REPORT = {
+        "project": "formal", "toolchain": "leanprover/lean4:v4.36.0", "result": "clean",
+        "theorems": [{"name": "Tile.Spec.roundtrip", "reading": "Decoding an encoded tile gives it back.",
+                      "statement": "def roundtrip : Prop := ∀ t, decode (encode t) = some t", "status": "proved", "axioms": ["propext"]}],
+        "integrity": [], "unfinished": [], "errors": [],
+        "statements": {"added": [{"name": "Tile.Spec.roundtrip", "reading": "Decoding an encoded tile gives it back.",
+                                  "statement": "def roundtrip : Prop := ∀ t, decode (encode t) = some t"}], "changed": [], "removed": []},
+    }
+
+    def setUp(self) -> None:
+        self.repo = Repo(self)
+        self.repo.write("src/cart/pricing.py", FEATURE_CODE)
+        self.repo.write("tests/test_pricing.py", FEATURE_TESTS)
+        self.repo.commit("feature")
+
+    def collect(self, report: dict | None, body: str | None = None) -> tuple[dict, str]:
+        if report is not None:
+            self.repo.write("proofs.json", json.dumps(report))
+        _, evidence, block = self.repo.collect("--junit", self.repo.junit(), "--proofs", "proofs.json", body=body)
+        return evidence, block
+
+    def test_proved_statements_are_a_row_and_the_new_ones_are_listed_for_review(self) -> None:
+        _, block = self.collect(self.REPORT)
+        self.assertIn("| Proofs | ✅ | 1 of 1 Lean statements proved · `leanprover/lean4:v4.36.0` |", block)
+        self.assertIn("**Statements to review.**", block)
+        self.assertIn("| ➕ added | `def roundtrip : Prop := ∀ t, decode (encode t) = some t` | Decoding an encoded tile gives it back. |", block)
+
+    def test_an_integrity_violation_fails_the_verdict(self) -> None:
+        report = {**self.REPORT, "result": "integrity",
+                  "integrity": [{"rule": "native_decide", "file": "Tile/Theorems.lean", "line": 9, "detail": "trusts the compiler"}]}
+        evidence, block = self.collect(report)
+        self.assertEqual(evidence["verdict"], "failed")
+        self.assertIn("| Proofs | ❌ |", block)
+        self.assertIn("- native_decide: `Tile/Theorems.lean`:9 trusts the compiler", block)
+
+    def test_an_unfinished_proof_claimed_clean_is_a_mismatch(self) -> None:
+        report = {**self.REPORT, "result": "unfinished",
+                  "theorems": [{**self.REPORT["theorems"][0], "status": "unfinished"}],
+                  "unfinished": [{"rule": "sorry", "file": "Spec.lean", "line": 0, "detail": "rests on sorry"}]}
+        body = BODY.replace("| coverage | ran | 0 | 0 | 0 |", "| coverage | ran | 0 | 0 | 0 |\n| formal | ran | 0 | 0 | 0 |")
+        evidence, block = self.collect(report, body)
+        self.assertNotEqual(evidence["verdict"], "verified")
+        self.assertIn("formal claims a clean run, but the proof gate reports unfinished", evidence["mismatches"])
+        self.assertIn("| Proofs | ⚠️ | 0 of 1 Lean statements proved", block)
+
+    def test_a_missing_report_is_a_gate_that_did_not_run(self) -> None:
+        evidence, block = self.collect(None)
+        self.assertEqual(evidence["proofs"]["result"], "not run")
+        self.assertIn("the gate did not run", block)
+
+
 class RobustnessTest(unittest.TestCase):
     def test_no_tests_run_is_never_verified(self) -> None:
         repo = Repo(self)

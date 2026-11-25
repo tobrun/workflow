@@ -20,7 +20,35 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # When the repository has a formal/ Lean project, uncomment this job, the evidence job's
+  # `needs: proofs` and download step, and add `--proofs reports/proofs/proofs.json` to its
+  # collect command. Elaborating Lean runs the pull request's code, so this job gets a
+  # read-only token and no credentials, and it reports rather than fails.
+  # proofs:
+  #   runs-on: ubuntu-latest
+  #   permissions:
+  #     contents: read
+  #   env:
+  #     BASE_REF: ${{ github.base_ref }}
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #       with:
+  #         ref: ${{ github.event.pull_request.head.sha }}
+  #         fetch-depth: 0
+  #         persist-credentials: false
+  #     - name: Install elan; lake reads the pinned formal/lean-toolchain
+  #       run: |
+  #         curl -sSfL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh | sh -s -- -y --default-toolchain none
+  #         echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+  #     - name: Check the proofs and list the statements this PR changes
+  #       run: python3 .verify/proof-gate.py check --project formal --base "origin/$BASE_REF" --recheck --json proofs.json || true
+  #     - uses: actions/upload-artifact@v4
+  #       with:
+  #         name: proofs
+  #         path: proofs.json
+
   evidence:
+    # needs: proofs
     runs-on: ubuntu-latest
     env:
       HEAD_SHA: ${{ github.event.pull_request.head.sha }}
@@ -39,6 +67,11 @@ jobs:
         run: python3 .verify/ci-evidence.py pending --sha "$HEAD_SHA" --pr "$PR_NUMBER" || true
 
       # <<fill: set up the toolchain and install dependencies exactly as the repository's CI does>>
+
+      # - uses: actions/download-artifact@v4
+      #   with:
+      #     name: proofs
+      #     path: reports/proofs
 
       - name: Run the tests with JUnit and coverage
         run: <<fill: the test command, writing JUnit XML under reports/junit/ and coverage to reports/coverage.xml or reports/lcov.info>>

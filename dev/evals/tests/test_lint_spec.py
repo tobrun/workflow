@@ -177,6 +177,41 @@ class LintSpecVerificationTest(unittest.TestCase):
         self.assertIn("clean", self.lint(verification("unit", "formal", "property", how={"formal": "stateful [property] test of the order states"}),
                                          "[unit] a -> b; [property] any command sequence -> no illegal state"))
 
+    LEAN = {"formal": "tile math as a Lean model with proofs (D-tile-model)"}
+    THEOREMS = ("### Theorems\n\n- roundtrip: decoding an encoded tile gives the tile back\n  ```lean\n"
+                "  def roundtrip : Prop := ∀ t : Tile, decode (encode t) = some t\n  ```\n"
+                "  witness: `example : decode (encode ⟨3, 1, 2⟩) = some ⟨3, 1, 2⟩ := by decide`\n\n")
+    DIFFERENTIAL = "[unit] a -> b; [property] any tile -> encode matches the Lean model's oracle"
+
+    def test_formal_may_name_lean_verus_or_kani(self) -> None:
+        for how in ("Verus proofs of the ring buffer", "Kani harnesses over the decoder"):
+            self.assertNotIn("names no mechanism", self.lint(verification("unit", "formal", how={"formal": how})))
+
+    def test_a_lean_mechanism_with_approvable_theorems_is_clean(self) -> None:
+        out = self.lint(verification("unit", "formal", "property", how=self.LEAN), self.DIFFERENTIAL, self.THEOREMS)
+        self.assertIn("clean", out)
+
+    def test_a_lean_mechanism_needs_a_theorems_block(self) -> None:
+        out = self.lint(verification("unit", "formal", "property", how=self.LEAN), self.DIFFERENTIAL)
+        self.assertIn("formal: yes names Lean but the scope section has no '### Theorems' block", out)
+
+    def test_a_lean_mechanism_needs_a_differential_test(self) -> None:
+        out = self.lint(verification("unit", "formal", "property", how=self.LEAN), "[unit] a -> b; [property] any tile -> round-trips",
+                        self.THEOREMS)
+        self.assertIn("no [property] scenario checks the code against the model", out)
+
+    def test_each_theorem_has_a_reading_a_statement_and_a_witness(self) -> None:
+        block = self.THEOREMS.replace("roundtrip: decoding an encoded tile gives the tile back", "roundtrip:")
+        block = block.replace("def roundtrip", "def round_trip").replace("  witness: `example", "  `example")
+        out = self.lint(verification("unit", "formal", "property", how=self.LEAN), self.DIFFERENTIAL, block)
+        self.assertIn("theorem roundtrip has no plain-English reading", out)
+        self.assertIn("theorem roundtrip needs a ```lean fence stating 'def roundtrip : Prop := ...'", out)
+        self.assertIn("theorem roundtrip has no 'witness:' line", out)
+
+    def test_a_theorems_block_needs_a_lean_mechanism(self) -> None:
+        out = self.lint(verification("unit"), extra=self.THEOREMS)
+        self.assertIn("a '### Theorems' block needs formal: yes naming its Lean model", out)
+
     def test_a_threat_model_is_required_and_needs_a_penetration_test(self) -> None:
         out = self.lint(verification("unit", "threat-model"))
         self.assertIn("threat-model: yes needs a '### Threat model' block", out)

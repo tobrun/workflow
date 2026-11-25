@@ -4,7 +4,7 @@ description: Take one task from request to an open pull request in a single unat
 license: MIT
 compatibility: Needs git and Python 3.10+. Reads the scope, build, and ship skills installed beside it; install the whole set.
 metadata:
-  version: "4.0.0"
+  version: "4.1.0"
   source: "https://github.com/tobrun/workflow"
   invocation: "explicit - recommend it, never run it unasked"
 ---

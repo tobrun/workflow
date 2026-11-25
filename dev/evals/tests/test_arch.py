@@ -313,6 +313,12 @@ class ValidateTest(unittest.TestCase):
         repo.write("tests/test_idempotent.py", "")
         self.assertEqual(repo.arch("validate").returncode, 0)
 
+    def test_a_decision_may_be_enforced_by_an_existing_proof_file(self) -> None:
+        repo = self.repo(decisions=PY_DECISIONS.replace("enforced by: providers", "enforced by: providers, proof:formal/Tile/Spec.lean"))
+        self.assertIn("proof:formal/Tile/Spec.lean, but that proof file does not exist", repo.arch("validate").stdout)
+        repo.write("formal/Tile/Spec.lean", "")
+        self.assertEqual(repo.arch("validate").returncode, 0)
+
     def test_privacy_rules_go_and_rust_enforce_in_code_are_refused(self) -> None:
         repo = Repo(self, NATIVE_TOML.replace('path = "crates/service"\n', 'path = "crates/service"\npublic = ["crates/service/src/lib.rs"]\n'),
                     NATIVE_DECISIONS, NATIVE_FILES)

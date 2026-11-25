@@ -15,6 +15,7 @@ Checks the diff against `spec.md` - its scope, change plan, and decisions - not 
 - Is every `[e2e]`-tagged scenario backed by a passing entry in `{plan-name}-e2e.json`? New user-facing behavior with no matching e2e scenario, or a scenario whose `status` is `fail`, is a BLOCK.
 - Check `implementation-notes.md` for logged Deviations: does the conservative choice still satisfy the spec's scope and decisions, or does it need a call-out to the reviewer? An unresolved deviation that changes user-facing behavior from what the spec promised is a CONCERN at minimum.
 - If a change set named a README or user-facing doc file, is that change present in the diff? A promised doc update that never happened is a CONCERN.
+- When the spec has a `### Theorems` block, a fresh-context agent given only `Spec.lean`, never the spec, writes what each statement says in plain English; a reading that does not match the spec's `reading:`, a hypothesis that makes a statement vacuous, or a statement weaker than its reading is a BLOCK that goes to the user, since no agent may change a statement.
 - Does the diff do significant work no change set describes? Scope creep is a CONCERN, not a crime; name it so the reviewer can decide.
 
 ## correctness

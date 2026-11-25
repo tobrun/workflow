@@ -15,7 +15,7 @@ That table is the agent's account. In the PR, CI's `ci-evidence.py` re-measures 
 | `contract` | provider and consumer agree on a boundary's shape and meaning | an API, message, schema, or third-party integration changes | build: `[contract]` scenarios | build, ship |
 | `property` | invariants hold for generated inputs: round-trips, ordering, idempotence, totals | logic with a statable invariant | build: `[property]` scenarios | build; ship with a larger budget |
 | `fuzz` | no crash, hang, or unbounded resource use on malformed input | parsers, decoders, untrusted input, native or unsafe code | build: `[fuzz]` harnesses | ship, time-boxed |
-| `formal` | a model of the design reaches no bad state | concurrency, a distributed protocol, a state machine, lock or message ordering | scope decides the model; build writes it | ship model-checks it |
+| `formal` | a model of the design reaches no bad state, or a proved statement holds for every input | concurrency, a distributed protocol, a state machine, lock or message ordering; a deterministic kernel whose bug would be costly or silent | scope decides the model and approves any statements; build writes it | ship model-checks it or runs the proof gate |
 | `static-analysis` | types, security rules, secrets, vulnerable dependencies, dead code, duplication, complexity | any code change | the repository's config | ship |
 | `lint` | style and format, plus the tests of the repository's own rules (ast-grep or Semgrep fixtures, ESLint RuleTester, `arch.py redteam`) | any change | the repository's config | ship |
 | `coverage` | the changed lines are executed by tests | any code change | - | ship |
@@ -49,7 +49,8 @@ Under `## Scope`, one line per kind, every kind exactly once:
 - threat-model: yes - the coupon endpoint takes user input; see Threat model
 ```
 
-`formal: yes` names its mechanism, decided as a `D-` decision: a TLA+ model checked with TLC or an Alloy model when the design's correctness lives in interleavings or protocol steps, otherwise a stateful property-based test that drives the state machine with generated command sequences.
+`formal: yes` names its mechanism, decided as a `D-` decision: a TLA+ model checked with TLC or an Alloy model when the design's correctness lives in interleavings or protocol steps; a Lean reference model with proved statements and a differential `[property]` test against it when a deterministic kernel has a clean spec; Verus or Kani when that kernel is Rust; otherwise a stateful property-based test that drives the state machine with generated command sequences.
+A Lean mechanism needs a `### Theorems` block: per statement, `- {name}: {plain-English reading}`, a fenced `lean` block stating `def {name} : Prop := ...`, and a `witness:` line with a concrete `example` or `#guard` showing it is not vacuous, per [proofs.md](proofs.md).
 `threat-model: yes` needs a `### Threat model` block: per trust boundary, each STRIDE threat that applies as `- {boundary}: {S|T|R|I|D|E} {threat} -> {mitigation} - tests: {scenario tag and text}`.
 
 ## Tools
@@ -66,7 +67,7 @@ Use the repository's own tool first, then the ecosystem's established one, per [
 | `performance` | k6, locust, hyperfine, Lighthouse for pages | | | | | |
 | `ui-ux` | axe-core or pa11y through Playwright, Playwright screenshot comparison | | | | | |
 | `penetration` | OWASP ZAP baseline or API scan, nuclei, plus an agent's exploitation attempt per threat | | | | | |
-| `formal` | TLA+ with TLC, Alloy, or the stateful mode of the property tool | | | | | |
+| `formal` | TLA+ with TLC, Alloy, a Lean 4 model checked by `proof-gate.py`, or the stateful mode of the property tool | | | | Verus, Kani | |
 
 ## Gates
 
@@ -75,6 +76,7 @@ What happens after the third round depends on the kind:
 
 - **Must pass**: `unit`, `functional`, `component`, `contract`, `acceptance`, `regression`, `smoke`, `static-analysis`, and `lint`. A failure left after three rounds is a human call, and the PR stays a draft.
 - **Fix and report**: `coverage` under 80% of changed lines, a `benchmark` or `performance` regression over 10% against the base, any `fuzz` crash or hang, a `property` or `formal` counterexample, any medium-or-higher `penetration` finding, a serious or critical `ui-ux` accessibility violation, and `usability` findings. What survives three rounds is listed under Open calls; it never blocks the ship and never by itself makes the PR a draft.
+- **Integrity**: a `formal` proof that cheats - a banned construct, a foreign axiom, a proof of another statement, or a statement that differs from the approved one, per [proofs.md](proofs.md) - is must-pass, though an unfinished proof is fix-and-report.
 - **Reported**: `mutation`, per [../source/ship/references/verify.md](../source/ship/references/verify.md).
 - `threat-model` is checked, not run: a mitigation with no passing test is a `penetration` finding.
 
@@ -86,3 +88,4 @@ A found secret stops the run at once, whatever the kind.
 - Penetration testing targets only the build this run started on localhost, never a shared, staging, or production host, and never a third party's service.
 - Benchmarks and performance runs compare base and branch on the same machine in the same run, with enough repetitions for the tool's own statistics (benchstat, criterion, JMH) to call a difference; a single timing is noise, not a finding.
 - A fuzz or property run's clean result is a time-boxed observation, not a proof; report the budget it ran with.
+- A proof certifies the model against its statements, not the shipping code and not that the statements say the right thing; the differential test ties the code to the model, and a person's reading of the statements is the rest.

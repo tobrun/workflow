@@ -160,7 +160,7 @@ def read_change_plan(body: list[tuple[int, str]]) -> list[dict]:
 
 def read_scope(body: list[tuple[int, str]]) -> dict:
     """The scope section split into prose, non-goals, validation commands, and the flow sketch."""
-    prose, non_goals, validation, flow, verification, threats = [], [], [], [], [], []
+    prose, non_goals, validation, flow, verification, threats, theorems = [], [], [], [], [], [], []
     block, fence = None, False
     for _, line in body:
         stripped = line.strip()
@@ -175,8 +175,12 @@ def read_scope(body: list[tuple[int, str]]) -> dict:
             continue
         if stripped.startswith("### "):
             block = stripped[4:].strip().lower()
-            if block in ("validation", "flow", "verification", "threat model"):
+            if block in ("validation", "flow", "verification", "threat model", "theorems"):
                 continue
+        if block == "theorems":
+            if stripped:
+                theorems.append((0, line))
+            continue
         if block == "validation":
             if stripped:
                 command = stripped.lstrip("-* ").strip()
@@ -203,7 +207,7 @@ def read_scope(body: list[tuple[int, str]]) -> dict:
             continue
         prose.append(line)
     return {"prose": prose, "non_goals": non_goals, "validation": validation, "flow": "\n".join(flow).strip(),
-            "verification": verification, "threats": threats}
+            "verification": verification, "threats": threats, "theorems": lint.read_theorems(theorems)}
 
 
 def read_header(lines: list[str]) -> dict:
@@ -477,8 +481,12 @@ def verification_html(scope: dict) -> str:
     count = sum(1 for v in scope["verification"] if v["yes"])
     threats = "".join(f"<li>{inline(t)}</li>" for t in scope["threats"])
     threat_html = f'<h4>Threat model</h4><ul class="threats">{threats}</ul>' if threats else ""
+    theorems = "".join(f'<li><b>{esc(t["name"])}</b>: {inline(t["reading"])}<pre>{esc(t["statement"])}</pre>'
+                       f'<span class="muted">witness: {inline(t["witness"])}</span></li>' for t in scope["theorems"])
+    theorem_html = (f'<h4>Theorems to approve</h4><p class="muted">Approving the spec approves these statements; build copies them '
+                    f'verbatim into Spec.lean and no agent may change them.</p><ul class="threats">{theorems}</ul>') if theorems else ""
     return (f'<p class="muted">{count} of {len(lint.KINDS)} kinds apply; ship runs each one and skips the rest with these reasons.</p>'
-            f'<div class="vgrid">{"".join(tiles)}</div>{threat_html}')
+            f'<div class="vgrid">{"".join(tiles)}</div>{threat_html}{theorem_html}')
 
 
 def waves_html(data: dict) -> str:

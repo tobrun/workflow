@@ -4,7 +4,7 @@
 Usage:
   ci-evidence.py collect --base REF --out DIR [--head REF] [--junit FILE ...] [--coverage FILE ...]
                          [--body PR_BODY.md] [--revert-cmd CMD] [--threshold 80] [--run-url URL]
-                         [--workflow PATH] [--strict]
+                         [--workflow PATH] [--proofs FILE] [--strict]
   ci-evidence.py publish --block DIR/block.md (--pr N | --body-file FILE)
   ci-evidence.py pending --sha SHA (--pr N | --body-file FILE)
   ci-evidence.py splice NEW_BODY --from CURRENT_BODY
@@ -16,7 +16,9 @@ predicate for actions/attest. It runs a test-diff guard (removed assertions, new
 skips or focused tests, regenerated snapshots, lowered thresholds), a fails-on-revert
 check (the PR's new test cases run against the base implementation, where they
 should fail), changed-line coverage, the acceptance criteria the PR body maps to
-test cases, and a comparison of the body's claims with all of that. It reports;
+test cases, the report proof-gate.py wrote when --proofs names one (whether every
+Lean statement is proved, and which statements changed since the base, for a person
+to review), and a comparison of the body's claims with all of that. It reports;
 it fails only with --strict.
 
 `publish` replaces whatever sits between the DEV-EVIDENCE markers of the PR body
@@ -421,6 +423,19 @@ def claims(body: str) -> dict[str, dict]:
 # ---------------------------------------------------------------------------
 
 
+def read_proofs(path: str | None) -> dict | None:
+    """proof-gate.py's JSON report; a named file that is missing or unreadable is a gate that did not run."""
+    if not path:
+        return None
+    try:
+        report = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        return {"result": "not run", "theorems": [], "integrity": [], "unfinished": [],
+                "errors": [f"no proof report at {path}: {error}"], "statements": {}}
+    report.setdefault("statements", {})
+    return report
+
+
 def expand(patterns: list[str], missing: list[str]) -> list[Path]:
     """Files the patterns match; a pattern that matches nothing is noted, so a crashed test step still gets a block."""
     found = []
@@ -468,8 +483,14 @@ def collect(args: argparse.Namespace) -> int:
     for criterion in criteria:
         if criterion["status"] == "not found":
             mismatches.append(f"{criterion['id']} names `{criterion['case']}`, which no CI report contains")
+    proofs = read_proofs(args.proofs)
+    claim = claimed.get("formal", {})
+    if proofs and proofs["result"] != "clean" and claim.get("result") == "ran" and claim.get("surviving") in ("0", ""):
+        mismatches.append(f"formal claims a clean run, but the proof gate reports {proofs['result']}")
     weak = bool(guarded) or bool(reverted.new_passing) or (covered.percent is not None and covered.percent < args.threshold)
+    weak = weak or bool(proofs and proofs["result"] in ("unfinished", "not run"))
     failed = bool(counts["failed"]) or any(c["status"] == "failed" for c in criteria) or bool(args.junit and not junit_files)
+    failed = failed or bool(proofs and proofs["result"] == "integrity")
     verdict = "failed" if failed else "attention" if (weak or mismatches) else "verified"
     evidence = {
         "head": head, "base": base, "generated": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
@@ -481,6 +502,7 @@ def collect(args: argparse.Namespace) -> int:
         "coverage": {"measured": covered.measured, "percent": covered.percent, "covered": covered.covered,
                      "total": covered.total, "uncovered": covered.uncovered, "unmeasured": covered.unmeasured},
         "acceptance": criteria, "mismatches": mismatches, "junit_reports": len(junit_files), "missing": missing,
+        "proofs": proofs,
     }
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
@@ -559,6 +581,14 @@ def render(evidence: dict) -> str:
         passing = sum(1 for c in criteria if c["status"] == "passed")
         state = "fail" if any(c["status"] == "failed" for c in criteria) else "ok" if passing == len(criteria) else "warn"
         rows.append(("Acceptance criteria", state, f"{passing} of {len(criteria)} pass at this commit", ""))
+    proofs = evidence.get("proofs")
+    if proofs:
+        proved = sum(1 for t in proofs["theorems"] if t.get("status") == "proved")
+        state = {"clean": "ok", "integrity": "fail"}.get(proofs["result"], "warn")
+        note = {"integrity": f"{len(proofs['integrity'])} integrity violation(s)",
+                "unfinished": f"{len(proofs['theorems']) - proved} unfinished", "not run": "the gate did not run"}.get(proofs["result"], "")
+        rows.append(("Proofs", state, f"{proved} of {len(proofs['theorems'])} Lean statements proved"
+                     + (f" · `{proofs['toolchain']}`" if proofs.get("toolchain") else ""), note))
     rows.append(("Claims vs evidence", "warn" if evidence["mismatches"] else "ok",
                  f"{len(evidence['mismatches'])} mismatch(es)" if evidence["mismatches"] else "the body's claims match CI", ""))
     lines = [BEGIN, "", "---", "", f"### {title} at `{head}`", "",
@@ -569,6 +599,13 @@ def render(evidence: dict) -> str:
         mark = {"passed": "✅ passed", "failed": "❌ failed", "skipped": "⏭️ skipped", "not found": "❓ not in any report"}
         lines += ["", "| Scenario | Test | Status at this commit |", "| --- | --- | --- |"]
         lines += [f"| {c['id']} | `{c['case']}` | {mark[c['status']]} |" for c in criteria]
+    statements = (proofs or {}).get("statements", {})
+    if any(statements.values()):
+        lines += ["", "**Statements to review.** A proof shows only that these hold; read each one against what it should mean.", "",
+                  "| | Statement | Reading |", "| --- | --- | --- |"]
+        for kind, mark in (("added", "➕ added"), ("changed", "✏️ changed"), ("removed", "➖ removed")):
+            lines += [f"| {mark} | `{' '.join(e['statement'].split())[:300].replace('|', '&#124;')}` | {e['reading'] or 'no reading'} |"
+                      for e in statements.get(kind, [])]
     details = []
     if evidence["mismatches"]:
         details += ["**Claims vs evidence**", ""] + [f"- {m}" for m in evidence["mismatches"]] + [""]
@@ -582,6 +619,10 @@ def render(evidence: dict) -> str:
         details += [f"- `{t}`" for t in revert["new_passing"][:30]] + [""]
     if cov["uncovered"]:
         details += ["**Uncovered changed lines**", ""] + [f"- `{p}`: {ranges(sorted(ls))}" for p, ls in cov["uncovered"].items()] + [""]
+    if proofs and (proofs["integrity"] or proofs["unfinished"] or proofs["errors"]):
+        details += ["**Proof gate**", ""] + [f"- {f['rule']}: `{f['file']}`" + (f":{f['line']}" if f["line"] else "") + f" {f['detail'][:200]}"
+                                             for f in proofs["integrity"] + proofs["unfinished"]][:40]
+        details += [f"- error: {e[:200]}" for e in proofs["errors"][:10]] + [""]
     if cov["unmeasured"]:
         details += ["**Changed files the coverage report does not cover**", ""] + [f"- `{p}`" for p in cov["unmeasured"]] + [""]
     if details:
@@ -651,6 +692,7 @@ def main(argv: list[str]) -> int:
     co.add_argument("--threshold", type=float, default=80.0, help="changed-line coverage the block flags below")
     co.add_argument("--run-url")
     co.add_argument("--workflow")
+    co.add_argument("--proofs", help="the JSON report proof-gate.py check --base wrote")
     co.add_argument("--strict", action="store_true", help="exit 1 unless the verdict is verified")
     for name in ("publish", "pending"):
         p = sub.add_parser(name)

@@ -34,6 +34,10 @@ KINDS = (
 TAG_KIND = {"unit": "unit", "integration": "functional", "component": "component", "contract": "contract",
             "property": "property", "fuzz": "fuzz", "smoke": "smoke", "benchmark": "benchmark"}
 VERIFICATION_LINE = re.compile(r"^\s*[-*]\s+([a-z-]+):\s*(yes|no)\b\s*(.*)$")
+# A formal mechanism the spec may name; Lean also needs a ### Theorems block, per references/proofs.md.
+MECHANISM = re.compile(r"TLA\+|Alloy|\[property\]|stateful|\bLean\b|\bVerus\b|\bKani\b")
+THEOREM_ENTRY = re.compile(r"^\s*[-*]\s+([A-Za-z_][\w']*):\s*(.*)$")
+WITNESS = re.compile(r"^\s*witness:\s*(.*)$")
 THREAT_LINE = re.compile(r"^\s*[-*]\s+.+:\s*[STRIDE]+\s+.+->.+tests:\s*\S")
 HEADING = re.compile(r"^##\s+(.*?)\s*$")
 NOTE_ENTRY = re.compile(r"^##\s+Change set\s+(\d+)\b", re.IGNORECASE)
@@ -324,8 +328,12 @@ def check_verification(scope: list[tuple[int, str]], plan: list[tuple[int, str]]
         planned[kind] = answer == "yes"
         if not rest.startswith("- ") or not rest[2:].strip():
             problem(number, f"{kind}: {answer} states no ' - {'how' if answer == 'yes' else 'reason'}'")
-        if kind == "formal" and answer == "yes" and not re.search(r"TLA\+|Alloy|\[property\]|stateful", rest):
-            problem(number, "formal: yes names no mechanism; a TLA+ or Alloy model, or a stateful [property] test")
+        if kind == "formal" and answer == "yes" and not MECHANISM.search(rest):
+            problem(number, "formal: yes names no mechanism; a TLA+ or Alloy model, a Lean model with proofs, "
+                            "Verus or Kani, or a stateful [property] test")
+        if kind == "formal":
+            planned["lean"] = answer == "yes" and bool(re.search(r"\bLean\b", rest))
+    check_theorems(scope, plan, planned.pop("lean", False), problem)
     for kind in KINDS:
         if kind not in planned:
             problem(None, f"the Verification block does not mark {kind}; every kind is yes or no with a reason")
@@ -346,6 +354,68 @@ def check_verification(scope: list[tuple[int, str]], plan: list[tuple[int, str]]
                                     "'- {boundary}: {STRIDE letters} {threat} -> {mitigation} - tests: {scenario}'")
     if planned.get("penetration") is False and planned.get("threat-model"):
         problem(None, "threat-model: yes needs penetration: yes; the penetration test tries each threat")
+
+
+def read_theorems(block: list[tuple[int, str]]) -> list[dict]:
+    """The ### Theorems entries: name, reading, the fenced lean statement, and the witness."""
+    entries: list[dict] = []
+    fence = None
+    for number, line in block:
+        stripped = line.strip()
+        if fence is not None:
+            if stripped.startswith("```"):
+                fence = None
+            else:
+                fence.append(stripped)
+            continue
+        if stripped.startswith("```lean") and entries:
+            fence = []
+            entries[-1]["fences"].append(fence)
+            continue
+        witness = WITNESS.match(line)
+        if witness and entries:
+            entries[-1]["witness"] = witness.group(1).strip()
+            continue
+        entry = THEOREM_ENTRY.match(line)
+        if entry:
+            entries.append({"line": number, "name": entry.group(1), "reading": entry.group(2).strip(),
+                            "fences": [], "witness": ""})
+    for entry in entries:
+        entry["statement"] = "\n".join("\n".join(f) for f in entry.pop("fences"))
+    return entries
+
+
+def check_theorems(scope: list[tuple[int, str]], plan: list[tuple[int, str]], lean: bool, problem) -> None:
+    """A Lean mechanism needs statements a person can approve, each read in English and shown non-vacuous."""
+    block = scope_block(scope, "theorems")
+    if block is None:
+        if lean:
+            problem(None, "formal: yes names Lean but the scope section has no '### Theorems' block")
+        return
+    if not lean:
+        problem(None, "a '### Theorems' block needs formal: yes naming its Lean model")
+    entries = read_theorems(block)
+    if not entries:
+        problem(block[0][0] if block else None, "the Theorems block states no theorem; "
+                "each reads '- {name}: {reading}', a ```lean def {name} : Prop := ...``` fence, and 'witness:'")
+    seen: set[str] = set()
+    for entry in entries:
+        name, number = entry["name"], entry["line"]
+        if name in seen:
+            problem(number, f"theorem {name} is stated twice")
+        seen.add(name)
+        if not entry["reading"]:
+            problem(number, f"theorem {name} has no plain-English reading after its name")
+        if not re.search(rf"^def\s+{re.escape(name)}\s*:\s*Prop\s*:=", entry["statement"], re.MULTILINE):
+            problem(number, f"theorem {name} needs a ```lean fence stating 'def {name} : Prop := ...'")
+        if not entry["witness"]:
+            problem(number, f"theorem {name} has no 'witness:' line, a concrete example showing it is not vacuous")
+    if lean:
+        differential = any(re.search(r"\[property\][^;]*\b(?:model|oracle)\b", match.group(1), re.IGNORECASE)
+                           for _, line in plan if (match := TESTS.match(line)))
+        if not differential:
+            problem(None, "formal: yes names Lean but no [property] scenario checks the code against the model; "
+                          "add a differential test with the model as oracle")
 
 
 def check_validation(lines: list[str], problem) -> None:

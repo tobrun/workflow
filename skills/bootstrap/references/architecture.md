@@ -10,7 +10,7 @@ Every architectural decision lands on the strongest level that can hold it:
 
 1. **Structure** makes the violation impossible: a separate package, crate, Gradle module, or Bazel target; Go `internal/`; Rust `pub(crate)`; an API that offers no wrong way to call it.
 2. **Static analysis** fails CI on it: a generated boundary rule, an ast-grep rule, a type.
-3. **Runtime or formal verification** for what no static check sees: a property-based test for idempotence, ordering, or a state machine, cited as `test:{path}` on the decision's `enforced by:` line.
+3. **Runtime or formal verification** for what no static check sees: a property-based test for idempotence, ordering, or a state machine, cited as `test:{path}`, or a proved Lean statement per [proofs.md](proofs.md), cited as `proof:{path to its Spec.lean}`, on the decision's `enforced by:` line.
 4. **Prose** in AGENTS.md or review, for taste only. Agents skip it and it rots, so a correction that recurs moves up the ladder: first a rule, then a redesign that needs no rule.
 
 | Kind of decision | Mechanism |

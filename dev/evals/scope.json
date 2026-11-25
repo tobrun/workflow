@@ -50,8 +50,19 @@
       "assertions": [
         "Answer 1: ### Verification under Scope, every one of the twenty kinds exactly once, as '- kind: yes - how' or '- kind: no - reason'",
         "Answer 2: fuzz, threat-model, and penetration (plus contract for the endpoint); a ### Threat model block with each STRIDE threat per trust boundary, its mitigation, and the scenario that tests it",
-        "Answer 3: a D- decision chooses the mechanism: a TLA+ or Alloy model, or a stateful [property] test driving the state machine with generated command sequences, named on the formal: yes line",
+        "Answer 3: a D- decision chooses the mechanism: a TLA+ or Alloy model, a Lean model with proofs, Verus or Kani, or a stateful [property] test driving the state machine with generated command sequences, named on the formal: yes line",
         "Answer 4: no - fuzz: yes needs at least one [fuzz] scenario"
+      ]
+    },
+    {
+      "id": "scope-lean-theorems",
+      "prompt": "Answer briefly, from the skill text and the references it links only. The change adds a tile-coordinate encoder in Kotlin whose round-trip bug would silently misplace map tiles, and the formal line will name a Lean model. (1) What else must the scope section contain, and what does each entry hold? (2) Who approves the statements, and where do they live once the spec is approved, given specs are never committed? (3) What ties the Kotlin code to the Lean model, and what does lint-spec.py refuse without it? (4) During build, a statement proves false for zoom 0. May build add a zoom > 0 hypothesis to Spec.lean?",
+      "fixture": "none - the answers come from the skill text",
+      "assertions": [
+        "Answer 1: a ### Theorems block; per statement '- name: plain-English reading', a fenced lean 'def name : Prop := ...', and a 'witness:' line with a concrete example or #guard",
+        "Answer 2: the user approves them with the spec; build copies them verbatim into the committed formal/{Pkg}/Spec.lean, proved by name_holds theorems, and CI lists statement changes against the base for review",
+        "Answer 3: a differential [property] test comparing the code with the model's oracle; lint-spec.py refuses a Lean mechanism with no [property] scenario naming the model or oracle",
+        "Answer 4: no - no agent changes an approved statement; it is a human call back to scope"
       ]
     },
     {

@@ -186,6 +186,16 @@ class RenderSpecTest(unittest.TestCase):
         self.assertIn('<div class="vk no"><b>- Fuzz</b><span>not touched by this change</span>', page)
         self.assertIn("<b>- UI/UX</b>", page)
 
+    def test_theorems_are_shown_for_approval_with_their_reading_and_witness(self) -> None:
+        theorems = ("### Theorems\n\n- roundtrip: decoding an encoded tile gives the tile back\n  ```lean\n"
+                    "  def roundtrip : Prop := ∀ t : Tile, decode (encode t) = some t\n  ```\n"
+                    "  witness: `example : decode (encode ⟨3, 1, 2⟩) = some ⟨3, 1, 2⟩ := by decide`\n\n")
+        _, page = self.render(SPEC.replace("### Verification", theorems + "### Verification"))
+        self.assertIn("<h4>Theorems to approve</h4>", page)
+        self.assertIn("<b>roundtrip</b>: decoding an encoded tile gives the tile back", page)
+        self.assertIn("<pre>def roundtrip : Prop := ∀ t : Tile, decode (encode t) = some t</pre>", page)
+        self.assertNotIn("```lean", page.split('data-panel="source"')[0])
+
     def test_a_kind_missing_from_the_plan_is_shown_as_a_gap(self) -> None:
         _, page = self.render(SPEC.replace("- penetration: no - not touched by this change\n", ""))
         self.assertIn('<div class="vk missing"><b>? Penetration</b>', page)

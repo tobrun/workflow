@@ -18,10 +18,30 @@ D-verification-gates: What does a failing new kind do? (2026-11-24, user)
   ✓ three fix rounds for every kind of the verify phase, replacing the two of the earlier loop, so one number holds; a must-pass kind left failing is still a human call (auto-applied at Confidence: 65%)
   ✗ block on each threshold - the user prefers fixing and reporting to stopping
 
-D-formal-verification: What does formal verification mean in a change? (2026-11-24, user)
-  ✓ triggered by concurrency, a distributed protocol, a state machine, or lock or message ordering; scope decides by D- decision between a TLA+ model checked with TLC or an Alloy model, and a stateful property-based test driving the state machine with generated command sequences (user, 2026-11-24)
+D-formal-verification: What does formal verification mean in a change? (2026-11-24, user; amended 2026-11-25, user)
+  ✓ triggered by concurrency, a distributed protocol, a state machine, or lock or message ordering, and by a deterministic kernel with a clean spec whose bug would be costly or silent; scope decides by D- decision between a TLA+ model checked with TLC or an Alloy model for interleavings, a Lean reference model with proved statements and a differential test, Verus or Kani when that kernel is Rust, and a stateful property-based test driving the state machine with generated command sequences (user, 2026-11-24; the proof mechanisms added 2026-11-25 from the user's research on formal verification in an AI software factory) ⚠ a Lean mechanism brings a toolchain and a statement review to the changes that choose it
   ✗ always a TLA+ or Alloy model when triggered - a JVM toolchain and modelling skill on every such change
   ✗ only on request - the changes that most need it would skip it by default
+  ✗ Lean as the shipping language - the products are Kotlin, TypeScript, Python, and the rest; the model is a reference, tied to the code by a differential test
+
+D-proof-integrity: What does a proof that cheats the checker do? (2026-11-25, user)
+  ✓ must pass: proof-gate.py exits 1 on a banned construct (axiom, native_decide, implemented_by, extern, unsafe, debug options, notation, macros, syntax, elaborators, run_cmd), an axiom outside propext, Classical.choice, and Quot.sound, a proof whose type is not its approved statement, or a Spec.lean statement that differs from the spec; three fix rounds, then a human call, and the PR stays a draft; an honestly unfinished proof (sorry, admit, a missing proof, a failing build) exits 2 and stays fix-and-report - an exception to D-verification-gates, because a gamed proof is not a counterexample but a forged pass (user, 2026-11-25) ⚠ a project that truly needs a banned construct has no allow-list; that need is a human call
+  ✗ fix and report like any formal counterexample - a ship could publish a forged proof with only an Open call beside it
+  ✗ an allow-list file in the project - the agent under review could widen it
+
+D-theorem-statements: Who owns a proof's statements, when specs are not committed? (2026-11-25, user)
+  ✓ the person, through two files: scope drafts each statement in the spec's ### Theorems block with a plain-English reading and a witness, and the user approves it with the spec; build copies it verbatim into the committed formal/{Pkg}/Spec.lean as `def NAME : Prop`, proved by `NAME_holds : NAME` so a proof cannot restate it; locally the gate compares Spec.lean with the spec, and in CI, where no spec exists, it lists every statement added, changed, or removed against the base under "Statements to review" in the evidence block, with a CODEOWNERS entry on Spec.lean making that review required (user, 2026-11-25; the user pointed out specs are not committed) ⚠ a statement change made outside scope is caught only by the person reading the CI list
+  ✗ compare against the spec in CI - plan files under .dev/ are never committed
+  ✗ build writes the statements - the agent proving a claim could weaken it to fit
+  ✗ a committed hash lock of the approved statements - it hides the text a person needs to read
+
+D-proof-model-pattern: How does a proof about a Lean model say anything about the shipping code? (2026-11-25)
+  ✓ a differential [property] test runs the product's code and the model's oracle executable on the same generated inputs and compares them; lint-spec.py refuses a Lean mechanism without one, and floating point gets its own error-bound statement instead of reals standing in for doubles (auto-applied at Confidence: 75%; the Cedar pattern from the user's research)
+  ✗ prove the shipping code directly - no production verifier exists for most of the languages the products use
+  ✗ trust the model alone - a proof certifies the model, and the code can drift from it
+  ⊘ not doing - assurance tiers (A0-A4) chosen per change; the per-kind triggers already choose the evidence; reopen when a repository needs one tier to require several kinds at once
+  ⊘ not doing - runtime trace checking of production logs against TLA+ or P; it runs in production, outside any pull request; reopen when a consuming repository ships a service with a checked protocol
+  ⊘ not doing - spec mutation, back-translation by several models, and independent formalizations; the token cost on every change is high; reopen when an escaped defect traces to a wrong statement
 
 D-verify-name: What is ship's first phase called? (2026-11-24, user)
   ✓ verify - the phases are verify, review, and publish; the mode is "verify only" and the loop lives in references/verify.md (user, 2026-11-24)

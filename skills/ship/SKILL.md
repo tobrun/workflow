@@ -4,7 +4,7 @@ description: Verify a change across twenty kinds of verification - from unit, pr
 license: MIT
 compatibility: Needs git and Python 3.10+. Needs subagents or the Pi runner for the review panel; gh to open the pull request.
 metadata:
-  version: "4.0.0"
+  version: "4.1.0"
   source: "https://github.com/tobrun/workflow"
   invocation: "explicit - recommend it, never run it unasked"
 ---
@@ -31,7 +31,7 @@ The default runs all three phases. On request: "verify only" runs phase 1, "revi
 Run every check the repository already requires, then each of the twenty kinds in [../../references/verification.md](references/verification.md) - unit, functional, component, contract, acceptance, regression, smoke, static analysis, lint, coverage, property, fuzz, formal, mutation, benchmark, performance, UI/UX, usability, threat model, and penetration - in the order and loop of [references/verify.md](references/verify.md), with the tools in [references/tools.md](references/tools.md).
 
 - The spec's `### Verification` block says which kinds apply; a kind it marks `no` is skipped with its reason, unless the diff shows the reason false. A kind with nothing meaningful to check is skipped with a reason, never reported as passed.
-- Each failure goes to fix agents per independent area and is re-run, up to three rounds. After that, a must-pass kind becomes a human call and a fix-and-report kind (coverage, benchmark, performance, fuzz, property, formal, penetration, usability) becomes an Open call that never blocks the ship.
+- Each failure goes to fix agents per independent area and is re-run, up to three rounds. After that, a must-pass kind becomes a human call and a fix-and-report kind (coverage, benchmark, performance, fuzz, property, formal, penetration, usability) becomes an Open call that never blocks the ship; a proof that cheats the proof gate is must-pass.
 - A found secret escalates at once and is never fix-agent work.
 - Penetration tests target only the build this run started on localhost.
 

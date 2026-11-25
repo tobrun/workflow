@@ -4,7 +4,7 @@ description: Execute the change sets of a spec at .dev/{plan-name}/spec.md, prov
 license: MIT
 compatibility: Needs git and Python 3.10+. Runs parallel subagents when the host has them.
 metadata:
-  version: "4.0.0"
+  version: "4.1.0"
   source: "https://github.com/tobrun/workflow"
   invocation: "explicit - recommend it, never run it unasked"
 ---
@@ -32,6 +32,7 @@ Each change set, whether you run it or a subagent does:
 
 - Test at the seams the spec's scope declares, per [references/tests.md](references/tests.md); when a declared boundary is wrong or missing, follow its fallback and log the deviation instead of stalling.
 - Work in vertical slices: one scenario's behavior at a time, its test written with the code, at its tagged layer per [references/layers.md](references/layers.md). A scenario is not met until a real test exists there.
+- When the spec's `formal` line names Lean, Verus, or Kani, prove its statements per the Proof entry of [references/layers.md](references/layers.md), never editing an approved statement.
 - Run only the change set's own tests and typecheck while working; the Validation block is the wave gate, not a per-change-set run.
 - Write each test to green; never run a test just to watch it fail or break working code to prove it can. A bug fix is the exception: start with a test that reproduces the defect, run it once red, then fix it to green.
 - Refactoring belongs to `ship`'s review, not this loop.

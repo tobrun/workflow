@@ -20,6 +20,17 @@
       ]
     },
     {
+      "id": "verify-proof-gate",
+      "prompt": "Answer briefly, from the skill text and the references it links only. The spec's formal line names a Lean model. (1) What command checks the proofs, and what do its exit codes 1, 2, and 3 mean? (2) After three fix rounds one proof still ends in sorry. What happens to the ship? (3) A fix agent replaced a slow proof with native_decide and the gate now exits 1. What happens after three rounds? (4) Who reads the statements in the review phase, and with what?",
+      "fixture": "none - the answers come from the skill text",
+      "assertions": [
+        "Answer 1: proof-gate.py check --project formal --spec .dev/{plan-name}/spec.md (with --recheck); 1 an integrity violation, 2 only unfinished proofs, 3 the gate could not run",
+        "Answer 2: it is fix-and-report: the unfinished statement becomes an Open call and the ship continues",
+        "Answer 3: an integrity violation is must-pass: it becomes a human call and the PR stays a draft",
+        "Answer 4: a fresh-context agent given only Spec.lean writes each statement in plain English, compared with the spec's reading; a mismatch or vacuous statement is a BLOCK for the user"
+      ]
+    },
+    {
       "id": "verify-kinds",
       "prompt": "Answer briefly, from the skill text and the references it links only. The spec's Verification block marks fuzz: yes, ui-ux: no - no UI, and penetration: yes. (1) How many rows does pr.md's Quality table have, and what does the ui-ux row say? (2) The fuzz harness crashes on a malformed input and three fix rounds do not stop it. Does the ship block, and where does the crash go? (3) Changed-line coverage is 70% after the fixes. What happens? (4) What may the penetration test target? (5) Could the ship skip fuzz because time ran out?",
       "fixture": "none - the answers come from the skill text",

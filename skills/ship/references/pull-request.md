@@ -89,6 +89,8 @@ Plan `.dev/{plan-name}` | Review {N}: {verdict} (advisory)
 | ---- | ------ | ----- | ----- | --------- |
 {one row per kind in verification.md, all twenty, first cell the kind's slug (`unit`, `fuzz`, `ui-ux`, ...): Result is `ran` with the counts, or `skipped ({reason})` with the counts left empty, such as `skipped (no parser or untrusted input)` or `skipped (disabled in .dev/config.yaml)`; rows for further checks (security, dead code, duplication, complexity, flakiness) may follow}
 
+Proofs: {statements proved of total, the pinned toolchain, and the gate's result, with each unfinished statement named; omit when the spec names no proof}.
+
 Mutation testing: {selected targets, command, runtime, killed/survived/uncovered counts, regression tests added or strengthened, and reasons for remaining survivors; omit when skipped}.
 
 Review panel: {lenses}; {blockers} blockers, {concerns} concerns ({review_N.md path}).

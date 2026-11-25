@@ -599,9 +599,10 @@ def link_decisions(arch: Architecture) -> list[str]:
             problems.append(f"{rule.decision} does not list {rule.id} on its 'enforced by:' line")
     for slug, ids in decisions.items():
         for rule_id in ids:
-            if rule_id.startswith("test:"):
-                if not (arch.root / rule_id[5:]).exists():
-                    problems.append(f"{slug} is enforced by {rule_id}, but that test file does not exist")
+            if rule_id.startswith(("test:", "proof:")):
+                kind, path = rule_id.split(":", 1)
+                if not (arch.root / path).exists():
+                    problems.append(f"{slug} is enforced by {rule_id}, but that {kind} file does not exist")
             elif rule_id not in arch.rules:
                 problems.append(f"{slug} is enforced by {rule_id}, which {SOURCE} does not define")
     return problems

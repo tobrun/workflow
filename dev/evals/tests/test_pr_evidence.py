@@ -218,19 +218,28 @@ class QualityGateTest(GateCase):
 
 
 
-ACCEPTANCE = """## Acceptance criteria
-
-| Scenario | Criterion | Test | Status |
-| --- | --- | --- | --- |
-| CS1-S1 | price 3 -> total 6 | `tests.CouponTest::test_total` | awaiting CI |
-"""
+TESTS = "## What the tests check\n\nDoubling the price gives the total, including a price of zero.\n\n"
 SPEC = "# S\n\n## Change plan\n\n1. Double\n   a. app.py - total\n   tests: [unit] price 3 -> total 6; [unit] price 0 -> total 0\n"
+MAPPED = [{"id": "CS1-S1", "scenario": "[unit] price 3 -> total 6", "source": "tests.py", "case": "tests.CouponTest::test_total"},
+          {"id": "CS1-S2", "scenario": "[unit] price 0 -> total 0", "source": "tests.py", "case": "tests.CouponTest::test_zero"}]
 
 
 class BodyStructureTest(GateCase):
+    def mapped(self, scenarios: list[dict] = MAPPED) -> None:
+        (self.root / "test-evidence.json").write_text(json.dumps({"schema": "dev.test-evidence/1", "scenarios": scenarios}))
+
+    def with_marker(self, body: str) -> str:
+        """The body after pr-evidence.py acceptance wrote the marker from test-evidence.json."""
+        self.body.write_text(body)
+        subprocess.run([sys.executable, str(SCRIPT), "acceptance", str(self.body), "--evidence", str(self.root / "test-evidence.json")],
+                       check=True, capture_output=True)
+        return self.body.read_text()
+
     def test_a_complete_body_passes(self) -> None:
-        result = self.check(EVIDENCE + ACCEPTANCE)
+        self.mapped()
+        result = self.check(self.with_marker(TESTS + EVIDENCE), spec=SPEC)
         self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('<!-- dev-acceptance: [{"id": "CS1-S1", "case": "tests.CouponTest::test_total"}', self.body.read_text())
 
     def test_the_agent_may_not_write_inside_the_ci_block(self) -> None:
         body = EVIDENCE + "\n<!-- BEGIN DEV-EVIDENCE -->\n### ✅ Verified by CI\n<!-- END DEV-EVIDENCE -->\n"
@@ -240,14 +249,38 @@ class BodyStructureTest(GateCase):
         body = EVIDENCE + quality() + "\n## Not verified\n\nNothing.\n"
         self.assertIn("no <!-- BEGIN DEV-EVIDENCE -->", self.check(body, complete=False).stderr)
 
-    def test_the_agent_may_not_set_an_acceptance_status(self) -> None:
-        result = self.check(EVIDENCE + ACCEPTANCE.replace("awaiting CI", "✅ passed"))
-        self.assertIn("Acceptance criteria CS1-S1 sets its own status '✅ passed'; write 'awaiting CI'", result.stderr)
+    def test_an_acceptance_criteria_table_is_refused(self) -> None:
+        table = "## Acceptance criteria\n\n| Scenario | Criterion | Test | Status |\n| --- | --- | --- | --- |\n"
+        self.assertIn("the '## Acceptance criteria' table is dropped", self.check(TESTS + table + EVIDENCE).stderr)
 
-    def test_every_spec_scenario_needs_an_acceptance_row(self) -> None:
-        result = self.check(EVIDENCE + ACCEPTANCE, spec=SPEC)
-        self.assertIn("Acceptance criteria has no row for CS1-S2", result.stderr)
-        self.assertNotIn("CS1-S1", result.stderr)
+    def test_a_spec_needs_the_tests_paragraph_and_the_marker(self) -> None:
+        self.mapped()
+        result = self.check(EVIDENCE, spec=SPEC)
+        self.assertIn("no non-empty '## What the tests check' paragraph", result.stderr)
+        self.assertIn("no dev-acceptance marker; run pr-evidence.py acceptance", result.stderr)
+
+    def test_the_tests_paragraph_is_short_plain_prose(self) -> None:
+        for paragraph, problem in (("| a | b |\n| --- | --- |\n", "holds a table"),
+                                   ("CS1-S1 doubles the price.\n", "names scenario ids"),
+                                   ("word " * 121 + "\n", "runs 121 words")):
+            with self.subTest(problem=problem):
+                result = self.check("## What the tests check\n\n" + paragraph + "\n" + EVIDENCE)
+                self.assertIn(problem, result.stderr)
+
+    def test_a_marker_that_drifts_from_test_evidence_is_refused(self) -> None:
+        self.mapped()
+        body = self.with_marker(TESTS + EVIDENCE)
+        self.mapped([MAPPED[0]])
+        result = self.check(body, spec=SPEC)
+        self.assertIn("the dev-acceptance marker differs from", result.stderr)
+        self.assertIn("the dev-acceptance marker maps no test for CS1-S2", result.stderr)
+
+    def test_each_not_verified_item_leads_with_a_category(self) -> None:
+        gaps = "## Not verified\n\n- **Coverage:** two lines are unreachable.\n- The release never ran.\n"
+        result = self.check(EVIDENCE + gaps)
+        self.assertIn("a Not verified item needs a bold category first", result.stderr)
+        self.assertIn("The release never ran", result.stderr)
+        self.assertNotIn("two lines", result.stderr)
 
     def test_not_verified_is_required(self) -> None:
         body = EVIDENCE + quality() + "\n## Not verified\n\n<!-- BEGIN DEV-EVIDENCE -->\n<!-- END DEV-EVIDENCE -->\n"
@@ -270,6 +303,88 @@ class BodyStructureTest(GateCase):
         self.check(EVIDENCE)
         edited = self.body.read_text().replace("⏭️", "✅").replace("✅ Unit", "✅ Unit (all good)")
         self.assertIn("the QUALITY-SUMMARY block does not match the Quality table", self.check(edited).stderr)
+
+
+FLOW_SPEC = """# S
+
+## Scope
+
+### Flow
+
+```mermaid
+sequenceDiagram
+    participant Timer as auto_run.sh
+    participant AutoEdition
+    Timer->>AutoEdition: draft (at 08:00)
+    AutoEdition-->>Timer: drafted
+```
+
+## Change plan
+"""
+
+
+class FlowTest(unittest.TestCase):
+    def setUp(self) -> None:
+        scratch = tempfile.TemporaryDirectory()
+        self.addCleanup(scratch.cleanup)
+        self.root = Path(scratch.name)
+        self.git("init", "-q", "-b", "main")
+        (self.root / "auto_run.sh").write_text("#!/bin/sh\npython -m editor auto draft\n")
+        self.commit("base")
+        self.git("checkout", "-q", "-b", "feature")
+        (self.root / "auto.py").write_text("class AutoEdition:\n    pass\n")
+        self.commit("feature")
+        (self.root / "spec.md").write_text(FLOW_SPEC)
+        self.body = self.root / "pr.md"
+        self.body.write_text("## Summary\n\nAuto editions.\n\n## Evidence\n\nshots\n")
+
+    def git(self, *args: str) -> None:
+        subprocess.run(["git", *args], cwd=self.root, check=True, capture_output=True)
+
+    def commit(self, message: str) -> None:
+        self.git("add", "-A")
+        self.git("-c", "user.email=a@b", "-c", "user.name=t", "commit", "-qm", message)
+
+    def flow(self) -> subprocess.CompletedProcess[str]:
+        return subprocess.run([sys.executable, str(SCRIPT), "flow", str(self.body), "--spec", str(self.root / "spec.md"), "--base", "main"],
+                              cwd=self.root, capture_output=True, text=True)
+
+    def test_a_diagram_whose_names_are_in_the_code_is_copied_before_the_evidence(self) -> None:
+        result = self.flow()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        body = self.body.read_text()
+        self.assertIn("## Flow\n\nFrom the spec; each of the 2 names it draws is in the code at", body)
+        self.assertIn("```mermaid\nsequenceDiagram\n    participant Timer as auto_run.sh", body)
+        self.assertLess(body.index("## Flow"), body.index("## Evidence"))
+
+    def test_a_diagram_naming_something_gone_is_left_out_and_the_names_printed(self) -> None:
+        (self.root / "spec.md").write_text(FLOW_SPEC.replace("participant AutoEdition", "participant AutoEdition\n    participant Scheduler"))
+        self.flow()
+        (self.root / "spec.md").write_text(FLOW_SPEC.replace("participant AutoEdition\n", "participant AutoEdition\n    participant Scheduler\n")
+                                           .replace("AutoEdition-->>Timer", "Scheduler-->>Timer"))
+        result = self.flow()
+        self.assertIn("no longer matches", result.stdout)
+        self.assertIn("Scheduler", result.stdout)
+        self.assertNotIn("## Flow", self.body.read_text())
+
+    def test_a_diagram_untouched_by_the_branch_is_left_out(self) -> None:
+        (self.root / "spec.md").write_text(FLOW_SPEC.replace("participant AutoEdition\n", "").replace("AutoEdition", "Timer"))
+        result = self.flow()
+        self.assertIn("no name it draws is in a file this branch changed", result.stdout)
+
+    def test_flowchart_labels_and_bare_ids_are_the_names(self) -> None:
+        import importlib.util
+        module = importlib.util.spec_from_file_location("pr_evidence", SCRIPT)
+        evidence = importlib.util.module_from_spec(module)
+        module.loader.exec_module(evidence)
+        source = "flowchart LR\n    A[editor.app] -->|POST /auto| B{Editions.publish}\n    B --> Site\n    %% a comment\n"
+        self.assertEqual(evidence.flow_names(source), ["editor.app", "Editions.publish", "Site"])
+
+    def test_a_spec_without_a_flow_block_writes_no_section(self) -> None:
+        (self.root / "spec.md").write_text("# S\n\n## Scope\n\nNo diagram.\n")
+        result = self.flow()
+        self.assertIn("no ### Flow diagram", result.stdout)
+        self.assertNotIn("## Flow", self.body.read_text())
 
 
 class HardeningTest(GateCase):

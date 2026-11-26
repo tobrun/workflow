@@ -4,7 +4,7 @@ description: Execute the change sets of a spec at .dev/{plan-name}/spec.md, writ
 license: MIT
 compatibility: Needs git and Python 3.10+. Runs parallel subagents when the host has them.
 metadata:
-  version: "4.2.0"
+  version: "4.3.0"
   source: "https://github.com/tobrun/workflow"
   invocation: "explicit - recommend it, never run it unasked"
 ---

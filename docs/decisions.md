@@ -53,8 +53,8 @@ D-decision-titles: How are decisions named where a person reads them? (2026-11-2
   ✗ a separate title field on every decision - one more thing scope writes and lint checks, for little over the derived one
   ✗ replace slugs with numbers - the ledger, echoes, and commit trailers rely on stable readable ids
 
-D-pr-evidence-split: How does a PR show that its verification is real? (2026-11-24, user)
-  ✓ split the body: everything the agent writes (summary, acceptance criteria, evidence, what was not verified, the twenty kinds) is a claim, and a DEV-EVIDENCE block that only CI's ci-evidence.py writes at the head commit is the evidence - test totals from CI's JUnit, a test-diff guard, fails-on-revert against the base, changed-line coverage, each acceptance criterion's status, and the mismatches between the claims and those measurements (user, 2026-11-24; the user's research on proof of verification) ⚠ the block in the body mirrors the CI run; a body edit between pushes could alter it, so the run it links, and its attestation when enabled, is the authority
+D-pr-evidence-split: How does a PR show that its verification is real? (2026-11-24, user; the claims comparison dropped 2026-11-26, user)
+  ✓ split the body: everything the agent writes (summary, what the tests check, evidence, what was not verified, the twenty kinds) is a claim, and a DEV-EVIDENCE block that only CI's ci-evidence.py writes at the head commit is the evidence - test totals from CI's JUnit, a test-diff guard, fails-on-revert against the base, changed-line coverage, and how many spec scenario tests pass, with each finding listed under the table prefixed by its check; the block measures and never compares the agent's claims, because the comparison only restated what the measurements already showed (user, 2026-11-26) (user, 2026-11-24; the user's research on proof of verification) ⚠ the block in the body mirrors the CI run; a body edit between pushes could alter it, so the run it links, and its attestation when enabled, is the authority
   ✗ the agent writes its own verification table - forgeable, and often honestly wrong
   ✗ a sticky PR comment instead of the body - reviewers would read the claims and the evidence in two places (auto-applied at Confidence: 60%)
 
@@ -66,9 +66,16 @@ D-evidence-attestation: Is the evidence signed? (2026-11-24)
   ✓ the job writes an in-toto test-result predicate on every run and leaves the actions/attest step commented out - artifact attestations need a public repository or a plan that includes them for private ones, and the research advises them once evidence must travel (auto-applied at Confidence: 70%)
   ✗ sign by default - fails in private repositories without the plan
 
-D-evidence-acceptance: What counts as an acceptance criterion in the PR? (2026-11-24)
-  ✓ each spec scenario by its positional id (CS1-S1), mapped to the runner case build recorded in test-evidence.json; CI looks each case up in its own JUnit, and a case no report contains is a mismatch (auto-applied at Confidence: 75%)
+D-evidence-acceptance: What counts as an acceptance criterion in the PR? (2026-11-24; reshaped 2026-11-26, user)
+  ✓ each spec scenario by its positional id (CS1-S1), mapped to the runner case recorded in test-evidence.json; `pr-evidence.py acceptance` writes the mapping into a hidden dev-acceptance marker, CI looks each case up in its own JUnit and shows one Spec scenarios row, and a case no report contains or that failed is a finding (user, 2026-11-26: the 48-row Scenario/Test tables were not actionable) ⚠ a reviewer no longer sees which test proves which scenario without opening test-evidence.json; the What the tests check paragraph says what they prove instead
   ✗ free-text checkboxes - nothing to look up, so CI cannot check them
+  ✗ an Acceptance criteria table in the body and a Scenario/Test table in CI's block - the user found them unreadable at PR scale
+
+D-pr-readability: How does a reviewer scan a PR body? (2026-11-26, user)
+  ✓ a What the tests check paragraph of at most 120 words in plain technical English instead of scenario tables; each Not verified bullet led by a bold category; CI's findings listed visibly under its table, one line each prefixed with the check, at most five per check with the rest in Details; and the spec's ### Flow diagram copied into a ## Flow section by `pr-evidence.py flow` only while every name it draws is in a tracked file at HEAD and one is in a file the branch changed - pr-evidence.py check enforces the paragraph's shape, the marker, and the categories (user, 2026-11-26) ⚠ the diagram check matches names, not meaning: a diagram whose names survive a redesign still passes
+  ✗ CI writes the paragraph - CI is deterministic and cannot summarize what tests mean
+  ✗ the agent judges whether the diagram still matches - a check it cannot argue with, per P-deterministic-guards-over-prose
+  ✗ a closed list of Not verified categories - gaps differ by project; the check enforces the shape only
 
 D-complexity-threshold: Where does the ship gauntlet's coverage-weighted complexity line sit in this repository? (2026-09-18)
   ✓ 10 per function, applied to functions a branch adds - holding pre-existing functions a diff only brushes to any line would turn every change into a refactor of code it did not write (user, 2026-09-18); the evidence was the factory runner's established functions sitting far above the default, measured with radon 2026-09-18, and that code was removed 2026-09-20 ⚠ touched pre-existing functions stay over the line until a change that owns them splits them

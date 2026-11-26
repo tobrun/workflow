@@ -54,7 +54,7 @@ A run that will reach this phase opens the file in the shape below before its fi
 Only the Evidence section is left for this phase; a part the run has not reached is absent from the file, never a placeholder or a guess.
 
 Name decisions and verification kinds by their titles anywhere outside the Quality table, per [../../../references/decision-ledger.md](../../../references/decision-ledger.md).
-Everything the agent writes is a claim. What proves it is the DEV-EVIDENCE block at the end, which only CI writes: `ci-evidence.py` (vendored by `bootstrap` as `.verify/ci-evidence.py`) runs at the PR's head commit and fills it with the test totals from CI's own JUnit, a test-diff guard, a fails-on-revert check of the new tests against the base, changed-line coverage, each acceptance criterion's status, and where the claims above disagree with any of it.
+Everything the agent writes is a claim. What proves it is the DEV-EVIDENCE block at the end, which only CI writes: `ci-evidence.py` (vendored by `bootstrap` as `.verify/ci-evidence.py`) runs at the PR's head commit and fills it with the test totals from CI's own JUnit, a test-diff guard, a fails-on-revert check of the new tests against the base, changed-line coverage, and how many spec scenario tests pass, then lists each finding under its table, prefixed with the check that found it.
 The body leaves the markers empty; `pr-evidence.py check` refuses anything between them.
 
 ```markdown
@@ -63,11 +63,15 @@ The body leaves the markers empty; `pr-evidence.py check` refuses anything betwe
 {What changed and why, at most five lines, from the spec's research and scope sections.}
 Plan `.dev/{plan-name}` | Review {N}: {verdict} (advisory)
 
-## Acceptance criteria
+## What the tests check
 
-| Scenario | Criterion | Test | Status |
-| --- | --- | --- | --- |
-{one row per spec scenario: its positional id (CS1-S1), the scenario text, the runner case from test-evidence.json as `classname::name`, and Status `awaiting CI` - CI writes the real status}
+{One paragraph, at most 120 words, in plain technical English: the behaviors the new and changed tests validate - the inputs, the outcomes, and the edge and failure cases - drawn from the spec's scenarios. No test names, scenario ids, or table.}
+
+{the dev-acceptance marker `pr-evidence.py acceptance` writes from test-evidence.json; CI reads it, a reviewer never sees it}
+
+## Flow
+
+{the spec's ### Flow diagram as `pr-evidence.py flow` copies it, only while every name it draws is still in the code; absent otherwise}
 
 ## Evidence
 
@@ -75,7 +79,7 @@ Plan `.dev/{plan-name}` | Review {N}: {verdict} (advisory)
 
 ## Not verified
 
-{What this PR does not prove, one line each: every planned kind that could not run and why, every fix-and-report kind left failing, every test the diff edited or deleted with the reason, and any environment the tests cannot reach. "Nothing" needs its reason.}
+{What this PR does not prove, one bullet each, led by a bold category and grouped by it: `- **{Category}:** {what and why}`. Use the category that fits - `CI scope`, `Environment`, `Release`, `Coverage`, `Security`, `Accessibility`, `Tooling`, `Tests edited`, `Skipped kind`, `Diagram` - covering every planned kind that could not run and why, every fix-and-report kind left failing, every test the diff edited or deleted with the reason, a Flow diagram `flow` left out with the names it could not find, and any environment the tests cannot reach. "Nothing" needs its reason.}
 
 ## Verification
 
@@ -114,7 +118,7 @@ Title: the change in imperative mood, under 70 characters.
 
 ## Create or update
 
-Before creating or updating, run `pr-evidence.py summarize .dev/{plan-name}/pr.md`, then loop `pr-evidence.py check --require-current --kind {frontend|non-frontend} --spec .dev/{plan-name}/spec.md` until it passes; `--kind` is the e2e report's `kind`, and a frontend kind requires an http(s) image, a non-frontend kind a labeled pair.
+Before creating or updating, run `pr-evidence.py acceptance .dev/{plan-name}/pr.md --evidence .dev/{plan-name}/test-evidence.json`, `pr-evidence.py flow .dev/{plan-name}/pr.md --spec .dev/{plan-name}/spec.md --base {base}`, and `pr-evidence.py summarize .dev/{plan-name}/pr.md`, then loop `pr-evidence.py check --require-current --kind {frontend|non-frontend} --spec .dev/{plan-name}/spec.md` until it passes; `--kind` is the e2e report's `kind`, and a frontend kind requires an http(s) image, a non-frontend kind a labeled pair.
 When the repository has `.verify/ci-evidence.py`, run its `collect` locally against the base as a preflight (`--out /tmp/{project-slug}/ci-evidence`) and fix what it finds before pushing; its local block never goes into the body.
 
 - No PR for the branch: `gh pr create --title ... --body-file .dev/{plan-name}/pr.md` (`--draft` on BLOCK or a deferred check), base = the authorized intended base, defaulting to the default branch only when none was specified.
@@ -122,6 +126,6 @@ When the repository has `.verify/ci-evidence.py`, run its `collect` locally agai
 - No `gh` and no equivalent host CLI: push, keep `pr.md`, print the compare URL, and say the PR must be opened by hand.
 
 Then follow the PR's required checks to a terminal state per [../../../references/ci-parity.md](../../../references/ci-parity.md), and read the DEV-EVIDENCE block CI wrote for the head commit.
-A failing test, a guard finding, a new test that passes on the base, coverage under the line, or a claims mismatch there is a verify-phase violation: fix it and push, and CI re-measures, up to three rounds; what remains goes under Open calls and Not verified, and the block stays as CI wrote it.
+A failing test, a guard finding, a new test that passes on the base, coverage under the line, or a spec scenario test that failed or is in no CI report is a verify-phase violation: fix it and push, and CI re-measures, up to three rounds; what remains goes under Open calls and Not verified, and the block stays as CI wrote it.
 Without an evidence job the markers stay empty: say so under Not verified and recommend `bootstrap`.
 Opening the PR is not the end of the phase; every required check green, or a genuine human call, is.

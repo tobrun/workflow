@@ -4,7 +4,7 @@ description: Group pending changes into granular commits with structured what/wh
 license: MIT
 compatibility: Needs git.
 metadata:
-  version: "4.2.0"
+  version: "4.3.0"
   source: "https://github.com/tobrun/workflow"
   invocation: "explicit - recommend it, never run it unasked"
 ---

@@ -15,11 +15,12 @@ markdown block DIR/block.md, and DIR/predicate.json, an in-toto test-result
 predicate for actions/attest. It runs a test-diff guard (removed assertions, new
 skips or focused tests, regenerated snapshots, lowered thresholds), a fails-on-revert
 check (the PR's new test cases run against the base implementation, where they
-should fail), changed-line coverage, the acceptance criteria the PR body maps to
-test cases, the report proof-gate.py wrote when --proofs names one (whether every
-Lean statement is proved, and which statements changed since the base, for a person
-to review), and a comparison of the body's claims with all of that. It reports;
-it fails only with --strict.
+should fail), changed-line coverage, whether each spec scenario's test passed (from
+the body's hidden dev-acceptance marker), and the report proof-gate.py wrote when
+--proofs names one (whether every Lean statement is proved, and which statements
+changed since the base, for a person to review). It measures; it never compares
+the agent's claims, and it fails only with --strict. Each finding is listed under
+the table, prefixed with the check that found it.
 
 `publish` replaces whatever sits between the DEV-EVIDENCE markers of the PR body
 with the block, through `gh` or on a file; `pending` marks the block as waiting
@@ -383,7 +384,7 @@ def fails_on_revert(base: str, head: str, root: Path, command: str | None) -> Re
 
 
 # ---------------------------------------------------------------------------
-# What the PR body claims
+# The scenario mapping the PR body carries
 # ---------------------------------------------------------------------------
 
 
@@ -401,21 +402,28 @@ def table_rows(text: str) -> list[list[str]]:
     return rows[1:] if rows else []
 
 
+ACCEPTANCE_MARKER = re.compile(r"<!--\s*dev-acceptance:\s*(\[.*?\])\s*-->", re.DOTALL)
+
+
 def acceptance(body: str) -> list[dict]:
-    """The body's acceptance rows: scenario id, criterion, and the runner case that proves it."""
+    """Each spec scenario's id and the runner case that proves it, from the hidden dev-acceptance marker.
+
+    pr-evidence.py acceptance writes the marker from test-evidence.json; an older body's
+    `## Acceptance criteria` table is still read when the marker is absent.
+    """
+    marker = ACCEPTANCE_MARKER.search(body)
+    if marker:
+        try:
+            mapped = json.loads(marker.group(1))
+        except ValueError:
+            mapped = []
+        return [{"id": str(m["id"]), "case": str(m["case"])} for m in mapped
+                if isinstance(m, dict) and m.get("id") and m.get("case")]
     criteria = []
     for row in table_rows(section(body, "Acceptance criteria")):
         if len(row) >= 3 and re.match(r"^`?CS\d+-S\d+`?$", row[0]):
-            criteria.append({"id": row[0].strip("`"), "criterion": row[1], "case": row[2].strip("`")})
+            criteria.append({"id": row[0].strip("`"), "case": row[2].strip("`")})
     return criteria
-
-
-def claims(body: str) -> dict[str, dict]:
-    claimed = {}
-    for row in table_rows(section(body, "Quality")):
-        if len(row) >= 2:
-            claimed[row[0].strip("`")] = {"result": row[1], "surviving": row[4] if len(row) > 4 else ""}
-    return claimed
 
 
 # ---------------------------------------------------------------------------
@@ -465,33 +473,16 @@ def collect(args: argparse.Namespace) -> int:
     for criterion in criteria:
         case = cases.get(criterion["case"])
         criterion["status"] = case.status if case else "not found"
-    claimed = claims(body)
     counts = {s: sum(1 for c in cases.values() if c.status == s) for s in ("passed", "failed", "skipped")}
     counts["failed"] += suite_errors
-    mismatches = []
-    if counts["passed"] + counts["failed"] == 0:
-        mismatches.append("no tests ran: CI reported no executed test" if junit_files else "no tests ran: no JUnit report was given")
-    test_kinds = ("unit", "functional", "component", "contract", "acceptance", "regression", "smoke")
-    if counts["failed"]:
-        for kind in test_kinds:
-            claim = claimed.get(kind)
-            if claim and claim["result"] == "ran" and claim["surviving"] in ("0", ""):
-                mismatches.append(f"{kind} claims a clean run, but CI has {counts['failed']} failing test(s)")
-    claim = claimed.get("coverage", {})
-    if covered.percent is not None and covered.percent < args.threshold and claim.get("result") == "ran" and claim.get("surviving") in ("0", ""):
-        mismatches.append(f"coverage claims no gap, but CI measures {covered.percent:.0f}% of changed lines")
-    for criterion in criteria:
-        if criterion["status"] == "not found":
-            mismatches.append(f"{criterion['id']} names `{criterion['case']}`, which no CI report contains")
+    none_ran = counts["passed"] + counts["failed"] == 0
     proofs = read_proofs(args.proofs)
-    claim = claimed.get("formal", {})
-    if proofs and proofs["result"] != "clean" and claim.get("result") == "ran" and claim.get("surviving") in ("0", ""):
-        mismatches.append(f"formal claims a clean run, but the proof gate reports {proofs['result']}")
     weak = bool(guarded) or bool(reverted.new_passing) or (covered.percent is not None and covered.percent < args.threshold)
+    weak = weak or none_ran or any(c["status"] != "passed" for c in criteria)
     weak = weak or bool(proofs and proofs["result"] in ("unfinished", "not run"))
     failed = bool(counts["failed"]) or any(c["status"] == "failed" for c in criteria) or bool(args.junit and not junit_files)
     failed = failed or bool(proofs and proofs["result"] == "integrity")
-    verdict = "failed" if failed else "attention" if (weak or mismatches) else "verified"
+    verdict = "failed" if failed else "attention" if weak else "verified"
     evidence = {
         "head": head, "base": base, "generated": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
         "run_url": args.run_url, "workflow": args.workflow, "verdict": verdict, "threshold": args.threshold,
@@ -501,7 +492,7 @@ def collect(args: argparse.Namespace) -> int:
         "revert": reverted.__dict__,
         "coverage": {"measured": covered.measured, "percent": covered.percent, "covered": covered.covered,
                      "total": covered.total, "uncovered": covered.uncovered, "unmeasured": covered.unmeasured},
-        "acceptance": criteria, "mismatches": mismatches, "junit_reports": len(junit_files), "missing": missing,
+        "acceptance": criteria, "none_ran": none_ran, "junit_reports": len(junit_files), "missing": missing,
         "proofs": proofs,
     }
     out = Path(args.out)
@@ -533,6 +524,27 @@ def predicate(evidence: dict, cases: dict[str, Case]) -> dict:
 ICON = {"ok": "✅", "warn": "⚠️", "fail": "❌", "none": "➖"}
 
 
+FINDINGS_SHOWN = 5
+
+
+def findings_of(evidence: dict, base: str) -> list[tuple[str, list[str]]]:
+    """Every finding, grouped by the check that found it, in the order of the table."""
+    cov, revert, proofs = evidence["coverage"], evidence["revert"], evidence.get("proofs") or {}
+    groups = [
+        ("Failing test", [f"`{t}`" for t in evidence["failed_tests"]]),
+        ("Test-diff guard", [f"`{g['where']}` {g['kind']}" + (f": `{g['text'][:100]}`" if g["text"] else "") for g in evidence["guard"]]),
+        ("Fails on revert", [f"`{t}` passes on base `{base}`, so it does not prove this change" for t in revert["new_passing"]]),
+        ("Coverage", [f"`{path}` lines {ranges(sorted(lines))} not covered" for path, lines in cov["uncovered"].items()]
+         + [f"`{path}` changed but not in the coverage report" for path in cov["unmeasured"]]),
+        ("Spec scenarios", [f"{c['id']} `{c['case']}` " + ("not in any CI report" if c["status"] == "not found" else c["status"])
+                            for c in evidence["acceptance"] if c["status"] != "passed"]),
+        ("Proof gate", [f"`{f['file']}`" + (f":{f['line']}" if f["line"] else "") + f" {f['rule']}: {f['detail'][:200]}"
+                        for f in proofs.get("integrity", []) + proofs.get("unfinished", [])]
+         + [f"error: {e[:200]}" for e in proofs.get("errors", [])]),
+    ]
+    return [(check, items) for check, items in groups if items]
+
+
 def render(evidence: dict) -> str:
     head, base = evidence["head"][:7], evidence["base"][:7]
     title = {"verified": "✅ Verified by CI", "attention": "⚠️ Verified by CI, with findings",
@@ -546,6 +558,8 @@ def render(evidence: dict) -> str:
         state = "fail" if tests["failed"] else "ok"
         rows.append(("Tests", state, f"{tests['passed']:,} passed · {tests['failed']} failed · {tests['skipped']} skipped",
                      f"{evidence['junit_reports']} JUnit report(s)"))
+    elif evidence["junit_reports"]:
+        rows.append(("Tests", "fail", "no test ran", f"{evidence['junit_reports']} JUnit report(s) with no executed case"))
     else:
         note = f"nothing matched {', '.join(evidence['missing'])}" if evidence["missing"] else "configure --junit"
         rows.append(("Tests", "fail" if evidence["missing"] else "none", "no JUnit report", note))
@@ -555,7 +569,7 @@ def render(evidence: dict) -> str:
         kinds[item["kind"]] = kinds.get(item["kind"], 0) + 1
     rows.append(("Test-diff guard", "warn" if guard_items else "ok",
                  " · ".join(f"{n} {k}" for k, n in kinds.items()) if guard_items else "no test weakened, skipped, or regenerated",
-                 "details below" if guard_items else ""))
+                 "listed below" if guard_items else ""))
     revert = evidence["revert"]
     if revert["ran"] and (revert["new_failing"] or revert["new_passing"] or revert["unloadable"]):
         new = len(revert["new_failing"]) + len(revert["new_passing"])
@@ -580,7 +594,9 @@ def render(evidence: dict) -> str:
     if criteria:
         passing = sum(1 for c in criteria if c["status"] == "passed")
         state = "fail" if any(c["status"] == "failed" for c in criteria) else "ok" if passing == len(criteria) else "warn"
-        rows.append(("Acceptance criteria", state, f"{passing} of {len(criteria)} pass at this commit", ""))
+        absent = sum(1 for c in criteria if c["status"] == "not found")
+        rows.append(("Spec scenarios", state, f"{passing} of {len(criteria)} scenario tests pass at this commit",
+                     f"{absent} not in any CI report" if absent else ""))
     proofs = evidence.get("proofs")
     if proofs:
         proved = sum(1 for t in proofs["theorems"] if t.get("status") == "proved")
@@ -589,16 +605,21 @@ def render(evidence: dict) -> str:
                 "unfinished": f"{len(proofs['theorems']) - proved} unfinished", "not run": "the gate did not run"}.get(proofs["result"], "")
         rows.append(("Proofs", state, f"{proved} of {len(proofs['theorems'])} Lean statements proved"
                      + (f" · `{proofs['toolchain']}`" if proofs.get("toolchain") else ""), note))
-    rows.append(("Claims vs evidence", "warn" if evidence["mismatches"] else "ok",
-                 f"{len(evidence['mismatches'])} mismatch(es)" if evidence["mismatches"] else "the body's claims match CI", ""))
     lines = [BEGIN, "", "---", "", f"### {title} at `{head}`", "",
              f"{run}{workflow} · base `{base}` · {evidence['generated']}", "",
              "| Check | | Result | Note |", "| --- | :-: | --- | --- |"]
     lines += [f"| {name} | {ICON[state]} | {result} | {note} |" for name, state, result, note in rows]
-    if criteria:
-        mark = {"passed": "✅ passed", "failed": "❌ failed", "skipped": "⏭️ skipped", "not found": "❓ not in any report"}
-        lines += ["", "| Scenario | Test | Status at this commit |", "| --- | --- | --- |"]
-        lines += [f"| {c['id']} | `{c['case']}` | {mark[c['status']]} |" for c in criteria]
+    findings = findings_of(evidence, base)
+    if findings:
+        lines += ["", "**Findings**", ""]
+        overflow = []
+        for check, items in findings:
+            lines += [f"- {check}: {item}" for item in items[:FINDINGS_SHOWN]]
+            if len(items) > FINDINGS_SHOWN:
+                lines.append(f"- {check}: +{len(items) - FINDINGS_SHOWN} more in Details")
+                overflow += [f"**{check}**", ""] + [f"- {item}" for item in items[FINDINGS_SHOWN:]] + [""]
+        if overflow:
+            lines += ["", "<details><summary>Details</summary>", ""] + overflow + ["</details>"]
     statements = (proofs or {}).get("statements", {})
     if any(statements.values()):
         lines += ["", "**Statements to review.** A proof shows only that these hold; read each one against what it should mean.", "",
@@ -606,27 +627,6 @@ def render(evidence: dict) -> str:
         for kind, mark in (("added", "➕ added"), ("changed", "✏️ changed"), ("removed", "➖ removed")):
             lines += [f"| {mark} | `{' '.join(e['statement'].split())[:300].replace('|', '&#124;')}` | {e['reading'] or 'no reading'} |"
                       for e in statements.get(kind, [])]
-    details = []
-    if evidence["mismatches"]:
-        details += ["**Claims vs evidence**", ""] + [f"- {m}" for m in evidence["mismatches"]] + [""]
-    if evidence["failed_tests"]:
-        details += ["**Failing tests**", ""] + [f"- `{t}`" for t in evidence["failed_tests"][:30]] + [""]
-    if guard_items:
-        details += ["**Test-diff guard**", ""] + [f"- {g['kind']}: `{g['where']}`" + (f" `{g['text'][:100]}`" if g["text"] else "")
-                                                for g in guard_items[:40]] + [""]
-    if revert["new_passing"]:
-        details += [f"**New tests that pass on base `{base}`** (they do not prove this change)", ""]
-        details += [f"- `{t}`" for t in revert["new_passing"][:30]] + [""]
-    if cov["uncovered"]:
-        details += ["**Uncovered changed lines**", ""] + [f"- `{p}`: {ranges(sorted(ls))}" for p, ls in cov["uncovered"].items()] + [""]
-    if proofs and (proofs["integrity"] or proofs["unfinished"] or proofs["errors"]):
-        details += ["**Proof gate**", ""] + [f"- {f['rule']}: `{f['file']}`" + (f":{f['line']}" if f["line"] else "") + f" {f['detail'][:200]}"
-                                             for f in proofs["integrity"] + proofs["unfinished"]][:40]
-        details += [f"- error: {e[:200]}" for e in proofs["errors"][:10]] + [""]
-    if cov["unmeasured"]:
-        details += ["**Changed files the coverage report does not cover**", ""] + [f"- `{p}`" for p in cov["unmeasured"]] + [""]
-    if details:
-        lines += ["", "<details><summary>Details</summary>", ""] + details + ["</details>"]
     lines += ["", f"<sub>Written by ci-evidence.py in CI from the commit's own runs; anything edited here by hand is replaced on the next push. "
               f"The agent-written sections above are claims; this block is what CI measured.</sub>", END]
     inner = [line.replace("<!--", "&lt;!--").replace("-->", "--&gt;") for line in lines[1:-1]]
@@ -687,7 +687,7 @@ def main(argv: list[str]) -> int:
     co.add_argument("--out", required=True)
     co.add_argument("--junit", action="append", default=[], help="JUnit XML report or glob, repeatable")
     co.add_argument("--coverage", action="append", default=[], help="Cobertura, JaCoCo, LCOV, or Go profile")
-    co.add_argument("--body", help="the PR body, for its acceptance criteria and claims")
+    co.add_argument("--body", help="the PR body, for its dev-acceptance scenario mapping")
     co.add_argument("--revert-cmd", help="runs tests on the base: {tests} is the changed test files, {junit} the report path")
     co.add_argument("--threshold", type=float, default=80.0, help="changed-line coverage the block flags below")
     co.add_argument("--run-url")

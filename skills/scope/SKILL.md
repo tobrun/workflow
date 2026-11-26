@@ -4,7 +4,7 @@ description: Spec a change at .dev/{plan-name}/spec.md - find the real problem, 
 license: MIT
 compatibility: Needs git and Python 3.10+.
 metadata:
-  version: "4.2.0"
+  version: "4.3.0"
   source: "https://github.com/tobrun/workflow"
   invocation: "explicit - recommend it, never run it unasked"
 ---

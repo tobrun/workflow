@@ -56,12 +56,11 @@ BODY = """## Summary
 
 Discount codes.
 
-## Acceptance criteria
+## What the tests check
 
-| Scenario | Criterion | Test | Status |
-| --- | --- | --- | --- |
-| CS1-S1 | HALF halves the total | `tests.test_pricing::test_half` | awaiting CI |
-| CS1-S2 | TEN takes 10 off | `tests.test_pricing::test_ten` | awaiting CI |
+The HALF code halves the total and the TEN code takes ten off it.
+
+<!-- dev-acceptance: [{"id": "CS1-S1", "case": "tests.test_pricing::test_half"}, {"id": "CS1-S2", "case": "tests.test_pricing::test_ten"}] -->
 
 ## Quality
 
@@ -183,7 +182,7 @@ class CoverageTest(unittest.TestCase):
         _, evidence, block = self.repo.collect("--coverage", "lcov.info", body=None)
         self.assertEqual((evidence["coverage"]["covered"], evidence["coverage"]["total"]), (5, 7))
         self.assertIn("| Changed-line coverage | ⚠️ | 71% of 7 changed lines (threshold 80%) |", block)
-        self.assertIn("- `src/cart/pricing.py`: 5-6", block)
+        self.assertIn("- Coverage: `src/cart/pricing.py` lines 5-6 not covered", block)
 
     def test_cobertura_and_go_profiles_are_read(self) -> None:
         cobertura = ('<coverage><sources><source>src</source></sources><packages><package><classes>'
@@ -202,7 +201,7 @@ class CoverageTest(unittest.TestCase):
         self.repo.write("lcov.info", "SF:src/other.py\nDA:1,1\nend_of_record\n")
         _, evidence, block = self.repo.collect("--coverage", "lcov.info", body=None)
         self.assertEqual(evidence["coverage"]["unmeasured"], ["src/cart/pricing.py"])
-        self.assertIn("Changed files the coverage report does not cover", block)
+        self.assertIn("- Coverage: `src/cart/pricing.py` changed but not in the coverage report", block)
 
 
 class RevertTest(unittest.TestCase):
@@ -215,7 +214,7 @@ class RevertTest(unittest.TestCase):
         self.assertEqual(evidence["revert"]["new_failing"], ["tests.test_pricing::test_half"])
         self.assertEqual(evidence["revert"]["new_passing"], ["tests.test_pricing::test_plain_sum_still_works"])
         self.assertIn("| Fails on revert | ⚠️ | 1 of 2 new tests fail on base", block)
-        self.assertIn("- `tests.test_pricing::test_plain_sum_still_works`", block)
+        self.assertIn("- Fails on revert: `tests.test_pricing::test_plain_sum_still_works` passes on base", block)
         self.assertEqual(repo.git("worktree", "list").count("\n"), 1, "the base worktree is removed")
 
     def test_a_test_file_that_cannot_load_on_the_base_is_reported_apart(self) -> None:
@@ -242,23 +241,42 @@ class ClaimsTest(unittest.TestCase):
         self.repo.write("tests/test_pricing.py", FEATURE_TESTS)
         self.repo.commit("feature")
 
-    def test_acceptance_status_comes_from_ci_and_an_unknown_test_is_a_mismatch(self) -> None:
+    def test_scenarios_are_one_row_and_an_unknown_test_is_a_finding(self) -> None:
         _, evidence, block = self.repo.collect("--junit", self.repo.junit())
-        self.assertIn("| CS1-S1 | `tests.test_pricing::test_half` | ✅ passed |", block)
-        self.assertIn("| CS1-S2 | `tests.test_pricing::test_ten` | ❓ not in any report |", block)
-        self.assertIn("CS1-S2 names `tests.test_pricing::test_ten`, which no CI report contains", evidence["mismatches"])
+        self.assertIn("| Spec scenarios | ⚠️ | 1 of 2 scenario tests pass at this commit | 1 not in any CI report |", block)
+        self.assertIn("- Spec scenarios: CS1-S2 `tests.test_pricing::test_ten` not in any CI report", block)
+        self.assertNotIn("| Scenario | Test |", block)
+        self.assertNotIn("Claims vs evidence", block)
+        self.assertEqual(evidence["verdict"], "attention")
 
-    def test_a_clean_claim_against_failing_ci_is_a_mismatch_and_fails_the_verdict(self) -> None:
+    def test_an_older_body_with_an_acceptance_table_is_still_read(self) -> None:
+        legacy = BODY.split("## What the tests check")[0] + (
+            "## Acceptance criteria\n\n| Scenario | Criterion | Test | Status |\n| --- | --- | --- | --- |\n"
+            "| CS1-S1 | HALF halves the total | `tests.test_pricing::test_half` | awaiting CI |\n\n<!-- BEGIN DEV-EVIDENCE -->\n<!-- END DEV-EVIDENCE -->\n")
+        _, evidence, block = self.repo.collect("--junit", self.repo.junit(), body=legacy)
+        self.assertEqual(evidence["acceptance"], [{"id": "CS1-S1", "case": "tests.test_pricing::test_half", "status": "passed"}])
+        self.assertIn("| Spec scenarios | ✅ | 1 of 1 scenario tests pass at this commit |", block)
+
+    def test_a_failing_test_fails_the_verdict_and_is_a_finding(self) -> None:
         self.repo.write("tests/test_pricing.py", FEATURE_TESTS + "\n\ndef test_broken():\n    assert total([1]) == 2\n")
         self.repo.commit("broken")
         result, evidence, block = self.repo.collect("--junit", self.repo.junit(), "--strict")
         self.assertEqual(result.returncode, 1)
         self.assertEqual(evidence["verdict"], "failed")
-        self.assertIn("unit claims a clean run, but CI has 1 failing test(s)", evidence["mismatches"])
+        self.assertIn("- Failing test: `tests.test_pricing::test_broken`", block)
         self.assertIn("### ❌ CI found failures at", block)
 
+    def test_more_than_five_findings_of_a_check_overflow_into_details(self) -> None:
+        many = ", ".join(f'{{"id": "CS1-S{n}", "case": "tests.missing::test_{n}"}}' for n in range(1, 9))
+        body = BODY.split("<!-- dev-acceptance")[0] + f"<!-- dev-acceptance: [{many}] -->\n"
+        _, _, block = self.repo.collect("--junit", self.repo.junit(), body=body)
+        shown = block.split("<details>")[0]
+        self.assertEqual(shown.count("- Spec scenarios: CS1-S"), 5)
+        self.assertIn("- Spec scenarios: +3 more in Details", shown)
+        self.assertIn("- CS1-S8 `tests.missing::test_8` not in any CI report", block.split("<details>")[1])
+
     def test_a_clean_change_is_verified_and_the_predicate_says_passed(self) -> None:
-        body = BODY.replace("| CS1-S2 | TEN takes 10 off | `tests.test_pricing::test_ten` | awaiting CI |\n", "")
+        body = BODY.replace(', {"id": "CS1-S2", "case": "tests.test_pricing::test_ten"}', "")
         self.repo.write("lcov.info", "SF:src/cart/pricing.py\n" + "".join(f"DA:{n},1\n" for n in range(1, 8)) + "end_of_record\n")
         result, evidence, block = self.repo.collect("--junit", self.repo.junit(), "--coverage", "lcov.info",
                                                     "--run-url", "https://ci.example/run/7", "--workflow", "verify.yml",
@@ -309,16 +327,15 @@ class ProofsTest(unittest.TestCase):
         evidence, block = self.collect(report)
         self.assertEqual(evidence["verdict"], "failed")
         self.assertIn("| Proofs | ❌ |", block)
-        self.assertIn("- native_decide: `Tile/Theorems.lean`:9 trusts the compiler", block)
+        self.assertIn("- Proof gate: `Tile/Theorems.lean`:9 native_decide: trusts the compiler", block)
 
-    def test_an_unfinished_proof_claimed_clean_is_a_mismatch(self) -> None:
+    def test_an_unfinished_proof_needs_attention_and_is_a_finding(self) -> None:
         report = {**self.REPORT, "result": "unfinished",
                   "theorems": [{**self.REPORT["theorems"][0], "status": "unfinished"}],
                   "unfinished": [{"rule": "sorry", "file": "Spec.lean", "line": 0, "detail": "rests on sorry"}]}
-        body = BODY.replace("| coverage | ran | 0 | 0 | 0 |", "| coverage | ran | 0 | 0 | 0 |\n| formal | ran | 0 | 0 | 0 |")
-        evidence, block = self.collect(report, body)
+        evidence, block = self.collect(report, BODY)
         self.assertNotEqual(evidence["verdict"], "verified")
-        self.assertIn("formal claims a clean run, but the proof gate reports unfinished", evidence["mismatches"])
+        self.assertIn("- Proof gate: `Spec.lean` sorry: rests on sorry", block)
         self.assertIn("| Proofs | ⚠️ | 0 of 1 Lean statements proved", block)
 
     def test_a_missing_report_is_a_gate_that_did_not_run(self) -> None:
@@ -334,7 +351,7 @@ class RobustnessTest(unittest.TestCase):
         repo.commit("feature")
         _, evidence, _ = repo.collect(body=None)
         self.assertEqual(evidence["verdict"], "attention")
-        self.assertTrue(any("no tests ran" in m for m in evidence["mismatches"]))
+        self.assertTrue(evidence["none_ran"])
         repo.write("empty.xml", '<testsuite tests="0" errors="1"></testsuite>')
         _, evidence, _ = repo.collect("--junit", "empty.xml", body=None)
         self.assertEqual(evidence["verdict"], "failed")

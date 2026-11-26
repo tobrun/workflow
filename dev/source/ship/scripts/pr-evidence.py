@@ -6,6 +6,8 @@
     pr-evidence.py publish <dir> [--branch pr-evidence] [--remote origin]
     pr-evidence.py check <pr-body.md> [--kind frontend|non-frontend] [--spec spec.md]
     pr-evidence.py summarize <pr-body.md>
+    pr-evidence.py acceptance <pr-body.md> --evidence .dev/{plan}/test-evidence.json
+    pr-evidence.py flow <pr-body.md> --spec .dev/{plan}/spec.md --base REF
 
 `extract` reads build's JSON e2e report, decodes every
 screenshot to `<dir>/{plan}/{scenario}/{step}.png`, and writes
@@ -24,11 +26,23 @@ holding real proof: an image served over http(s), or a labeled before/after
 (or merge-base/branch) pair of fenced blocks. Placeholders fail it. It also
 requires a "## Quality" table with one row per verification kind of
 references/verification.md, each `ran` or `skipped (reason)`; with --spec, a
-kind the spec's Verification block marks yes may not be skipped, every spec
-scenario needs an Acceptance criteria row naming its test, and that table's
-Status cells stay "awaiting CI". The body keeps empty DEV-EVIDENCE markers: CI's
-ci-evidence.py owns what goes between them. A "## Not verified" section is
-required, and the grouped verification summary must be what `summarize` writes.
+kind the spec's Verification block marks yes may not be skipped, a "## What the
+tests check" paragraph is required (plain prose of at most 120 words, no table and
+no scenario ids), and the hidden dev-acceptance marker must match the spec's
+scenarios and the test-evidence.json beside it. The body keeps empty DEV-EVIDENCE
+markers: CI's ci-evidence.py owns what goes between them. A "## Not verified"
+section is required, each of its bullets led by a bold category
+("- **Coverage:** ..."), and the grouped verification summary must be what
+`summarize` writes. An "## Acceptance criteria" table is refused.
+
+`acceptance` writes the dev-acceptance marker, each scenario id and the runner case
+that proves it, from test-evidence.json; CI reads it to check every scenario's test
+at the head commit, and no person has to read it.
+
+`flow` copies the spec's ### Flow mermaid diagram into a "## Flow" section when it
+still matches the code: every name it draws is in a tracked file at HEAD, and at
+least one is in a file the branch changed since --base. Otherwise it writes no
+section, removes a stale one, and prints the names it could not find.
 
 `summarize` rewrites the QUALITY-SUMMARY block from the Quality table: the twenty
 kinds grouped, each marked ran clean, ran with open calls, or skipped.
@@ -292,19 +306,158 @@ def check_structure(body: str, spec: Path | None, problems: list[str]) -> None:
         problems.append("no QUALITY-SUMMARY block; run pr-evidence.py summarize")
     elif found.group(0) != summary_block(body):
         problems.append("the QUALITY-SUMMARY block does not match the Quality table; run pr-evidence.py summarize, never edit it")
-    rows = {}
-    for line in (evidence_section(body, "Acceptance criteria") or "").splitlines():
-        cells = [c.strip() for c in line.strip().strip("|").split("|")]
-        if len(cells) >= 4 and re.match(r"^`?CS\d+-S\d+`?$", cells[0]):
-            rows[cells[0].strip("`")] = cells
-            if not re.search(r"\S", cells[2].strip("`")):
-                problems.append(f"Acceptance criteria {cells[0]} names no test")
-            if cells[3].lower() != "awaiting ci":
-                problems.append(f"Acceptance criteria {cells[0]} sets its own status '{cells[3]}'; write 'awaiting CI', CI fills it")
-    if spec is not None:
-        for scenario in spec_scenarios(spec):
-            if scenario not in rows:
-                problems.append(f"Acceptance criteria has no row for {scenario}")
+    check_readable(body, spec, problems)
+
+
+TESTS_SECTION = "What the tests check"
+TESTS_WORDS = 120
+ACCEPTANCE_MARKER = re.compile(r"<!--\s*dev-acceptance:.*?-->\n?", re.DOTALL)
+CATEGORY_BULLET = re.compile(r"^- \*\*[^*:\n]{1,40}:\*\*\s+\S")
+MERMAID_WORDS = {"sequencediagram", "flowchart", "graph", "participant", "actor", "as", "note", "loop", "alt", "else", "opt",
+                 "par", "and", "rect", "end", "activate", "deactivate", "autonumber", "title", "subgraph", "classdef", "class",
+                 "style", "linkstyle", "click", "td", "tb", "lr", "rl", "bt", "over", "left", "right", "of", "critical", "break"}
+
+
+def check_readable(body: str, spec: Path | None, problems: list[str]) -> None:
+    """The parts a reviewer reads: the tests paragraph, the hidden scenario mapping, and categorized gaps."""
+    if evidence_section(body, "Acceptance criteria") is not None:
+        problems.append("the '## Acceptance criteria' table is dropped; write '## What the tests check' "
+                        "and run pr-evidence.py acceptance for the mapping CI reads")
+    scenarios = spec_scenarios(spec) if spec is not None else []
+    paragraph = evidence_section(body, TESTS_SECTION)
+    text = ACCEPTANCE_MARKER.sub("", paragraph or "").strip()
+    if paragraph is None or not text:
+        if scenarios:
+            problems.append(f"no non-empty '## {TESTS_SECTION}' paragraph; say in plain words what the tests validate")
+    else:
+        if re.search(r"^\s*\|", text, re.MULTILINE):
+            problems.append(f"'## {TESTS_SECTION}' holds a table; write it as one short paragraph")
+        if re.search(r"\bCS\d+-S\d+\b", text):
+            problems.append(f"'## {TESTS_SECTION}' names scenario ids; describe the behavior they check instead")
+        words = len(text.split())
+        if words > TESTS_WORDS:
+            problems.append(f"'## {TESTS_SECTION}' runs {words} words; keep it under {TESTS_WORDS}")
+    if scenarios:
+        marker = ACCEPTANCE_MARKER.search(body)
+        evidence = spec.parent / "test-evidence.json"
+        if not marker:
+            problems.append("no dev-acceptance marker; run pr-evidence.py acceptance")
+        elif evidence.is_file():
+            expected = acceptance_marker(evidence)
+            if marker.group(0).strip() != expected.strip():
+                problems.append(f"the dev-acceptance marker differs from {evidence}; run pr-evidence.py acceptance")
+            mapped = {m["id"] for m in json.loads(expected.split("dev-acceptance:", 1)[1].rsplit("-->", 1)[0])}
+            for scenario_id in scenarios:
+                if scenario_id not in mapped:
+                    problems.append(f"the dev-acceptance marker maps no test for {scenario_id}")
+    gaps = evidence_section(body, "Not verified") or ""
+    for line in gaps.splitlines():
+        if line.startswith("- ") and not CATEGORY_BULLET.match(line):
+            problems.append(f"a Not verified item needs a bold category first, as '- **Coverage:** ...': {line[:60]!r}")
+
+
+def acceptance_marker(evidence: Path) -> str:
+    manifest = json.loads(evidence.read_text(encoding="utf-8"))
+    mapped = [{"id": m["id"], "case": m["case"]} for m in manifest.get("scenarios", [])
+              if isinstance(m, dict) and m.get("id") and m.get("case")]
+    return f"<!-- dev-acceptance: {json.dumps(mapped, ensure_ascii=False)} -->\n"
+
+
+def acceptance(args: argparse.Namespace) -> None:
+    path = Path(args.body)
+    body = path.read_text(encoding="utf-8")
+    try:
+        marker = acceptance_marker(Path(args.evidence))
+    except (OSError, ValueError, AttributeError) as error:
+        fail(f"cannot read {args.evidence}: {error}")
+    if ACCEPTANCE_MARKER.search(body):
+        body = ACCEPTANCE_MARKER.sub(lambda _: marker, body, count=1)
+    else:
+        body = insert_before(body, ("## Evidence", EVIDENCE_BEGIN), marker + "\n")
+    path.write_text(body, encoding="utf-8")
+    print(f"pr-evidence: dev-acceptance marker written to {path}")
+
+
+def insert_before(body: str, anchors: tuple[str, ...], text: str) -> str:
+    """Insert text before the first anchor line found, or at the end."""
+    for anchor in anchors:
+        at = re.search(rf"^{re.escape(anchor)}", body, re.MULTILINE)
+        if at:
+            return body[: at.start()] + text + body[at.start():]
+    return body.rstrip("\n") + "\n\n" + text
+
+
+def spec_flow(spec: Path) -> str | None:
+    """The mermaid source of the spec's ### Flow block, or None."""
+    block = re.search(r"^###\s+Flow\s*$(.*?)(?=^#{1,3}\s|\Z)", spec.read_text(encoding="utf-8"), re.MULTILINE | re.DOTALL)
+    fence = re.search(r"```mermaid\s*\n(.*?)```", block.group(1), re.DOTALL) if block else None
+    return fence.group(1).rstrip() + "\n" if fence else None
+
+
+def flow_names(source: str) -> list[str]:
+    """The names a diagram draws: participant labels (or ids) and node labels (or ids)."""
+    names: dict[str, str] = {}
+    for raw in source.splitlines():
+        line = raw.strip()
+        declared = re.match(r"^(?:participant|actor)\s+([\w.]+)(?:\s+as\s+(.+))?$", line)
+        if declared:
+            names[declared.group(1)] = (declared.group(2) or declared.group(1)).strip()
+            continue
+        if re.match(r"^(?:note|title|%%|classDef|class|style|linkStyle|click)\b", line):
+            continue
+        message = re.match(r"^([\w.]+)\s*-{1,2}(?:>>|>|x|\))\s*([\w.]+)\s*:", line)
+        if message:  # a sequence message; its text after the colon is prose, not names
+            for node in message.groups():
+                names.setdefault(node, node)
+            continue
+        node_label = re.compile(r"([\w.]+)\s*(?:\[\(|\(\(|\[|\(|\{|>)\s*\"?([^\]\)\}\"|]+)\"?[\]\)\}]*")
+        for node, label in node_label.findall(line):
+            names[node] = label.strip()
+        bare = node_label.sub(lambda m: m.group(1), line)
+        for pair in re.findall(r"([\w.]+)\s*(?:-->|---|-\.->|==>)\s*(?:\|[^|]*\|)?\s*([\w.]+)", bare):
+            for node in pair:
+                names.setdefault(node, node)
+    cleaned = []
+    for label in names.values():
+        label = re.sub(r"<br\s*/?>", " ", label).strip("`'\" ")
+        if label and label.lower() not in MERMAID_WORDS and label not in cleaned:
+            cleaned.append(label)
+    return cleaned
+
+
+def flow(args: argparse.Namespace) -> None:
+    path = Path(args.body)
+    body = path.read_text(encoding="utf-8")
+    stale = re.compile(r"^## Flow\s*\n.*?(?=^## |" + re.escape(EVIDENCE_BEGIN) + r"|\Z)", re.MULTILINE | re.DOTALL)
+    body = stale.sub("", body)
+    source = spec_flow(Path(args.spec))
+    if source is None:
+        path.write_text(body, encoding="utf-8")
+        print("pr-evidence: the spec has no ### Flow diagram; no Flow section")
+        return
+    names = flow_names(source)
+    tracked = git("ls-files").splitlines()
+    changed = git("diff", "--name-only", f"{args.base}...HEAD").splitlines()
+
+    def found(name: str, paths: list[str]) -> bool:
+        """The name is in a path's file name or in its content at HEAD."""
+        if any(name.lower() in path.lower() for path in paths):
+            return True
+        return bool(paths) and subprocess.run(["git", "grep", "-qiF", "-e", name, "HEAD", "--", *paths],
+                                              capture_output=True).returncode == 0
+
+    missing = [n for n in names if not found(n, tracked)]
+    touched = [n for n in names if found(n, changed)]
+    if missing or not touched:
+        path.write_text(body, encoding="utf-8")
+        why = f"names not in the code at HEAD: {', '.join(missing)}" if missing else "no name it draws is in a file this branch changed"
+        print(f"pr-evidence: the spec's Flow diagram no longer matches; no Flow section ({why})")
+        return
+    head = git("rev-parse", "--short", "HEAD").strip()
+    section = (f"## Flow\n\nFrom the spec; each of the {len(names)} names it draws is in the code at `{head}`.\n\n"
+               f"```mermaid\n{source}```\n\n")
+    path.write_text(insert_before(body, ("## Evidence", "## Not verified", EVIDENCE_BEGIN), section), encoding="utf-8")
+    print(f"pr-evidence: Flow section written to {path} ({len(names)} names, {len(touched)} in changed files)")
 
 
 def summarize(args: argparse.Namespace) -> None:
@@ -512,6 +665,15 @@ def main() -> None:
     sm = sub.add_parser("summarize")
     sm.add_argument("body")
     sm.set_defaults(run=summarize)
+    ac = sub.add_parser("acceptance")
+    ac.add_argument("body")
+    ac.add_argument("--evidence", required=True, help="the plan's test-evidence.json")
+    ac.set_defaults(run=acceptance)
+    fl = sub.add_parser("flow")
+    fl.add_argument("body")
+    fl.add_argument("--spec", required=True)
+    fl.add_argument("--base", required=True, help="the PR's base; a name the diagram draws must be in a file changed since it")
+    fl.set_defaults(run=flow)
     args = parser.parse_args()
     args.run(args)
 

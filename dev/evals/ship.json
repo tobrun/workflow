@@ -85,14 +85,25 @@
     },
     {
       "id": "pr-evidence-split",
-      "prompt": "Answer briefly, from the skill text and the references it links only. (1) Who writes the DEV-EVIDENCE block of the PR body, at which commit, and what may the agent write between its markers? (2) What does the Status column of the Acceptance criteria table say in pr.md, and who fills it? (3) The PR exists and ship must update its body. How does CI's block survive? (4) CI's block reports a new test that passes on the base. What does ship do? (5) The repository has no evidence job. What does the PR say?",
+      "prompt": "Answer briefly, from the skill text and the references it links only. (1) Who writes the DEV-EVIDENCE block of the PR body, at which commit, and what may the agent write between its markers? (2) How does the PR tell a reviewer what the tests check, and how does CI still learn which test proves each spec scenario? (3) The PR exists and ship must update its body. How does CI's block survive? (4) CI's block reports a new test that passes on the base. What does ship do? (5) The repository has no evidence job. What does the PR say?",
       "fixture": "none - the answers come from the skill text",
       "assertions": [
         "Answer 1: only CI's ci-evidence.py, at the PR's head commit, from CI's own runs; the agent leaves the markers empty and pr-evidence.py check refuses anything between them",
-        "Answer 2: 'awaiting CI'; CI writes each scenario's real status from its JUnit results",
+        "Answer 2: a What the tests check paragraph of at most 120 words in plain technical English, with no test names, ids, or table; pr-evidence.py acceptance writes a hidden dev-acceptance marker from test-evidence.json, and CI shows one Spec scenarios row with each failing or missing scenario as a finding",
         "Answer 3: ship splices the current block into a scratch copy of pr.md with ci-evidence.py splice before gh pr edit",
         "Answer 4: it is a verify-phase violation: fix it and push so CI re-measures, up to three rounds, then Open calls and Not verified; the block stays as CI wrote it",
         "Answer 5: the markers stay empty, Not verified says there is no evidence job, and bootstrap is recommended"
+      ]
+    },
+    {
+      "id": "pr-readable-body",
+      "prompt": "Answer briefly, from the skill text and the references it links only. (1) What does each Not verified bullet start with? (2) Where does CI list what it found, and what happens when one check finds twelve things? (3) The spec has a ### Flow diagram, but one participant it draws was renamed during build. Does the diagram reach the PR, and what does the body say about it? (4) May the body still carry an Acceptance criteria table?",
+      "fixture": "none - the answers come from the skill text",
+      "assertions": [
+        "Answer 1: a bold category, as '- **Coverage:** ...', grouped by category; pr-evidence.py check refuses a bullet without one",
+        "Answer 2: in a visible Findings list under CI's table, one line each prefixed with its check; five are shown and the other seven are counted and listed in Details",
+        "Answer 3: no - pr-evidence.py flow copies it only while every name it draws is in the code at HEAD and one is in a changed file; the agent adds a **Diagram:** Not verified item naming what is missing",
+        "Answer 4: no - pr-evidence.py check refuses it"
       ]
     },
     {

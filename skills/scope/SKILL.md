@@ -4,7 +4,7 @@ description: Spec a change at .dev/{plan-name}/spec.md - find the real problem, 
 license: MIT
 compatibility: Needs git and Python 3.10+.
 metadata:
-  version: "4.3.0"
+  version: "4.4.0"
   source: "https://github.com/tobrun/workflow"
   invocation: "explicit - recommend it, never run it unasked"
 ---
@@ -59,14 +59,14 @@ Argue each decision on its merits before reading `docs/decisions.md`, then compa
 **Research**: one entry per decision, by impact.
 When a later section references a decision, echo the chosen line's leading label in parentheses - `D-file-storage (✓ S3)`, `(open)`, `(⊘ not doing)` - so lead each chosen line with the short label you will echo.
 
-**Scope**: inputs, outputs, invariants, and error handling.
+**Scope**: open with a `### Summary` paragraph of at most 150 words in plain technical English - what changes, for whom, how it behaves, and how it fails - the narrative a person reads before any list; then inputs, outputs, invariants, and error handling.
 Second-order work becomes nested sub-efforts with their own decisions; weighed and cut options become `⊘` non-goals with a because clause.
 End with a `### Validation` block of the repository's real typecheck, test, lint, and build commands, discovered from its manifests and CI config, never guessed.
 List each once, and mark `(end of build)` the ones a build wave does not need, such as the e2e suite, benchmarks, or a coverage run that repeats the suite; `ship`'s verify phase runs those.
 Then a `### Verification` block marking each of the twenty kinds in [../../references/verification.md](references/verification.md) `yes - how` or `no - reason`, judged by the triggers there; `formal: yes` names its mechanism as a decision (a TLA+ or Alloy model, a Lean model with proofs, Verus or Kani, or a stateful `[property]` test).
 When it names Lean, a `### Theorems` block per [../../references/proofs.md](references/proofs.md): each statement the user approves with the spec, with a plain-English reading and a witness, kept short enough to read; build copies them verbatim and no agent changes them after.
 When `threat-model` applies, a `### Threat model` block: per trust boundary, each STRIDE threat with its mitigation and the scenario that tests it.
-Only when the change adds or reorders calls between components, or moves a boundary, add a `### Flow` block holding one fenced `mermaid` sequence or component diagram of the new flow, with the changed parts named; a local fix gets none.
+Only when the change adds or reorders calls between components, moves a boundary, or adds a lifecycle, add a `### Flow` block of up to three fenced `mermaid` diagrams, the ones that most help a reader see this change - a sequence diagram of the new calls, a component diagram of a moved boundary, a state diagram of a new lifecycle - each led by a one-line caption and with the changed parts named; a local fix gets none.
 
 **Change plan**: short fragments, linking decisions by ID with their echo.
 Each change set ends with exactly one `tests:` line of concrete scenarios, input -> expected outcome, each tagged with the layer that proves it - `[unit]`, `[component]`, `[integration]`, `[contract]`, `[property]`, `[fuzz]`, `[e2e]`, `[smoke]`, or `[benchmark]` - and covering the happy path, edge cases, and failure paths; a set with nothing to test says `tests: none - {reason}`.

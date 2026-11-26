@@ -139,7 +139,7 @@ class LintSpecVerificationTest(unittest.TestCase):
 
     def lint(self, block: str, tests: str = "[unit] a -> b", extra: str = "") -> str:
         text = (f"# Title\n\nRisk: low - small\n\n## Research\n\n{CHOSEN.replace('live?', 'live? [impact: low]')}\n"
-                f"## Scope\n\nFiles go where D-storage (✓ S3) says.\n\n### Validation\n\n- `make test`\n\n"
+                f"## Scope\n\nFiles go where D-storage (✓ S3) says.\n\n### Summary\n\nThe change stores files in S3 so they survive a redeploy.\n\n### Validation\n\n- `make test`\n\n"
                 f"{block}{extra}## Change plan\n\n1. Store\n   a. `src/store.py` - write - decisions: D-storage (✓ S3)\n"
                 f"   tests: {tests}\n")
         with tempfile.TemporaryDirectory() as tmp:
@@ -211,6 +211,36 @@ class LintSpecVerificationTest(unittest.TestCase):
     def test_a_theorems_block_needs_a_lean_mechanism(self) -> None:
         out = self.lint(verification("unit"), extra=self.THEOREMS)
         self.assertIn("a '### Theorems' block needs formal: yes naming its Lean model", out)
+
+    SUMMARY = "### Summary\n\nThe change stores files in S3 so they survive a redeploy.\n\n"
+
+    def test_the_scope_needs_a_short_prose_summary(self) -> None:
+        self.assertIn("clean", self.lint(verification("unit")))
+        self.assertIn("no '### Summary' paragraph", self.lint_without_summary(verification("unit")))
+        self.assertIn("the Summary is a paragraph, not a list", self.lint_without_summary(
+            verification("unit"), "### Summary\n\n- stores files\n- in S3\n\n"))
+        self.assertIn("the Summary runs 151 words", self.lint_without_summary(
+            verification("unit"), "### Summary\n\n" + "word " * 151 + "\n\n"))
+
+    def test_the_summary_ends_at_its_paragraph(self) -> None:
+        after = self.SUMMARY + "Outputs:\n" + "".join(f"- output {n} with several words in it\n" for n in range(40)) + "\n"
+        self.assertIn("clean", self.lint_without_summary(verification("unit"), after))
+
+    def test_the_flow_block_holds_one_to_three_diagrams(self) -> None:
+        diagram = "```mermaid\nsequenceDiagram\n  A->>B: call\n```\n\n"
+        self.assertIn("clean", self.lint(verification("unit"), extra="### Flow\n\nThe call.\n\n" + diagram * 3))
+        self.assertIn("the Flow block holds 4 diagrams", self.lint(verification("unit"), extra="### Flow\n\n" + diagram * 4))
+        self.assertIn("the Flow block holds no ```mermaid diagram", self.lint(verification("unit"), extra="### Flow\n\nA sketch.\n\n"))
+
+    def lint_without_summary(self, block: str, summary: str = "") -> str:
+        text = (f"# Title\n\nRisk: low - small\n\n## Research\n\n{CHOSEN.replace('live?', 'live? [impact: low]')}\n"
+                f"## Scope\n\nFiles go where D-storage (✓ S3) says.\n\n{summary}### Validation\n\n- `make test`\n\n"
+                f"{block}## Change plan\n\n1. Store\n   a. `src/store.py` - write - decisions: D-storage (✓ S3)\n"
+                f"   tests: [unit] a -> b\n")
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "spec.md"
+            path.write_text(text, encoding="utf-8")
+            return subprocess.run([sys.executable, str(SCRIPT), str(path)], capture_output=True, text=True, check=False).stdout
 
     def test_a_threat_model_is_required_and_needs_a_penetration_test(self) -> None:
         out = self.lint(verification("unit", "threat-model"))

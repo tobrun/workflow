@@ -39,10 +39,11 @@ section is required, each of its bullets led by a bold category
 that proves it, from test-evidence.json; CI reads it to check every scenario's test
 at the head commit, and no person has to read it.
 
-`flow` copies the spec's ### Flow mermaid diagram into a "## Flow" section when it
-still matches the code: every name it draws is in a tracked file at HEAD, and at
-least one is in a file the branch changed since --base. Otherwise it writes no
-section, removes a stale one, and prints the names it could not find.
+`flow` copies each of the spec's ### Flow mermaid diagrams (up to three) into a
+"## Flow" section while it still matches the code: each word of every name it
+draws is in a tracked path or file at HEAD, and some name is in a file the branch
+changed since --base. A diagram that fails is left out with the names it could not
+find; with none left, no section is written and a stale one is removed.
 
 `summarize` rewrites the QUALITY-SUMMARY block from the Quality table: the twenty
 kinds grouped, each marked ran clean, ran with open calls, or skipped.
@@ -387,11 +388,21 @@ def insert_before(body: str, anchors: tuple[str, ...], text: str) -> str:
     return body.rstrip("\n") + "\n\n" + text
 
 
-def spec_flow(spec: Path) -> str | None:
-    """The mermaid source of the spec's ### Flow block, or None."""
+def spec_flows(spec: Path) -> list[tuple[str, str]]:
+    """Each mermaid diagram of the spec's ### Flow block, with the caption line above it."""
     block = re.search(r"^###\s+Flow\s*$(.*?)(?=^#{1,3}\s|\Z)", spec.read_text(encoding="utf-8"), re.MULTILINE | re.DOTALL)
-    fence = re.search(r"```mermaid\s*\n(.*?)```", block.group(1), re.DOTALL) if block else None
-    return fence.group(1).rstrip() + "\n" if fence else None
+    if not block:
+        return []
+    flows, caption = [], ""
+    for part in re.split(r"(```mermaid\s*\n.*?```)", block.group(1), flags=re.DOTALL):
+        fence = re.match(r"```mermaid\s*\n(.*?)```", part, re.DOTALL)
+        if fence:
+            flows.append((caption, fence.group(1).rstrip() + "\n"))
+            caption = ""
+        else:
+            lines = [line.strip() for line in part.splitlines() if line.strip()]
+            caption = lines[-1] if lines else ""
+    return flows
 
 
 def flow_names(source: str) -> list[str]:
@@ -425,39 +436,53 @@ def flow_names(source: str) -> list[str]:
     return cleaned
 
 
+def name_words(name: str) -> list[str]:
+    """The words of a drawn name that the code must hold: asides in parentheses dropped, short words skipped."""
+    return [w for w in re.findall(r"[A-Za-z_][\w.]*", re.sub(r"\([^)]*\)", " ", name)) if len(w) >= 3]
+
+
 def flow(args: argparse.Namespace) -> None:
     path = Path(args.body)
     body = path.read_text(encoding="utf-8")
     stale = re.compile(r"^## Flow\s*\n.*?(?=^## |" + re.escape(EVIDENCE_BEGIN) + r"|\Z)", re.MULTILINE | re.DOTALL)
     body = stale.sub("", body)
-    source = spec_flow(Path(args.spec))
-    if source is None:
+    flows = spec_flows(Path(args.spec))
+    if not flows:
         path.write_text(body, encoding="utf-8")
         print("pr-evidence: the spec has no ### Flow diagram; no Flow section")
         return
-    names = flow_names(source)
     tracked = git("ls-files").splitlines()
     changed = git("diff", "--name-only", f"{args.base}...HEAD").splitlines()
 
-    def found(name: str, paths: list[str]) -> bool:
-        """The name is in a path's file name or in its content at HEAD."""
-        if any(name.lower() in path.lower() for path in paths):
+    def found(word: str, paths: list[str]) -> bool:
+        """The word is in a path or in its content at HEAD."""
+        if any(word.lower() in p.lower() for p in paths):
             return True
-        return bool(paths) and subprocess.run(["git", "grep", "-qiF", "-e", name, "HEAD", "--", *paths],
+        return bool(paths) and subprocess.run(["git", "grep", "-qiF", "-e", word, "HEAD", "--", *paths],
                                               capture_output=True).returncode == 0
 
-    missing = [n for n in names if not found(n, tracked)]
-    touched = [n for n in names if found(n, changed)]
-    if missing or not touched:
+    kept = []
+    for number, (caption, source) in enumerate(flows, start=1):
+        names = flow_names(source)
+        missing = [n for n in names if not all(found(w, tracked) for w in name_words(n))]
+        touched = [n for n in names if any(found(w, changed) for w in name_words(n))]
+        label = f"diagram {number}" + (f" ({caption})" if caption else "")
+        if missing or not touched:
+            why = f"names not in the code at HEAD: {', '.join(missing)}" if missing else "no name it draws is in a file this branch changed"
+            print(f"pr-evidence: {label} no longer matches the code; left out ({why})")
+            continue
+        kept.append((caption, source))
+    if not kept:
         path.write_text(body, encoding="utf-8")
-        why = f"names not in the code at HEAD: {', '.join(missing)}" if missing else "no name it draws is in a file this branch changed"
-        print(f"pr-evidence: the spec's Flow diagram no longer matches; no Flow section ({why})")
+        print("pr-evidence: no Flow diagram still matches; no Flow section")
         return
     head = git("rev-parse", "--short", "HEAD").strip()
-    section = (f"## Flow\n\nFrom the spec; each of the {len(names)} names it draws is in the code at `{head}`.\n\n"
-               f"```mermaid\n{source}```\n\n")
+    parts = [f"## Flow\n\nFrom the spec; every name these diagrams draw is in the code at `{head}`.\n"]
+    for caption, source in kept:
+        parts.append((f"\n{caption}\n" if caption else "") + f"\n```mermaid\n{source}```\n")
+    section = "".join(parts) + "\n"
     path.write_text(insert_before(body, ("## Evidence", "## Not verified", EVIDENCE_BEGIN), section), encoding="utf-8")
-    print(f"pr-evidence: Flow section written to {path} ({len(names)} names, {len(touched)} in changed files)")
+    print(f"pr-evidence: Flow section written to {path} ({len(kept)} of {len(flows)} diagrams)")
 
 
 def summarize(args: argparse.Namespace) -> None:

@@ -1,6 +1,6 @@
 {
   "name": "@tobrun/dev-workflow",
-  "version": "4.3.0",
+  "version": "4.4.0",
   "description": "Test-focused development workflow skills, portable across Agent Skills harnesses: Claude Code, Codex, Copilot, Cursor, OpenCode, Pi, and more.",
   "keywords": [
     "pi-package",

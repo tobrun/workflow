@@ -160,23 +160,31 @@ def read_change_plan(body: list[tuple[int, str]]) -> list[dict]:
 
 def read_scope(body: list[tuple[int, str]]) -> dict:
     """The scope section split into prose, non-goals, validation commands, and the flow sketch."""
-    prose, non_goals, validation, flow, verification, threats, theorems = [], [], [], [], [], [], []
-    block, fence = None, False
+    prose, non_goals, validation, verification, threats, theorems, summary = [], [], [], [], [], [], []
+    diagrams: list[dict] = []
+    block, fence, caption = None, None, ""
     for _, line in body:
         stripped = line.strip()
-        if fence:
+        if fence is not None:
             if stripped.startswith("```"):
-                fence = False
+                diagrams.append({"caption": caption, "source": "\n".join(fence).strip()})
+                fence, caption = None, ""
             else:
-                flow.append(line)
+                fence.append(line)
             continue
         if stripped.startswith("```mermaid"):
-            fence = True
+            fence = []
             continue
         if stripped.startswith("### "):
             block = stripped[4:].strip().lower()
-            if block in ("validation", "flow", "verification", "threat model", "theorems"):
+            if block in ("validation", "flow", "verification", "threat model", "theorems", "summary"):
                 continue
+        if block == "summary":
+            if stripped:
+                summary.append(stripped)
+                continue
+            if summary:  # the paragraph ended; what follows is ordinary scope
+                block = None
         if block == "theorems":
             if stripped:
                 theorems.append((0, line))
@@ -200,14 +208,15 @@ def read_scope(body: list[tuple[int, str]]) -> dict:
             continue
         if block == "flow":
             if stripped:
-                prose.append(line)
+                caption = stripped.lstrip("-* ").strip()
             continue
         if "⊘" in stripped:
             non_goals.append(stripped.lstrip("-* ").lstrip("⊘").strip())
             continue
         prose.append(line)
-    return {"prose": prose, "non_goals": non_goals, "validation": validation, "flow": "\n".join(flow).strip(),
-            "verification": verification, "threats": threats, "theorems": lint.read_theorems(theorems)}
+    return {"prose": prose, "non_goals": non_goals, "validation": validation, "diagrams": diagrams,
+            "verification": verification, "threats": threats, "theorems": lint.read_theorems(theorems),
+            "summary": " ".join(summary)}
 
 
 def read_header(lines: list[str]) -> dict:
@@ -490,17 +499,116 @@ def verification_html(scope: dict) -> str:
 
 
 def waves_html(data: dict) -> str:
+    """Each wave with how many subagents run it at once, and why a later wave waits."""
     if not data["waves"]:
         return '<p class="muted">One change set, so build runs it alone.</p>'
     titles = {c["n"]: c["title"] for c in data["change_sets"]}
-    out = []
-    for i, wave in enumerate(data["waves"], start=1):
+    waves, widest = data["waves"], max(len(w) for w in data["waves"])
+    count = sum(len(w) for w in waves)
+    lead = (f"{count} change sets in {len(waves)} wave{'s' if len(waves) != 1 else ''}: build runs up to {widest} at once, "
+            f"one subagent each, and commits each wave before the next starts."
+            if widest > 1 else f"{count} change sets that share files, so build runs them one after another.")
+    out = [f'<p class="prose-lead">{lead}</p>']
+    for i, wave in enumerate(waves, start=1):
         chips = "".join(f'<a class="wave-chip" href="#cs-{n}" data-tab="plan"><b>{n}</b> {inline(titles.get(n, ""))}</a>' for n in wave)
-        out.append(f'<div class="wave"><span class="wave-n">Wave {i}</span><div class="wave-sets">{chips}</div></div>')
+        mode = (f'<span class="lane parallel">{len(wave)} in parallel</span>' if len(wave) > 1
+                else '<span class="lane alone">alone</span>')
+        out.append(f'<div class="wave"><span class="wave-n">Wave {i}{mode}</span><div class="wave-sets">{chips}</div></div>')
     for n, (other, shared) in sorted(data["waited"].items()):
         more = f" +{len(shared) - 3} more" if len(shared) > 3 else ""
         out.append(f'<div class="waits">{n} waits on {other}: {", ".join(f"<code>{esc(s)}</code>" for s in shared[:3])}{more}</div>')
     return "\n".join(out)
+
+
+def module_of(path: str) -> str:
+    """The part of the repository a path belongs to: its top directory, or the root for a top-level file."""
+    return path.split("/", 1)[0] if "/" in path else "repository root"
+
+
+def touch_map(change_sets: list[dict], root: Path | None) -> str:
+    """Files per module and change set, darker for more; hover a cell for its files, new ones marked."""
+    owners: dict[str, set[int]] = {}
+    for change_set in change_sets:
+        for item in change_set["items"]:
+            for path in item["files"]:
+                owners.setdefault(path, set()).add(change_set["n"])
+    if not owners:
+        return '<p class="muted">No files named.</p>'
+    modules = sorted({module_of(p) for p in owners}, key=lambda m: (m == "repository root", m))
+    numbers = [c["n"] for c in change_sets]
+    new = {p for p in owners if root is not None and not (root / p).exists()}
+    shared = {p for p, sets in owners.items() if len(sets) > 1}
+    heads = "".join(f'<th><a href="#cs-{n}" data-tab="plan">{n}</a></th>' for n in numbers)
+    rows = []
+    for module in modules:
+        paths = sorted(p for p in owners if module_of(p) == module)
+        cells = []
+        for n in numbers:
+            mine = [p for p in paths if n in owners[p]]
+            if not mine:
+                cells.append('<td class="heat h0">-</td>')
+                continue
+            tip = "; ".join(p + (" (new)" if p in new else "") + (" (shared)" if p in shared else "") for p in mine)
+            cells.append(f'<td class="heat h{heat_step(len(mine))}" data-tip="{esc(tip)}" tabindex="0">{len(mine)}</td>')
+        notes = []
+        if root is not None and any(p in new for p in paths):
+            notes.append(f"{sum(1 for p in paths if p in new)} new")
+        if any(p in shared for p in paths):
+            notes.append(f"{sum(1 for p in paths if p in shared)} shared")
+        rows.append(f'<tr><th scope="row"><code>{esc(module)}</code></th>{"".join(cells)}'
+                    f'<td class="total">{len(paths)}</td><td class="muted">{", ".join(notes)}</td></tr>')
+    lead = (f"{len(owners)} files across {len(modules)} part{'s' if len(modules) != 1 else ''} of the repository"
+            + (f", {len(new)} of them new" if new else "") + (f"; {len(shared)} shared by more than one change set, which makes those wait"
+                                                                if shared else "") + ".")
+    return (f'<p class="prose-lead">{lead} Hover a cell for its files.</p>'
+            f'<table class="heatmap touch"><thead><tr><th>Part</th>{heads}<th>Files</th><th></th></tr></thead>'
+            f'<tbody>{"".join(rows)}</tbody></table><div class="legend">Files <span><i class="heat h0"></i>0</span>'
+            f'<span><i class="heat h1"></i>1-2</span><span><i class="heat h2"></i>3-5</span><span><i class="heat h3"></i>6-10</span>'
+            f'<span><i class="heat h4"></i>11+</span> · columns are change sets</div>')
+
+
+def repo_root(path: Path) -> Path | None:
+    for parent in path.resolve().parents:
+        if (parent / ".git").exists():
+            return parent
+    return None
+
+
+def decision_link(decision: dict, with_confidence: bool = True) -> str:
+    confidence = f" ({decision['confidence']}%)" if with_confidence and decision["confidence"] is not None else ""
+    return (f'<a href="#{esc(decision["slug"])}" data-tab="decisions" title="{esc(decision["slug"])}">'
+            f'{esc(title(decision["slug"]))}</a>{confidence}')
+
+
+def listed(items: list[str]) -> str:
+    return items[0] if len(items) == 1 else ", ".join(items[:-1]) + " and " + items[-1]
+
+
+def applied_paragraph(applied: list[dict], total: int) -> str:
+    """The decisions scope applied without asking, as a few sentences a person reads once."""
+    sentences = [f"Scope settled {len(applied)} of {total} decisions without asking you; "
+                 "a reply overturns any of them from its card under Decisions."]
+    high = [d for d in applied if d["impact"] == "high"]
+    if high:
+        sentences.append(f"Read the high-impact {'one' if len(high) == 1 else 'ones'} first: "
+                         f"{listed([decision_link(d) for d in sorted(high, key=lambda d: d['confidence'] or 0)])}.")
+    rated = [d for d in applied if d["confidence"] is not None and d not in high]
+    if rated:
+        floor = min(d["confidence"] for d in rated)
+        unsure = [d for d in rated if d["confidence"] < max(floor + 5, 70)][:5]
+        same = len({d["confidence"] for d in unsure}) == 1
+        names = listed([decision_link(d, not same) for d in unsure])
+        sentences.append(f"The least sure {'is' if len(unsure) == 1 else 'are'} {names}"
+                         + (f", {'at' if len(unsure) == 1 else 'all at'} {floor}%." if same else "."))
+        rest = [d for d in rated if d not in unsure]
+        if rest:
+            low, top = min(d["confidence"] for d in rest), max(d["confidence"] for d in rest)
+            span = f"{low}%" if low == top else f"{low} to {top}%"
+            sentences.append(f"The other {len(rest)} sit at {span}.")
+    unrated = [d for d in applied if d["confidence"] is None]
+    if unrated:
+        sentences.append(f"{listed([decision_link(d) for d in unrated])} state{'s' if len(unrated) == 1 else ''} no confidence.")
+    return " ".join(sentences)
 
 
 def needs_you(data: dict) -> str:
@@ -520,20 +628,7 @@ def needs_you(data: dict) -> str:
         out.append(f'<div class="card pending"><header><h3 title="{esc(decision["slug"])}">{esc(title(decision["slug"]))}</h3>'
                    f'<span class="question">{inline(decision["question"])}</span>{impact_badge(decision["impact"])}</header>{flags}{alts}</div>')
     if applied:
-        rows = []
-        for decision in applied:
-            resolution = decision["resolution"]
-            swaps = "".join(reply_button(f'{decision["slug"]}: take "{a["label"]}" instead of "{resolution["label"]}"',
-                                         f'↺ {a["label"]}')
-                            for a in decision["alternatives"] if a["mark"] == "✗")
-            confidence = meter(decision["confidence"]) or '<span class="muted">no confidence stated</span>'
-            rows.append(f'<tr><td><a href="#{esc(decision["slug"])}" data-tab="decisions" title="{esc(decision["slug"])}"><b>{esc(title(decision["slug"]))}</b></a>'
-                        f'<div class="q">{inline(decision["question"])}</div></td><td>{impact_badge(decision["impact"])}</td>'
-                        f'<td><b>{esc(resolution["mark"])} {inline(resolution["label"])}</b></td><td>{confidence}</td>'
-                        f'<td class="swaps">{swaps}</td></tr>')
-        out.append('<h3 class="sub">Applied without asking, least confident first</h3>'
-                   '<table class="applied"><thead><tr><th>Decision</th><th>Impact</th><th>Applied</th>'
-                   f'<th>Confidence</th><th>Overturn</th></tr></thead><tbody>{"".join(rows)}</tbody></table>')
+        out.append(f'<p class="prose-lead">{applied_paragraph(applied, len(decisions))}</p>')
     if not out:
         return '<p class="muted">Nothing waits on you: every decision was settled with you.</p>'
     return "\n".join(out)
@@ -555,16 +650,29 @@ def change_set_card(change_set: dict, built: set[int]) -> str:
             f'<h4>Tests</h4>{tests}</article>')
 
 
-def flow_html(flow: str) -> str:
-    if not flow:
+def flow_html(diagrams: list[dict]) -> str:
+    """Up to three diagrams of the change, each with the caption scope wrote above it."""
+    if not diagrams:
         return ""
-    return f"""<section><h2>Flow <span class="provenance">design sketch from the spec, not derived from code</span></h2>
-<div class="card flow"><pre class="mermaid">{esc(flow)}</pre></div></section>"""
+    cards = []
+    for diagram in diagrams:
+        caption = f"<figcaption>{inline(diagram['caption'])}</figcaption>" if diagram["caption"] else ""
+        cards.append(f'<figure class="card flow">{caption}<pre class="mermaid">{esc(diagram["source"])}</pre></figure>')
+    return (f'<section><h2>Flow <span class="provenance">design sketches from the spec, not derived from code</span></h2>'
+            f'<div class="flows">{"".join(cards)}</div></section>')
 
 
 # ---------------------------------------------------------------------------
 # The page
 # ---------------------------------------------------------------------------
+
+
+def summary_html(scope: dict) -> str:
+    """The spec's own narrative of the change; an older spec without one shows its scope lists instead."""
+    if scope["summary"]:
+        return f'<section><h2>What changes</h2><div class="card prose"><p>{inline(scope["summary"])}</p></div></section>'
+    details = prose_html(scope["prose"]) or '<p class="muted">Empty.</p>'
+    return f'<section><h2>Scope details</h2><div class="card prose">{details}</div></section>'
 
 
 def render(data: dict) -> str:
@@ -587,10 +695,6 @@ def render(data: dict) -> str:
         (len(decisions), "decisions"), (sum(1 for d in decisions if d["impact"] == "high"), "high impact"),
         (len(change_sets), "change sets"), (len(files), "files planned"), (scenarios, "test scenarios")))
     by_impact = sorted(decisions, key=lambda d: IMPACT_RANK.get(d["impact"], 3))
-    touches = "".join(
-        f'<li><a href="#cs-{c["n"]}" data-tab="plan">{c["n"]}</a> '
-        + " ".join(f"<code>{esc(f)}</code>" for f in sorted({f for i in c["items"] for f in i["files"]}))
-        + "</li>" for c in change_sets)
     non_goals = "".join(f"<li>⊘ {inline(n)}</li>" for n in scope["non_goals"]) or '<li class="muted">None stated.</li>'
     validation = "".join(f'<li><code>{esc(v["command"])}</code>{" <span class=muted>run in verify</span>" if v["late"] else ""}</li>'
                          for v in scope["validation"])
@@ -598,7 +702,7 @@ def render(data: dict) -> str:
                'if (nodes.length) {\n  try {\n    const { default: mermaid } = await import("https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs");\n'
                '    mermaid.initialize({ startOnLoad: false, securityLevel: "strict", theme: matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "neutral" });\n'
                '    await mermaid.run({ nodes });\n  } catch (e) { nodes.forEach(n => n.classList.add("offline")); }\n}\n</script>'
-               if scope["flow"] else "")
+               if scope["diagrams"] else "")
     title = esc(header["title"])
     return f"""<!doctype html>
 <html lang="en">
@@ -624,19 +728,19 @@ def render(data: dict) -> str:
 
 <div class="panel" data-panel="overview">
   <div class="tiles">{tiles}</div>
+  {summary_html(scope)}
   <section><h2>Needs you</h2>{needs_you(data)}</section>
-  <section><h2>Where to look</h2><div class="card chart">{quadrant_svg(decisions) if decisions else '<p class="muted">No decisions argued.</p>'}</div></section>
-  {flow_html(scope["flow"])}
-  <section class="two"><div><h2>Will touch</h2><div class="card"><ul class="touches">{touches or '<li class="muted">No files named.</li>'}</ul></div></div>
-  <div><h2>Will not do</h2><div class="card"><ul class="nongoals">{non_goals}</ul></div></div></section>
+  {flow_html(scope["diagrams"])}
+  <section><h2>Will touch</h2><div class="card">{touch_map(change_sets, repo_root(Path(data["path"])))}</div></section>
+  <section><h2>Will not do</h2><div class="card"><ul class="nongoals">{non_goals}</ul></div></section>
   <section><h2>Verification plan</h2><div class="card">{verification_html(scope)}</div></section>
   <section><h2>Tests per layer</h2><div class="card">{heatmap(change_sets) if change_sets else '<p class="muted">No change sets yet.</p>'}
   <h4>Validation</h4><ul class="validation">{validation or '<li class="muted">No Validation block.</li>'}</ul></div></section>
   <section><h2>Build order</h2><div class="card">{waves_html(data)}</div></section>
-  <section><h2>Scope details</h2><div class="card prose">{prose_html(scope["prose"]) or '<p class="muted">Empty.</p>'}</div></section>
 </div>
 
 <div class="panel" data-panel="decisions" hidden>
+  <section><h2>Where to look</h2><div class="card chart">{quadrant_svg(decisions) if decisions else '<p class="muted">No decisions argued.</p>'}</div></section>
   <p class="muted">Highest impact first. Indicators: impact, state, who settled it, confidence of the applied recommendation (scope asks below {ASK_BELOW}%), reach (change sets and files citing it), accepted downsides and unchecked claims.</p>
   {"".join(decision_card(d) for d in by_impact) or '<p class="muted">No decisions argued.</p>'}
 </div>
@@ -767,11 +871,15 @@ ul { margin: 0; padding-left: 0; list-style: none; } li { padding: 4px 0; }
 @media (max-width: 820px) { .vgrid { grid-template-columns: repeat(2, 1fr); } }
 .legend { display: flex; gap: 12px; align-items: center; margin-top: 10px; color: var(--muted); font-size: 12px; }
 .legend i { display: inline-block; width: 14px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; border: 1px solid var(--ring); }
-.wave { display: grid; grid-template-columns: 70px 1fr; gap: 10px; align-items: center; padding: 6px 0; }
+.wave { display: grid; grid-template-columns: 100px 1fr; gap: 10px; align-items: center; padding: 6px 0; }
 .wave-n { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; }
 .wave-sets { display: flex; flex-wrap: wrap; gap: 8px; }
 .wave-chip { border: 1px solid var(--ring); border-left: 3px solid var(--series); border-radius: 8px; padding: 5px 10px; color: var(--ink); background: var(--page); }
-.waits { color: var(--ink-2); font-size: 12.5px; margin: 4px 0 0 80px; }
+.prose-lead { margin: 0 0 10px; color: var(--ink); max-width: 80ch; }
+.lane { display: block; font-weight: 500; text-transform: none; font-size: 11.5px; margin-top: 2px; } .lane.parallel { color: var(--series); } .lane.alone { color: var(--muted); }
+.flows { display: grid; gap: 12px; } figure.flow { margin: 0 0 0; } figure.flow figcaption { color: var(--ink-2); margin-bottom: 8px; }
+.heatmap.touch td.heat { width: 56px; } .heatmap.touch th a { color: var(--ink-2); }
+.waits { color: var(--ink-2); font-size: 12.5px; margin: 4px 0 0 110px; }
 .csn { background: var(--series); color: #fff; border-radius: 6px; padding: 0 8px; font-weight: 700; }
 .items li { display: flex; gap: 8px; flex-wrap: wrap; border-top: 1px solid var(--grid); padding: 6px 0; } .items li span { color: var(--ink-2); }
 .tests li { border-top: 1px solid var(--grid); padding: 6px 0; color: var(--ink-2); }

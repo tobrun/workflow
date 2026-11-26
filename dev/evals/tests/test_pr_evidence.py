@@ -353,7 +353,7 @@ class FlowTest(unittest.TestCase):
         result = self.flow()
         self.assertEqual(result.returncode, 0, result.stderr)
         body = self.body.read_text()
-        self.assertIn("## Flow\n\nFrom the spec; each of the 2 names it draws is in the code at", body)
+        self.assertIn("## Flow\n\nFrom the spec; every name these diagrams draw is in the code at", body)
         self.assertIn("```mermaid\nsequenceDiagram\n    participant Timer as auto_run.sh", body)
         self.assertLess(body.index("## Flow"), body.index("## Evidence"))
 
@@ -379,6 +379,22 @@ class FlowTest(unittest.TestCase):
         module.loader.exec_module(evidence)
         source = "flowchart LR\n    A[editor.app] -->|POST /auto| B{Editions.publish}\n    B --> Site\n    %% a comment\n"
         self.assertEqual(evidence.flow_names(source), ["editor.app", "Editions.publish", "Site"])
+
+    def test_descriptive_labels_match_word_by_word(self) -> None:
+        (self.root / "spec.md").write_text(FLOW_SPEC.replace("participant Timer as auto_run.sh", "participant Timer as auto_run.sh (the timer)")
+                                           .replace("participant AutoEdition", "participant E as AutoEdition class")
+                                           .replace("AutoEdition->>", "E->>").replace("->>AutoEdition", "->>E").replace("AutoEdition-->>", "E-->>"))
+        result = self.flow()
+        self.assertIn("1 of 1 diagrams", result.stdout)
+
+    def test_each_diagram_is_checked_on_its_own(self) -> None:
+        stale = "The old scheduler.\n\n```mermaid\nsequenceDiagram\n    participant Scheduler\n    Scheduler->>AutoEdition: run\n```\n"
+        (self.root / "spec.md").write_text(FLOW_SPEC.replace("```\n\n## Change plan", "```\n\n" + stale + "\n## Change plan"))
+        result = self.flow()
+        self.assertIn("diagram 2 (The old scheduler.) no longer matches the code; left out (names not in the code at HEAD: Scheduler)", result.stdout)
+        self.assertIn("1 of 2 diagrams", result.stdout)
+        body = self.body.read_text()
+        self.assertEqual(body.count("```mermaid"), 1)
 
     def test_a_spec_without_a_flow_block_writes_no_section(self) -> None:
         (self.root / "spec.md").write_text("# S\n\n## Scope\n\nNo diagram.\n")

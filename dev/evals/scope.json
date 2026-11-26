@@ -38,7 +38,7 @@
       "assertions": [
         "Answer 1: render-spec.py on spec.md with --open, writing spec.html beside spec.md in the plan directory, and again after every later spec edit",
         "Answer 2: an [impact: high|medium|low] tag ending each decision's question, and a Risk: low|medium|high - why line near the top of the spec",
-        "Answer 3: no - a Flow block is only for a change that adds or reorders calls between components or moves a boundary",
+        "Answer 3: no - a Flow block of up to three diagrams is only for a change that adds or reorders calls between components, moves a boundary, or adds a lifecycle",
         "Answer 4: spec.md, then render again; the page is never edited by hand",
         "Answer 5: no, it is rendered on the full path only"
       ]
@@ -52,6 +52,16 @@
         "Answer 2: fuzz, threat-model, and penetration (plus contract for the endpoint); a ### Threat model block with each STRIDE threat per trust boundary, its mitigation, and the scenario that tests it",
         "Answer 3: a D- decision chooses the mechanism: a TLA+ or Alloy model, a Lean model with proofs, Verus or Kani, or a stateful [property] test driving the state machine with generated command sequences, named on the formal: yes line",
         "Answer 4: no - fuzz: yes needs at least one [fuzz] scenario"
+      ]
+    },
+    {
+      "id": "scope-summary-and-flows",
+      "prompt": "Answer briefly, from the skill text only. (1) What opens the Scope section, and how long may it be? (2) The change adds a new call path and a new lifecycle for a board. How many diagrams may the Flow block hold, and which would you draw? (3) What does lint-spec.py do with a Summary written as bullets?",
+      "fixture": "none - the answers come from the skill text",
+      "assertions": [
+        "Answer 1: a ### Summary paragraph in plain technical English, at most 150 words: what changes, for whom, how it behaves, and how it fails",
+        "Answer 2: up to three, the ones that most help a reader, each with a one-line caption: a sequence diagram of the new calls and a state diagram of the board's lifecycle",
+        "Answer 3: refuses it - the Summary is a paragraph, not a list"
       ]
     },
     {

@@ -36,6 +36,10 @@ D-expiry-clock: Which clock decides expiry? [impact: medium]
 
 ## Scope
 
+### Summary
+
+A coupon code takes money off the total until it expires.
+
 Inputs: a coupon code. Outputs: a discounted total.
 
 ### Validation

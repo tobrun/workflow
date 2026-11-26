@@ -4,7 +4,7 @@ description: Verify a change across twenty kinds of verification - from unit, pr
 license: MIT
 compatibility: Needs git and Python 3.10+. Needs subagents or the Pi runner for the review panel; gh to open the pull request.
 metadata:
-  version: "4.3.0"
+  version: "4.4.0"
   source: "https://github.com/tobrun/workflow"
   invocation: "explicit - recommend it, never run it unasked"
 ---

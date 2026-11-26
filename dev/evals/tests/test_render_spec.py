@@ -43,6 +43,10 @@ D-test-layer: Where is the offline path proven? [impact: medium]
 
 ## Scope
 
+### Summary
+
+The map view reads tiles through a local SQLite cache, so an area already seen renders offline.
+
 Inputs: tile requests. D-cache-store (✓ SQLite)
 
 ⊘ Prefetching neighbouring tiles - no evidence; reopen with analytics.
@@ -133,14 +137,49 @@ class RenderSpecTest(unittest.TestCase):
         self.assertIn('class="meter low"', self.card(page, "D-test-layer"))
         self.assertNotIn('class="meter low"', self.card(page, "D-cache-store"))
 
-    def test_applied_decisions_are_listed_least_confident_first_with_overturn_replies(self) -> None:
+    def test_applied_decisions_read_as_a_paragraph_naming_the_ones_to_check(self) -> None:
         _, page = self.render()
-        applied = page[page.index('<table class="applied">'):]
-        applied = applied[:applied.index("</table>")]
-        self.assertLess(applied.index("D-test-layer"), applied.index("D-cache-store"))
-        self.assertNotIn("D-eviction", applied, "a decision the user settled is not offered for overturn")
+        needs = page[page.index("<h2>Needs you</h2>"):]
+        needs = needs[:needs.index("</section>")]
+        self.assertNotIn("<table", needs)
+        self.assertIn("Scope settled 2 of 3 decisions without asking you", needs)
+        self.assertIn('Read the high-impact one first: <a href="#D-cache-store" data-tab="decisions" title="D-cache-store">Cache store</a> (72%).', needs)
+        self.assertIn('The least sure is <a href="#D-test-layer"', needs)
+        self.assertNotIn("D-eviction", needs, "a decision the user settled is not offered for overturn")
         self.assertIn('data-reply="D-cache-store: take &quot;one file per tile&quot; instead of '
-                      '&quot;SQLite file per region&quot;"', applied)
+                      '&quot;SQLite file per region&quot;"', page, "the overturn stays on the decision's card")
+
+    def test_the_impact_chart_lives_on_the_decisions_tab(self) -> None:
+        _, page = self.render()
+        overview = page[page.index('data-panel="overview"'):page.index('data-panel="decisions"')]
+        decisions = page[page.index('data-panel="decisions"'):page.index('data-panel="plan"')]
+        self.assertNotIn("Where to look", overview)
+        self.assertIn("<h2>Where to look</h2>", decisions)
+        self.assertIn('<svg class="quadrant"', decisions)
+
+    def test_the_summary_replaces_the_scope_details(self) -> None:
+        _, page = self.render()
+        self.assertIn("<h2>What changes</h2><div class=\"card prose\"><p>The map view reads tiles through a local SQLite cache", page)
+        self.assertNotIn("Scope details", page)
+        _, older = self.render(SPEC.replace("### Summary\n\nThe map view reads tiles through a local SQLite cache, so an area already seen renders offline.\n\n", ""))
+        self.assertIn("Scope details", older, "a spec without a summary still shows its scope")
+
+    def test_will_touch_maps_files_per_part_and_change_set(self) -> None:
+        _, page = self.render()
+        touch = page[page.index("<h2>Will touch</h2>"):]
+        touch = touch[:touch.index("</section>")]
+        self.assertIn("4 files across 1 part of the repository", touch)
+        self.assertIn("1 shared by more than one change set", touch)
+        self.assertIn('<th scope="row"><code>src</code></th>', touch)
+        self.assertIn('data-tip="src/cache/TileCache.ts (shared); src/cache/eviction.ts"', touch)
+        self.assertNotIn('<ul class="touches">', page)
+
+    def test_build_order_says_which_change_sets_run_in_parallel(self) -> None:
+        text = SPEC.replace("   b. `src/cache/TileCache.ts` - expose has()\n", "")
+        _, page = self.render(text)
+        order = page[page.index("<h2>Build order</h2>"):]
+        self.assertIn("build runs up to 3 at once, one subagent each", order)
+        self.assertIn('<span class="lane parallel">3 in parallel</span>', order)
 
     def test_open_decision_waits_on_the_user_with_choose_replies(self) -> None:
         _, page = self.render(SPEC.replace("D-eviction:", OPEN + "D-eviction:"))
@@ -170,8 +209,19 @@ class RenderSpecTest(unittest.TestCase):
         self.assertNotIn('<pre class="mermaid">', page)
         _, page = self.render(SPEC.replace("### Validation", FLOW + "### Validation"))
         self.assertIn('<pre class="mermaid">sequenceDiagram\n  MapView-&gt;&gt;TileCache: getTiles</pre>', page)
-        self.assertIn("design sketch from the spec, not derived from code", page)
+        self.assertIn("design sketches from the spec, not derived from code", page)
         self.assertIn("cdn.jsdelivr.net/npm/mermaid@11", page)
+
+    def test_up_to_three_diagrams_render_each_with_its_caption(self) -> None:
+        second = "The cache's states.\n\n```mermaid\nstateDiagram-v2\n  Empty --> Warm\n```\n\n"
+        flows = FLOW.replace("### Flow\n\n", "### Flow\n\nThe read path.\n\n") + second
+        result, page = self.render(SPEC.replace("### Validation", flows + "### Validation"))
+        self.assertEqual(page.count('<figure class="card flow">'), 2)
+        self.assertIn("<figcaption>The read path.</figcaption>", page)
+        self.assertIn("<figcaption>The cache&#x27;s states.</figcaption>", page)
+        four = flows + second * 3
+        result, page = self.render(SPEC.replace("### Validation", four + "### Validation"))
+        self.assertIn("the Flow block holds 5 diagrams; keep the 3 that most help a reader", result.stdout + page)
 
     def test_lint_problems_render_the_page_as_a_draft(self) -> None:
         result, page = self.render(SPEC.replace("Risk: medium - adds a disk cache under the map view\n", ""))

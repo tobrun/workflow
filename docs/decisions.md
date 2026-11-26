@@ -190,13 +190,18 @@ D-scope-review-page: Does scope render an HTML page for the engineer, and how? (
   ✗ the model fills a JSON object into a template, as the removed spec.html did - flexible, but the page and the spec can disagree, the failure the research ranks costliest
   ✗ no page - spec.md stays the only view, which the user found not actionable and not visual
 
+D-spec-page-readability: How does the spec page read at a glance? (2026-11-26, user)
+  ✓ the overview opens with the spec's own `### Summary` paragraph (at most 150 words of plain technical English, required by lint-spec.py) in place of the scope lists; Needs you says in a few sentences which applied decisions to check, high impact first and then the least sure, each linked to its card where the overturn buttons stay; the impact-by-confidence chart moves to the Decisions tab; Will touch is a heatmap of files per repository part and change set, hovering a cell names its files and marks new and shared ones; and Build order says how many change sets each wave runs in parallel, one subagent each (user, 2026-11-26, reviewing the revise-published-editions page) ⚠ an older spec without a Summary fails lint and its page falls back to the scope lists
+  ✗ the script writes the summary - it can only restate lists; the narrative is scope's to write, as the PR's tests paragraph is ship's
+  ✗ a table of applied decisions with overturn buttons on the overview - twenty rows the user found unreadable; the same buttons already sit on each card
+
 D-decision-indicators: Which indicators does a decision carry on the page? (2026-11-24, user)
   ✓ an `[impact: high|medium|low]` tag scope writes on each decision, and reach counted from the change plan's echoes, alongside the confidence and provenance the spec already states; lint-spec.py requires the tag (user, 2026-11-24)
   ✗ reversibility (one-way or two-way door) - one more judgment for scope to annotate
   ✗ one global confidence score for the plan - risk belongs where reviewers allocate attention, per decision
 
-D-flow-sketch: When does the page show a diagram? (2026-11-24, user)
-  ✓ only when the spec has a `### Flow` mermaid block, which scope writes for a change that adds or reorders calls between components or moves a boundary; it is labelled a design sketch, and Mermaid loads from a CDN (user, 2026-11-24) ⚠ the sketch needs network to draw; offline the page shows its source
+D-flow-sketch: When does the page show a diagram? (2026-11-24, user; up to three diagrams 2026-11-26, user)
+  ✓ only when the spec has a `### Flow` block of one to three mermaid diagrams, each with a one-line caption, which scope writes for a change that adds or reorders calls between components, moves a boundary, or adds a lifecycle - the ones that most help a reader, such as a sequence, a component, and a state diagram; lint-spec.py refuses a fourth (user, 2026-11-26: one diagram could not show both the calls and the lifecycle); it is labelled a design sketch, and Mermaid loads from a CDN (user, 2026-11-24) ⚠ the sketch needs network to draw; offline the page shows its source
   ✗ a diagram for every spec - most changes have no structural delta, and an always-present diagram trains readers to skip it
   ✗ boxes drawn by the script from a node list - works offline, but a basic layout
 

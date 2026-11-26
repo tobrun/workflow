@@ -4,7 +4,7 @@ description: Set up a repository's architecture enforcement and its CI verificat
 license: MIT
 compatibility: Needs git and Python 3.10+. Writes GitHub Actions workflows; other CI hosts are wired by hand.
 metadata:
-  version: "4.3.0"
+  version: "4.4.0"
   source: "https://github.com/tobrun/workflow"
   invocation: "explicit - recommend it, never run it unasked"
 ---

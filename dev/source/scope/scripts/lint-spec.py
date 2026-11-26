@@ -53,6 +53,9 @@ FILE_NAME = re.compile(
 CHOSEN, OPEN, NOT_DOING = "✓", "?", "⊘"
 # One agent builds one change set; past this many scenarios it stops fitting in one sitting.
 SCENARIO_LIMIT = 25
+# The narrative a person reads first, and the diagrams that may sit beside it.
+SUMMARY_WORDS = 150
+FLOW_DIAGRAMS = 3
 
 
 def sections(lines: list[str]) -> dict[str, list[tuple[int, str]]]:
@@ -418,6 +421,49 @@ def check_theorems(scope: list[tuple[int, str]], plan: list[tuple[int, str]], le
                           "add a differential test with the model as oracle")
 
 
+def summary_paragraph(scope: list[tuple[int, str]]) -> list[tuple[int, str]]:
+    """The first paragraph under '### Summary', up to the blank line that ends it; what follows is ordinary scope."""
+    found: list[tuple[int, str]] = []
+    inside = False
+    for number, line in scope:
+        if line.startswith("### "):
+            if found:
+                break
+            inside = line[4:].strip().lower() == "summary"
+            continue
+        if inside:
+            if line.strip():
+                found.append((number, line))
+            elif found:
+                break
+    return found
+
+
+def check_summary(scope: list[tuple[int, str]], problem) -> None:
+    """The scope opens with a short narrative: plain prose a person reads before any list."""
+    block = summary_paragraph(scope)
+    if not block:
+        problem(None, "no '### Summary' paragraph in the scope section; say in plain technical English what changes, "
+                      f"for whom, and how it behaves, in at most {SUMMARY_WORDS} words")
+        return
+    if any(line.lstrip().startswith(("- ", "* ", "|", "```")) or re.match(r"^\s*\d+\.\s", line) for _, line in block):
+        problem(block[0][0], "the Summary is a paragraph, not a list, table, or code block")
+    words = sum(len(line.split()) for _, line in block)
+    if words > SUMMARY_WORDS:
+        problem(block[0][0], f"the Summary runs {words} words; keep it under {SUMMARY_WORDS}")
+
+
+def check_flow(scope: list[tuple[int, str]], problem) -> None:
+    block = scope_block(scope, "flow")
+    if block is None:
+        return
+    fences = [number for number, line in block if line.strip().startswith("```mermaid")]
+    if not fences:
+        problem(None, "the Flow block holds no ```mermaid diagram")
+    elif len(fences) > FLOW_DIAGRAMS:
+        problem(fences[FLOW_DIAGRAMS], f"the Flow block holds {len(fences)} diagrams; keep the {FLOW_DIAGRAMS} that most help a reader")
+
+
 def check_validation(lines: list[str], problem) -> None:
     for index, line in enumerate(lines):
         if line.strip().lower() == "### validation":
@@ -449,6 +495,8 @@ def lint(path: Path, lines: list[str]) -> tuple[list[str], dict[str, dict]]:
     check_risk(lines, problem)
     check_validation(lines, problem)
     check_verification(found.get("scope", []), found.get("change plan", []), problem)
+    check_summary(found.get("scope", []), problem)
+    check_flow(found.get("scope", []), problem)
     return [message for _, message in sorted(problems)], decisions
 
 

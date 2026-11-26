@@ -9,6 +9,7 @@ disable-model-invocation: true
 The spec is the deliverable: do not implement anything.
 Another session, often another model, builds from the spec alone, so everything it needs to know goes in the file.
 Paths follow [../../references/plan-layout.md](../../references/plan-layout.md), the decision notation follows [../../references/decision-ledger.md](../../references/decision-ledger.md), and authority and the confidence policy follow [../../references/execution.md](../../references/execution.md).
+Record the run per [../../references/run-log.md](../../references/run-log.md): `python3 {scope-skill-root}/../../scripts/workflow-log.py start --phase scope --plan .dev/{plan-name}` once the plan directory exists, the same with `end` as the last action.
 
 ## Choose the path
 

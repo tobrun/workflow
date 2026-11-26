@@ -4,7 +4,7 @@ description: Execute the change sets of a spec at .dev/{plan-name}/spec.md, writ
 license: MIT
 compatibility: Needs git and Python 3.10+. Runs parallel subagents when the host has them.
 metadata:
-  version: "4.4.0"
+  version: "4.5.0"
   source: "https://github.com/tobrun/workflow"
   invocation: "explicit - recommend it, never run it unasked"
 ---
@@ -15,6 +15,7 @@ Execute every change set of a spec, writing each `tests:` scenario as a real tes
 The deferred layers in [references/layers.md](references/layers.md#deferred-layers) - `[e2e]`, `[smoke]`, `[property]`, `[fuzz]`, `[benchmark]` - are written here and typechecked, never run: `ship`'s verify phase runs them first.
 
 Input: `.dev/{plan-name}/spec.md`, located per [../../references/plan-layout.md](references/plan-layout.md). Without a spec or with an empty change plan, ask the user to run `scope` first.
+Record the run per [../../references/run-log.md](references/run-log.md): `python3 {build-skill-root}/scripts/workflow-log.py start --phase build --plan .dev/{plan-name}` before the first wave, the same with `end` after the closing message's checks, green or blocked.
 Follow [../../references/execution.md](references/execution.md) for branch, commit, and documentation actions; use the authorized current branch, or create `dev/{plan-name}` when a new branch is permitted. Build never pushes or opens a PR - that is `ship`.
 Read [references/layers.md](references/layers.md), [references/tests.md](references/tests.md), and [references/mocking.md](references/mocking.md) before implementing, and [references/test-evidence.md](references/test-evidence.md) for runner receipts.
 

@@ -94,6 +94,14 @@ D-mutation-focused: Where should mutation testing run, and what should survivors
   ✗ mutate all source or glue just to populate incremental history - pays for unrelated findings instead of reviewing the changed decisions
   ✗ treat a perfect mutation score as adequate testing - the access-control score-only ablation killed 11/11 mutants but missed five of eight seeded faults (tools/harden/mutation-value/evidence/ablation.json)
 
+## Measurement
+
+D-run-log: How is the workflow's effect measured over time? (2026-11-26, user)
+  ✓ scope, build, and ship each call workflow-log.py start and end; end reads the plan's own files for the facts and Claude Code's session log for tokens, and queues one record tagged with the workflow version, model, and harness; ship's wrap-up runs sync, which appends the queue to runs/{host}/{month}.jsonl in the private repository tobrun/workflow-logs, harvests each recorded PR's outcome with gh (merged, hours to merge, changes requested, CI's verdict, fix or revert commits on its files within 30 days of merge), and rewrites a scorecard of medians per workflow version with their run counts (user, 2026-11-26: tangible evidence that changes improve the workflow, synced to a private repository, batched, tokens where available) ⚠ field records mix easy and hard tasks; a version's cohort is evidence only with enough runs, and the fixed benchmark in dev/evals is the controlled comparison ⚠ tokens are Claude Code's only; Codex and Pi runs record none until their logs are read
+  ✗ the agent reports its own numbers - the run being measured would write its own score
+  ✗ push on every record - every run would wait on the network and git
+  ✗ a cost column from list prices - prices change; a guessed price would read as a measurement
+
 ## Remote execution
 
 risk: moderate - domains: remote compute, unattended agent output crossing into the user's repository (2026-11-09)

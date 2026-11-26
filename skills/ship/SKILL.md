@@ -4,7 +4,7 @@ description: Verify a change across twenty kinds of verification - from unit, pr
 license: MIT
 compatibility: Needs git and Python 3.10+. Needs subagents or the Pi runner for the review panel; gh to open the pull request.
 metadata:
-  version: "4.4.0"
+  version: "4.5.0"
   source: "https://github.com/tobrun/workflow"
   invocation: "explicit - recommend it, never run it unasked"
 ---
@@ -23,7 +23,7 @@ Follow [../../references/execution.md](references/execution.md), resolving the a
 The default runs all three phases. On request: "verify only" runs phase 1, "review only" runs phase 2 without mutating anything (right for someone else's PR), "no PR" or "local only" skips phase 3, and "quick" runs the quick mode below.
 
 - PR number given -> that PR; else an open PR for the branch when the host's PR tooling finds one; else the local branch against the default branch.
-- Gather the diff and locate the plan directory per [../../references/plan-layout.md](references/plan-layout.md); read its `spec.md`, and degrade gracefully without one.
+- Gather the diff and locate the plan directory per [../../references/plan-layout.md](references/plan-layout.md); read its `spec.md`, and degrade gracefully without one. Record the run per [../../references/run-log.md](references/run-log.md): `python3 {ship-skill-root}/scripts/workflow-log.py start --phase ship --plan .dev/{plan-name}` now; the same with `end`, then `workflow-log.py sync`, as the wrap-up's last actions.
 - No reviewable files: say so and stop. A full-repo run happens only when the user asks.
 
 ## Phase 1: verify

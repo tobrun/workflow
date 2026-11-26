@@ -162,7 +162,7 @@ class RenderSpecTest(unittest.TestCase):
     def test_non_goals_and_validation_are_listed(self) -> None:
         _, page = self.render()
         self.assertIn("⊘ Prefetching neighbouring tiles", page)
-        self.assertIn("<code>npm run e2e</code> <span class=muted>end of build</span>", page)
+        self.assertIn("<code>npm run e2e</code> <span class=muted>run in verify</span>", page)
 
     def test_flow_sketch_loads_mermaid_only_when_the_spec_has_one(self) -> None:
         _, page = self.render()

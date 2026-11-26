@@ -4,7 +4,7 @@ description: Verify a change across twenty kinds of verification - from unit, pr
 license: MIT
 compatibility: Needs git and Python 3.10+. Needs subagents or the Pi runner for the review panel; gh to open the pull request.
 metadata:
-  version: "4.1.0"
+  version: "4.2.0"
   source: "https://github.com/tobrun/workflow"
   invocation: "explicit - recommend it, never run it unasked"
 ---
@@ -30,6 +30,7 @@ The default runs all three phases. On request: "verify only" runs phase 1, "revi
 
 Run every check the repository already requires, then each of the twenty kinds in [../../references/verification.md](references/verification.md) - unit, functional, component, contract, acceptance, regression, smoke, static analysis, lint, coverage, property, fuzz, formal, mutation, benchmark, performance, UI/UX, usability, threat model, and penetration - in the order and loop of [references/verify.md](references/verify.md), with the tools in [references/tools.md](references/tools.md).
 
+- Build wrote the `[e2e]`, `[smoke]`, `[property]`, `[fuzz]`, and `[benchmark]` tests but never ran them, and left the Validation commands marked `(end of build)`; this phase runs them first, the e2e pass per [references/e2e-pass.md](references/e2e-pass.md), and ends with `check-tests.py` holding every scenario to a passing receipt.
 - The spec's `### Verification` block says which kinds apply; a kind it marks `no` is skipped with its reason, unless the diff shows the reason false. A kind with nothing meaningful to check is skipped with a reason, never reported as passed.
 - Each failure goes to fix agents per independent area and is re-run, up to three rounds. After that, a must-pass kind becomes a human call and a fix-and-report kind (coverage, benchmark, performance, fuzz, property, formal, penetration, usability) becomes an Open call that never blocks the ship; a proof that cheats the proof gate is must-pass.
 - A found secret escalates at once and is never fix-agent work.
@@ -38,7 +39,7 @@ Run every check the repository already requires, then each of the twenty kinds i
 Mutation testing runs unless `.dev/config.yaml` at the repository root sets `mutation_testing: false`; an absent file or key means on. A malformed file or a non-boolean value stops phase 1 with the path and the problem. When it is off, its row reads `skipped (disabled in .dev/config.yaml)` without counts.
 
 A run that will reach phase 3 opens `.dev/{plan-name}/pr.md` before the first check and writes each kind's Quality row as it finishes - all twenty, run or skipped with its reason - per [references/pull-request.md](references/pull-request.md).
-When any check dispatched fixes, re-run the spec's `[e2e]` scenarios and overwrite the e2e report, so phase 2 judges the code as it now stands.
+When any check dispatched fixes after the e2e pass, re-run it and overwrite the e2e report, so phase 2 judges the code as it now stands.
 Before phase 2, run the repository's required pull-request commands at the branch's impact per [../../references/ci-parity.md](references/ci-parity.md), even when no fix agent fired.
 
 ## Phase 2: review
@@ -64,9 +65,9 @@ Per [references/pull-request.md](references/pull-request.md):
 
 ## Quick mode
 
-For fixes to an earlier review: one validation run, one reviewer, and a PR update - no verify phase, no lens panel, no remediation loop.
+For fixes to an earlier review: the deferred tests of the fixes and one validation run, one reviewer, and a PR update - no verify phase, no lens panel, no remediation loop.
 
-1. Run the required pull-request commands at the diff's impact; fix what fails until green.
+1. Run the deferred tests of the change sets this run fixes (the e2e pass when any are `[e2e]` or `[smoke]`), capturing their receipts, and loop `python3 {build-skill-root}/scripts/check-tests.py .dev/{plan-name}` to clean; then run the required pull-request commands at the diff's impact, fixing what fails until green.
 2. Launch one fresh-context, read-only reviewer with the spec, the highest-numbered finished `review_N.md`, and the diff. It reports each previous Blocker and Concern as fixed or still open with evidence, then reads the diff since the review's recorded `head` (the whole branch when there is no review or no `head`) for new blockers only, each with its triggering scenario. Confirm a new blocker by reading the code before it counts.
 3. Write `review_N.md` at the next index with `Panel: quick`: BLOCK when a blocker stands, CONCERNS when only concerns remain, PASS otherwise, INCOMPLETE when the reviewer's result is missing or malformed. On BLOCK, stop and recommend `scope` on its small path, then `build`, then quick mode again.
 4. Update the PR: refresh evidence only for scenarios whose tested behavior changed, keeping earlier evidence whose source hashes still match, run `pr-evidence.py summarize` and loop `pr-evidence.py check --require-current`, splice in the PR's CI evidence block, then follow the checks to green, read the block CI writes for the new head, and mark the PR ready once both are green. Never force-push or rebase.

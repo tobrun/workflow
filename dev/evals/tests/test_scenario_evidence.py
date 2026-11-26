@@ -106,6 +106,62 @@ class ScenarioEvidenceTest(unittest.TestCase):
         self.assertEqual(self.capture('unit').returncode, 0)
         self.assertIn('layer disagrees', self.check().stdout)
 
+    def defer(self, scenario='[e2e] a guest checks out -> total doubled on the receipt'):
+        """A spec with the unit scenario plus one deferred scenario mapped without a receipt."""
+        (self.plan / 'spec.md').write_text('# Coupon\n\n## Change plan\n\n1. Double price\n'
+                                         f'   a. app.py - total\n   tests: {self.scenario}; {scenario}\n')
+        (self.root / 'e2e_test.py').write_text('def test_checkout():\n    pass\n')
+        self.deferred = {'id': 'CS1-S2', 'scenario': scenario, 'source': 'e2e_test.py', 'case': 'e2e_test::test_checkout'}
+        self.manifest['scenarios'].append(self.deferred)
+        self.write_manifest()
+
+    def test_a_deferred_scenario_needs_no_receipt_in_build(self):
+        self.defer()
+        self.assertEqual(self.capture().returncode, 0)
+        result = self.check('--deferred')
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertIn("1 deferred scenario(s) written, not run - ship's verify phase runs them", result.stdout)
+
+    def test_a_deferred_scenario_without_a_receipt_fails_ships_check(self):
+        self.defer('[property] any price -> total is twice the price')
+        self.assertEqual(self.capture().returncode, 0)
+        result = self.check()
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('CS1-S2: the [property] test has not run yet', result.stdout)
+
+    def test_a_fast_layer_still_needs_its_receipt_under_deferred(self):
+        self.defer()
+        result = self.check('--deferred')
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('unit-run.json', result.stdout)
+
+    def test_a_deferred_test_must_be_written(self):
+        self.defer()
+        (self.root / 'e2e_test.py').unlink()
+        self.assertEqual(self.capture().returncode, 0)
+        result = self.check('--deferred')
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('the [e2e] test source e2e_test.py does not exist', result.stdout)
+
+    def test_a_deferred_mapping_names_its_runner_case(self):
+        self.defer()
+        del self.deferred['case']
+        self.write_manifest()
+        self.assertEqual(self.capture().returncode, 0)
+        self.assertIn('name the runner case the [e2e] test will report', self.check('--deferred').stdout)
+
+    def test_a_stale_receipt_on_a_deferred_scenario_still_fails(self):
+        self.scenario = '[property] any price -> total is twice the price'
+        (self.plan / 'spec.md').write_text('# Coupon\n\n## Change plan\n\n1. Double price\n'
+                                         '   a. app.py - total\n   tests: ' + self.scenario + '\n')
+        self.mapping['scenario'] = self.scenario
+        self.write_manifest()
+        self.assertEqual(self.capture('property').returncode, 0)
+        (self.root / 'app.py').write_text('def total(price):\n    return price + price\n')
+        result = self.check('--deferred')
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('source changed', result.stdout)
+
     def test_changed_implementation_invalidates_result(self):
         self.assertEqual(self.capture().returncode, 0)
         (self.root / 'app.py').write_text('def total(price):\n    return price\n')

@@ -18,8 +18,8 @@ project command after performing its documented local setup. Prefer a
 repository-provided aggregate target when it covers the same jobs.
 
 Record each command and its outcome as it finishes, not after the whole set:
-`build` in the plan's `implementation-notes.md`, `ship` on the CI parity line
-of the `pr.md` its run keeps.
+`ship` on the CI parity line of the `pr.md` its run keeps; `build` runs only
+its wave gates and leaves this run to `ship`.
 
 ## Scope every local run to the impact
 

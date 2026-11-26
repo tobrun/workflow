@@ -19,7 +19,7 @@ CONCERNS and PASS skip straight to phase 3; concerns stay in the report and the 
    Agents report their changes and leave git state alone; the orchestrator verifies and commits authorized fixes on the work branch, naming the review index and finding in the Why.
    Schedule within available child capacity and keep file ownership disjoint.
 2. **Re-verify.** Run phase 1's read-only analyzers over the files the round touched, plus the flakiness check over the tests it added and every kind the touched files trigger; dispatch fixes and loop per [verify.md](verify.md) as usual.
-   Then run the spec's Validation block (or the repo's test suite) at the round's impact per [../../../references/ci-parity.md](ci-parity.md) and re-run the `[e2e]` scenarios when the round touched anything an e2e scenario exercises, overwriting the e2e report.
+   Then run the spec's Validation block (or the repo's test suite) at the round's impact per [../../../references/ci-parity.md](ci-parity.md) and re-run the e2e pass per [e2e-pass.md](e2e-pass.md) when the round touched anything an e2e scenario exercises, overwriting the e2e report and its receipts.
 3. **Re-review.** Run phase 2 again as a re-review: `review_{N+1}.md`, same lenses, previous findings carried as verification items so the panel states whether each blocker is fixed or still open.
    The summary line names the round: `Remediation round {r} of 2`.
 4. **Decide.** PASS or CONCERNS ends the loop and phase 3 opens a PR ready for review once its required checks are green.

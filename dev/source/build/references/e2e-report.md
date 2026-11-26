@@ -1,7 +1,7 @@
 # E2E Report
 
-The e2e pass writes one JSON document to `/tmp/{project-slug}/reports/{plan-name}-e2e.json` in this shape (shown with comments; the file itself is plain JSON).
-`ship` re-runs the scenarios after its fixes and overwrites the file, and `pr-evidence.py extract` reads it.
+Ship's e2e pass, per [../../ship/references/e2e-pass.md](../../ship/references/e2e-pass.md), writes one JSON document to `/tmp/{project-slug}/reports/{plan-name}-e2e.json` in this shape (shown with comments; the file itself is plain JSON).
+It re-runs the scenarios after later fixes and overwrites the file, and `pr-evidence.py extract` reads it. Build writes the tests this report records but never runs them.
 
 ```js
 {

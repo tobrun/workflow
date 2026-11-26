@@ -52,9 +52,15 @@ Do not put titles into a source registry just to pass the check.
 One runner case may not stand in for several scenario IDs; parameterize distinct scenarios or split their tests.
 The notes continue to record tests and deviations for human readers, but a `Tests added:` line is not execution evidence.
 
+## Deferred layers
+
+A scenario in a deferred layer of [layers.md](layers.md#deferred-layers) gets its mapping in build without a `receipt`: its `id`, exact `scenario` text, the `source` file of the written test, and the `case` its runner will report.
+`check-tests.py --deferred` accepts that and requires the source to exist; a mapping with a receipt is checked in full either way.
+`ship`'s verify phase runs the test, captures its receipt with the same `capture` command, adds `receipt` to the mapping (correcting `case` when the runner names it differently), and runs `check-tests.py` without the flag, which refuses any scenario still lacking a receipt.
+
 ## E2E and migration
 
-Capture actual application journeys through the same receipt contract at `--layer e2e`.
+Ship captures actual application journeys through the same receipt contract at `--layer e2e`.
 A custom browser or CLI harness can emit JUnit cases after observing each journey; retain screenshots or captured state in the E2E report as well.
 The XML is an execution result, not a static scenario catalog.
 If a repository cannot produce runner results yet, report that gap and add the narrow reporter adapter required by its real harness.

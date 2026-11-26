@@ -14,7 +14,7 @@ This reference owns the layout, the locating convention, and the diff scope; ski
 | `pr.md` | `ship` (opened at the start of a run that reaches phase 3, overwritten per run); quick mode updates only the review line and Open calls | the PR tool via `--body-file`; re-runs |
 | `.dev/config.yaml` | the user (repo-tracked settings) | `ship`, including YOLO (mutation testing) |
 
-Build's e2e report lives at `/tmp/{project-slug}/reports/{plan-name}-e2e.json`, outside the plan directory because its screenshots are large.
+Ship's e2e report, written by its verify phase's e2e pass, lives at `/tmp/{project-slug}/reports/{plan-name}-e2e.json`, outside the plan directory because its screenshots are large.
 One writer per file at a time; every other skill only reads.
 
 ## Git ignore policy

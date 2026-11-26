@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
 """Account for spec scenarios using runner-produced JUnit results.
 
-Usage: python3 check-tests.py .dev/{plan-name} [--repo-root .]
+Usage: python3 check-tests.py .dev/{plan-name} [--repo-root .] [--deferred]
        python3 check-tests.py capture --layer unit --report results.xml
          --receipt run.json --source tests.py --source app.py -- python -m pytest ...
 
 The default requires test-evidence.json, mapping each positional scenario ID
 (CS1-S1, CS1-S2, ...) to a passing runner case and a captured receipt.
+--deferred is build's gate: a scenario in a deferred layer (e2e, smoke, property,
+fuzz, benchmark) needs its mapping and an existing test source but no receipt yet,
+because ship's verify phase is the first to run it; without the flag every
+scenario needs its receipt, which is ship's acceptance check.
 --inventory-only checks declarations in notes for migration, not execution.
 Receipts bind report and source hashes to a real command's result; they do not
 prove that assertions or a claimed testing layer are semantically appropriate.
@@ -29,6 +33,8 @@ CHANGE_SET = re.compile(r"^(\d+)\.\s+\S")  # unindented; nested numbered lists a
 TESTS = re.compile(r"^\s*tests:\s*(.*)$", re.IGNORECASE)
 # The scenario tags lint-spec.py accepts; a receipt's layer must be one of them.
 TAGS = ("unit", "component", "integration", "contract", "property", "fuzz", "e2e", "smoke", "benchmark")
+# The layers build writes but never runs; ship's verify phase runs them first, per references/layers.md.
+DEFERRED = ("e2e", "smoke", "property", "fuzz", "benchmark")
 NOTE_ENTRY = re.compile(r"^##\s+Change set\s+(\d+)\b", re.IGNORECASE)
 NOTE_TESTS = re.compile(r"^\s*-\s*Tests added:\s*(.*)$", re.IGNORECASE)
 # A comma separates two references only when a path::name follows it; a test name may hold commas.
@@ -196,11 +202,12 @@ def capture(argv: list[str]) -> int:
         return 1
 
 
-def check_evidence(plan: Path, repo_root: Path, problem) -> None:
-    """Verify mapping, freshness, passing execution, and declared layer."""
+def check_evidence(plan: Path, repo_root: Path, problem, deferred: bool = False) -> int:
+    """Verify mapping, freshness, passing execution, and declared layer; return how many scenarios wait on ship."""
     expected = scenarios(plan / "spec.md")
+    waiting = 0
     if not expected:
-        return
+        return waiting
     try:
         manifest = json.loads((plan / "test-evidence.json").read_text(encoding="utf-8"))
         if not isinstance(manifest, dict) or manifest.get("schema") != "dev.test-evidence/1":
@@ -210,7 +217,7 @@ def check_evidence(plan: Path, repo_root: Path, problem) -> None:
             raise ValueError("scenarios must be an array")
     except (OSError, ValueError) as error:
         problem(f"runner evidence: {error}; see references/test-evidence.md")
-        return
+        return waiting
     seen, used_cases = set(), set()
     for mapping in mappings:
         try:
@@ -225,6 +232,18 @@ def check_evidence(plan: Path, repo_root: Path, problem) -> None:
                 raise ValueError(f"{scenario_id}: scenario has no layer tag; tag it with one of {', '.join(TAGS)}")
             if mapping.get("scenario") != text:
                 raise ValueError(f"{scenario_id}: scenario text or layer changed")
+            if "receipt" not in mapping and layer in DEFERRED:
+                if not deferred:
+                    raise ValueError(f"{scenario_id}: the [{layer}] test has not run yet; "
+                                     "capture its receipt in ship's verify phase")
+                written = (repo_root / mapping["source"]).resolve()
+                written.relative_to(repo_root.resolve())
+                if not written.is_file():
+                    raise ValueError(f"{scenario_id}: the [{layer}] test source {mapping['source']} does not exist")
+                if not isinstance(mapping.get("case"), str) or not mapping["case"]:
+                    raise ValueError(f"{scenario_id}: name the runner case the [{layer}] test will report")
+                waiting += 1
+                continue
             receipt_path = plan / mapping["receipt"]
             receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
             if not isinstance(receipt, dict) or receipt.get("schema") != "dev.test-run/1" or receipt.get("layer") != layer:
@@ -260,6 +279,7 @@ def check_evidence(plan: Path, repo_root: Path, problem) -> None:
             problem(f"runner evidence: {error}")
     for missing in sorted(set(expected) - seen):
         problem(f"runner evidence: {missing} has no scenario mapping")
+    return waiting
 
 
 def main(argv: list[str]) -> int:
@@ -267,7 +287,7 @@ def main(argv: list[str]) -> int:
         return capture(argv[2:])
     args: list[str] = []
     repo_root = Path(".")
-    inventory_only = False
+    inventory_only = deferred = False
     rest = argv[1:]
     while rest:
         value = rest.pop(0)
@@ -275,10 +295,12 @@ def main(argv: list[str]) -> int:
             repo_root = Path(rest.pop(0))
         elif value == "--inventory-only":
             inventory_only = True
+        elif value == "--deferred":
+            deferred = True
         else:
             args.append(value)
     if len(args) != 1:
-        print("usage: check-tests.py <plan directory> [--repo-root .]", file=sys.stderr)
+        print("usage: check-tests.py <plan directory> [--repo-root .] [--deferred]", file=sys.stderr)
         return 2
 
     plan = Path(args[0])
@@ -313,11 +335,12 @@ def main(argv: list[str]) -> int:
     for change_set in sorted(set(entries) - set(counts)):
         problem(f"change set {change_set} is in {notes} but not in the spec's change plan")
 
+    waiting = 0
     if inventory_only:
         for reference in fixups:
             check_named_test(reference, repo_root, "a fixup entry", problem)
     else:
-        check_evidence(plan, repo_root, problem)
+        waiting = check_evidence(plan, repo_root, problem, deferred)
 
     for message in problems:
         print(message)
@@ -328,7 +351,8 @@ def main(argv: list[str]) -> int:
     proof = ("inventory only; execution and layers NOT verified" if inventory_only
              else "runner evidence verified; assertion semantics require review" if owed
              else "no scenarios owed (every change set is tests: none)")
-    print(f"{plan}: clean - {len(counts)} change sets, {proof}.")
+    later = f"; {waiting} deferred scenario(s) written, not run - ship's verify phase runs them" if waiting else ""
+    print(f"{plan}: clean - {len(counts)} change sets, {proof}{later}.")
     return 0
 
 

@@ -28,7 +28,7 @@
         "implementation-notes.md opens with a Build run entry naming the Validation commands and the waves, written before change set 1 is implemented, and change set 1's entry is in the file before change set 2's work starts",
         "After both change sets are done, the user is asked to run ship rather than a review panel or verify phase being launched automatically",
         "Each implementation-notes.md entry carries a Tests added: line naming real path::test name references",
-        "scripts/check-tests.py is run against the plan directory and looped on until it exits clean, after the e2e pass, with runner receipts for all layers"
+        "scripts/check-tests.py --deferred is run against the plan directory and looped on until it exits clean, with runner receipts for every fast-layer scenario"
       ]
     },
     {
@@ -52,42 +52,13 @@
       "prompt": "Implement this spec.",
       "fixture": "a git repo with a tiny Node CLI (bin/cli.js exposing a `total` command over a cart file) and .dev/cart-total/spec.md with one change set whose tests: line carries [unit] a cart with items -> the sum is correct, [integration] the CLI command invoked with a cart file -> it reads and totals it, and [e2e] a user runs the built CLI against a real cart file -> it prints the correct total - kind: non-frontend",
       "assertions": [
-        "A unit test exists for the totaling business logic in isolation, no process spawned",
-        "An integration test exists that exercises the CLI command against a real (not mocked) cart-reading path",
-        "The e2e scenario is proven by actually invoking the built CLI as a subprocess against a real cart file, not by re-running the unit/integration tests",
-        "The e2e run uses a mocked, seeded, deterministic environment - no real external service or production data is touched",
-        "The e2e pass happens after the change set is committed, not interleaved with the unit/integration cycles",
+        "A unit test exists for the totaling business logic in isolation, no process spawned, and it runs green with a receipt",
+        "An integration test exists that exercises the CLI command against a real (not mocked) cart-reading path, and it runs green with a receipt",
+        "An e2e test is written that invokes the built CLI as a subprocess against a real cart file, typechecked and linted, but build never launches the CLI or runs it",
+        "test-evidence.json maps the e2e scenario to its written test and runner case without a receipt, and check-tests.py --deferred exits clean",
+        "Build writes no e2e report",
         ".dev/cart-total/implementation-notes.md exists and references what was done for the change set",
-        "A cart-total-e2e.json report is written locally under /tmp/{project-slug}/reports/, kind is non-frontend, and it contains a dataModelState entry with real before/after values rather than a screenshot",
-        "No screenshot or dataUri field is fabricated for a kind: non-frontend report",
-        "The report is opened with the host browser integration when available, or returned as a clickable local path; publication happens only when requested and supported"
-      ]
-    },
-    {
-      "id": "e2e-failure-loop",
-      "prompt": "Implement this spec.",
-      "fixture": "a git repo like e2e-cli-mocked-env, but the CLI has a latent formatting bug that only shows when the built binary runs end to end, so the first e2e capture fails",
-      "assertions": [
-        "The failing e2e scenario is diagnosed and fixed rather than reported as an accepted failure or a limitation",
-        "The fix adds a test at the cheapest layer that can catch the bug, rather than only patching until the e2e passes",
-        "The scenario is re-run and re-captured after the fix, not flipped to pass with the original capture",
-        "implementation-notes.md gains a Fixup entry for the fix, written with the fix rather than at the end of the run, naming the e2e scenario that found it and the test added",
-        "The final report's summary counts match the scenarios array and reflect the passing re-run",
-        "The user is asked to run ship only after the e2e run is green"
-      ]
-    },
-    {
-      "id": "ci-parity-before-pr",
-      "prompt": "Implement this spec.",
-      "fixture": "a repo whose spec Validation block runs unit/lint/build, while .github/workflows/pr.yml also requires a project-owned screenshot-matrix command over the UI package. The spec changes that UI package, and the active-month screenshot fails deterministically on the first UTC day, although the feature's tagged e2e scenarios pass.",
-      "assertions": [
-        "The pull-request workflow is inspected and impact-scope.py is run before the required commands, and the screenshot-matrix command runs before the user is offered a PR because the change reaches its inputs",
-        "A required command that already ran green on the unchanged final tree is recorded, not run a second time",
-        "The screenshot failure is diagnosed and fixed rather than labeled pre-existing, flaky, unrelated, deferred to CI, or an accepted deviation",
-        "The fix removes the time-dependent assumption without adding a retry, sleep, timeout increase, or looser assertion",
-        "The screenshot-matrix command is rerun and green before the PR question",
-        "The discovered CI commands, the scope each ran at, and their outcomes are recorded in implementation-notes.md, each as its command finishes",
-        "If the user approves a PR, required checks are watched to a terminal state and a deterministic failure is fixed and pushed rather than merely reported as restarted"
+        "The closing message points at ship, whose verify phase runs the deferred tests and the e2e pass"
       ]
     },
     {
@@ -96,9 +67,8 @@
       "fixture": "an npm-workspaces repo with packages/api and packages/web, each with its own test script, and a pr.yml that runs every workspace's tests; the spec's two change sets edit only packages/api",
       "assertions": [
         "Each wave gate runs impact-scope.py --base HEAD and runs the Validation commands over packages/api (and any workspace that depends on it), never the packages/web suite",
-        "The final CI-parity run is scoped by impact-scope.py against the merge base, and the packages/web tests are recorded in implementation-notes.md as deferred to CI: outside impact rather than run or silently dropped",
-        "No required command whose inputs the change reaches is deferred because it is slow",
-        "The closing message points at ship, whose PR's CI runs the deferred commands"
+        "Build runs no final CI-parity run and no (end of build) command; implementation-notes.md has no CI parity section",
+        "The closing message points at ship, whose verify phase runs the deferred commands and the CI-parity run at the branch's impact"
       ]
     },
     {
@@ -108,6 +78,7 @@
       "fixture": "python3 -m unittest dev.evals.tests.test_scenario_evidence",
       "assertions": [
         "Only current passing runner cases satisfy the default gate",
+        "Under --deferred, a deferred-layer scenario needs a written test and its mapping but no receipt, and the same plan fails the check without the flag",
         "Inventory-only explicitly does not verify execution or layers",
         "The semantic suitability of assertions and layer claims remains a review obligation"
       ]

@@ -7,9 +7,9 @@ The kinds, their triggers, and their gates live in [../../../references/verifica
 
 1. Read the spec's `### Verification` block. A kind it marks `yes` runs; a kind it marks `no` is skipped with the spec's reason, unless the diff shows the reason false, which makes it run. Without a spec, decide each kind from the triggers in verification.md and state the reason either way.
 2. The read-only analyzers first, as one parallel batch: `static-analysis` (types, security, dead code, duplication) and `lint`.
-3. The suite at the change's impact - `unit`, `functional`, `component`, `contract`, `acceptance`, `regression`, `smoke` - from the receipts build left when they are current, re-run otherwise.
-4. The expensive analyses, sequential and cheapest first because they contend for the runner and each one's input shifts with every fix: `coverage` and complexity, flakiness, `property` with a larger budget, `fuzz`, `formal`, `mutation`, `benchmark`, `performance`.
-5. Against the running local build: `ui-ux`, `usability`, then `threat-model` and `penetration`.
+3. The suite at the change's impact - `unit`, `functional`, `component`, `contract`, `regression` - from the receipts build left when they are current, re-run otherwise, plus the Validation commands marked `(end of build)`, which no build wave ran.
+4. The expensive analyses, sequential and cheapest first because they contend for the runner and each one's input shifts with every fix: `coverage` and complexity, flakiness, `property`, `fuzz`, `formal`, `mutation`, `benchmark`, `performance`. Build wrote the `[property]`, `[fuzz]`, and `[benchmark]` tests without running them, so each gets its acceptance run first - once as written, its receipt captured per [../../build/references/test-evidence.md](../../build/references/test-evidence.md#deferred-layers) - then its kind's budgeted run in [tools.md](tools.md). A failure in the acceptance run is an `acceptance` violation (must pass); a counterexample only the larger budget finds follows the kind's own gate.
+5. Against the running local build: the e2e pass of [e2e-pass.md](e2e-pass.md), which runs the `[smoke]` and `[e2e]` tests and writes the e2e report, then `ui-ux`, `usability`, `threat-model`, and `penetration`.
 
 ## The loop
 
@@ -26,15 +26,19 @@ For each kind that runs (the read-only batch counts as one), in order; skip muta
 
 ## Exit: refresh the e2e evidence
 
-Fix agents edit code, so once any tool dispatched fixes, the e2e report build wrote no longer describes the code phase 2 will judge.
-Before leaving phase 1, re-run the spec's `[e2e]` scenarios exactly as build does - same mocked environment and report shape, both owned by [../../build/SKILL.md](../../build/SKILL.md) and its references - overwriting `/tmp/{project-slug}/reports/{plan-name}-e2e.json`.
+Fix agents edit code, so once any tool dispatched fixes after the e2e pass, its report no longer describes the code phase 2 will judge.
+Before leaving phase 1, re-run the pass per [e2e-pass.md](e2e-pass.md), overwriting `/tmp/{project-slug}/reports/{plan-name}-e2e.json` and the receipts.
 A scenario that fails here is a violation like any other: dispatch fixes and loop under the same three-round rule.
-Never write new e2e scenarios in this step; generation belongs to build, this step only re-executes.
-Skip it when no tool dispatched fixes (the report is still fresh), when there is no spec or no e2e suite to run (note that in the wrap-up), or in review-only mode, which never reaches phase 1.
+Skip it when no fix landed after the pass, when the pass was skipped, or in review-only mode, which never reaches phase 1.
+
+## Exit: account for every scenario
+
+After the refresh, the `acceptance` kind: loop `python3 {ship-skill-root}/../build/scripts/check-tests.py .dev/{plan-name}`, without `--deferred`, until every spec scenario maps to a current passing receipt, re-running and re-capturing the tests a fix made stale.
+A deferred scenario still without a receipt was never run, which is a violation, not a skip. Skip this without a spec.
 
 ## Exit: prove CI parity
 
-After the e2e refresh decision, run the required pull-request commands at the
+After the e2e refresh decision and the scenario check, run the required pull-request commands at the
 branch's impact using
 [../../../references/ci-parity.md](../../../references/ci-parity.md). This gate
 always runs in the default two-phase flow and verify-only mode, even when no

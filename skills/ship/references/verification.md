@@ -13,19 +13,19 @@ That table is the agent's account. In the PR, CI's `ci-evidence.py` re-measures 
 | `functional` | a feature's behavior across the components this repo owns | a behavior change | build: `[integration]` scenarios | build, ship |
 | `component` | one component through its public interface, collaborators faked (a UI component rendered and driven, a service behind fake ports) | a component with a public interface changes | build: `[component]` scenarios | build, ship |
 | `contract` | provider and consumer agree on a boundary's shape and meaning | an API, message, schema, or third-party integration changes | build: `[contract]` scenarios | build, ship |
-| `property` | invariants hold for generated inputs: round-trips, ordering, idempotence, totals | logic with a statable invariant | build: `[property]` scenarios | build; ship with a larger budget |
-| `fuzz` | no crash, hang, or unbounded resource use on malformed input | parsers, decoders, untrusted input, native or unsafe code | build: `[fuzz]` harnesses | ship, time-boxed |
+| `property` | invariants hold for generated inputs: round-trips, ordering, idempotence, totals | logic with a statable invariant | build writes `[property]` scenarios | ship: once as written, then with a larger budget |
+| `fuzz` | no crash, hang, or unbounded resource use on malformed input | parsers, decoders, untrusted input, native or unsafe code | build writes `[fuzz]` harnesses | ship: on the seeds, then time-boxed |
 | `formal` | a model of the design reaches no bad state, or a proved statement holds for every input | concurrency, a distributed protocol, a state machine, lock or message ordering; a deterministic kernel whose bug would be costly or silent | scope decides the model and approves any statements; build writes it | ship model-checks it or runs the proof gate |
 | `static-analysis` | types, security rules, secrets, vulnerable dependencies, dead code, duplication, complexity | any code change | the repository's config | ship |
 | `lint` | style and format, plus the tests of the repository's own rules (ast-grep or Semgrep fixtures, ESLint RuleTester, `arch.py redteam`) | any change | the repository's config | ship |
 | `coverage` | the changed lines are executed by tests | any code change | - | ship |
 | `mutation` | the tests notice a change to the changed decision logic | changed decision-heavy logic | - | ship |
 | `regression` | existing behavior holds, and a fixed bug stays fixed | always; a bug fix adds a test red on the base and green on the branch | build | ship |
-| `acceptance` | every spec scenario passes at its tagged layer | a spec exists | build: every `tests:` line | build (`check-tests.py`), ship |
-| `smoke` | the built artifact starts and serves its main path | a runnable artifact changes | build: `[smoke]` scenarios | build, ship on the final build |
-| `benchmark` | hot code is no slower than on the base | a hot path, an algorithm, a data structure, or a stated budget | build: `[benchmark]` scenarios | ship, base against branch |
+| `acceptance` | every spec scenario passes at its tagged layer | a spec exists | build: every `tests:` line | build (`check-tests.py --deferred`) for the fast layers, ship (`check-tests.py`) for all |
+| `smoke` | the built artifact starts and serves its main path | a runnable artifact changes | build writes `[smoke]` scenarios | ship, in the e2e pass |
+| `benchmark` | hot code is no slower than on the base | a hot path, an algorithm, a data structure, or a stated budget | build writes `[benchmark]` scenarios | ship: once, then base against branch |
 | `performance` | latency, throughput, memory, or load time of the running system is no worse than on the base | a user-facing endpoint, query, startup, or page changes | - | ship, base against branch |
-| `ui-ux` | accessibility, no unintended visual change, every viewport, keyboard reachability | a UI changes | build's e2e screenshots | ship |
+| `ui-ux` | accessibility, no unintended visual change, every viewport, keyboard reachability | a UI changes | ship's e2e pass screenshots | ship |
 | `usability` | a user can finish the task: Nielsen's ten heuristics and a task walkthrough over the screenshots, or a CLI's help, errors, and defaults | a user-facing flow, CLI, or API surface changes | - | ship, a fresh-context agent |
 | `threat-model` | each trust boundary's STRIDE threats have a mitigation tied to a test | auth, permissions, untrusted input, secrets, stored user data, a new network edge | scope: `### Threat model` | ship checks each mitigation's test |
 | `penetration` | the threat model's threats are not exploitable on the running build | whenever `threat-model` applies | - | ship, against the local build only |
@@ -35,6 +35,7 @@ That table is the agent's account. In the PR, CI's `ci-evidence.py` re-measures 
 A `tests:` scenario carries one tag, the layer whose test proves it: `[unit]`, `[component]`, `[integration]`, `[contract]`, `[property]`, `[fuzz]`, `[e2e]`, `[smoke]`, or `[benchmark]`.
 `[integration]` is how this workflow writes functional tests, and `[e2e]` scenarios are the acceptance journeys; [../source/build/references/layers.md](../../build/references/layers.md) says what belongs at each layer.
 A kind marked `yes` in the Verification block that has a tag needs at least one scenario with that tag, and a tag needs its kind marked `yes`.
+Build runs the `[unit]`, `[component]`, `[integration]`, and `[contract]` tests it writes; the other five tags are deferred layers, written by build and run first by ship, per [../source/build/references/layers.md](../../build/references/layers.md#deferred-layers).
 
 ## The spec's Verification block
 
@@ -77,6 +78,7 @@ What happens after the third round depends on the kind:
 - **Must pass**: `unit`, `functional`, `component`, `contract`, `acceptance`, `regression`, `smoke`, `static-analysis`, and `lint`. A failure left after three rounds is a human call, and the PR stays a draft.
 - **Fix and report**: `coverage` under 80% of changed lines, a `benchmark` or `performance` regression over 10% against the base, any `fuzz` crash or hang, a `property` or `formal` counterexample, any medium-or-higher `penetration` finding, a serious or critical `ui-ux` accessibility violation, and `usability` findings. What survives three rounds is listed under Open calls; it never blocks the ship and never by itself makes the PR a draft.
 - **Integrity**: a `formal` proof that cheats - a banned construct, a foreign axiom, a proof of another statement, or a statement that differs from the approved one, per [proofs.md](proofs.md) - is must-pass, though an unfinished proof is fix-and-report.
+- **First runs**: a deferred-layer test that fails its first run, as written, is an `acceptance` failure and must pass; only what a larger budget or a longer run finds follows the kind's own gate.
 - **Reported**: `mutation`, per [../source/ship/references/verify.md](verify.md).
 - `threat-model` is checked, not run: a mitigation with no passing test is a `penetration` finding.
 

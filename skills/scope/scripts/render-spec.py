@@ -592,7 +592,7 @@ def render(data: dict) -> str:
         + " ".join(f"<code>{esc(f)}</code>" for f in sorted({f for i in c["items"] for f in i["files"]}))
         + "</li>" for c in change_sets)
     non_goals = "".join(f"<li>⊘ {inline(n)}</li>" for n in scope["non_goals"]) or '<li class="muted">None stated.</li>'
-    validation = "".join(f'<li><code>{esc(v["command"])}</code>{" <span class=muted>end of build</span>" if v["late"] else ""}</li>'
+    validation = "".join(f'<li><code>{esc(v["command"])}</code>{" <span class=muted>run in verify</span>" if v["late"] else ""}</li>'
                          for v in scope["validation"])
     mermaid = ('<script type="module">\nconst nodes = document.querySelectorAll("pre.mermaid");\n'
                'if (nodes.length) {\n  try {\n    const { default: mermaid } = await import("https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs");\n'

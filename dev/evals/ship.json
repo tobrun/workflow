@@ -43,6 +43,47 @@
       ]
     },
     {
+      "id": "verify-e2e-pass",
+      "mode": "functional",
+      "prompt": "Ship this branch.",
+      "fixture": "the e2e-cli-mocked-env repo of build.json after build ran: the change set is committed, its [unit] and [integration] receipts are current, and the [e2e] test that runs the built CLI against a real cart file is written and mapped in test-evidence.json without a receipt",
+      "assertions": [
+        "The verify phase runs the e2e pass of references/e2e-pass.md: the e2e scenario is proven by invoking the built CLI as a subprocess against a real cart file, not by re-running the unit or integration tests",
+        "The e2e run uses a mocked, seeded, deterministic environment - no real external service or production data is touched",
+        "The e2e test's receipt is captured with check-tests.py capture --layer e2e and added to its mapping, and check-tests.py without --deferred exits clean before phase 2",
+        "A cart-total-e2e.json report is written under /tmp/{project-slug}/reports/, kind is non-frontend, with a dataModelState entry holding real before/after values rather than a screenshot",
+        "No screenshot or dataUri field is fabricated for a kind: non-frontend report"
+      ]
+    },
+    {
+      "id": "verify-e2e-failure-loop",
+      "mode": "functional",
+      "prompt": "Ship this branch.",
+      "fixture": "the verify-e2e-pass fixture, but the CLI has a latent formatting bug that only shows when the built binary runs end to end, so the e2e test fails on its first run in the verify phase",
+      "assertions": [
+        "The failing e2e scenario is an acceptance violation: fix agents diagnose and fix it rather than reporting it as an accepted failure or a limitation",
+        "The fix adds a test at the cheapest layer that can catch the bug, rather than only patching until the e2e passes",
+        "The scenario is re-run and re-captured after the fix, with a new receipt, not flipped to pass with the original capture",
+        "The e2e report's summary counts match the scenarios array and reflect the passing re-run",
+        "The e2e test itself is not loosened or rewritten to pass; a step the spec never promised is fixed in the test only as a logged deviation"
+      ]
+    },
+    {
+      "id": "verify-ci-parity-before-pr",
+      "mode": "functional",
+      "prompt": "Ship this branch.",
+      "fixture": "a repo whose spec Validation block runs unit/lint/build, while .github/workflows/pr.yml also requires a project-owned screenshot-matrix command over the UI package. The spec changes that UI package, and the active-month screenshot fails deterministically on the first UTC day, although the feature's tagged e2e scenarios pass in the verify phase's e2e pass.",
+      "assertions": [
+        "The pull-request workflow is inspected and impact-scope.py is run before the required commands, and the screenshot-matrix command runs before the PR is created because the change reaches its inputs",
+        "A required command that already ran green on the unchanged final tree is recorded, not run a second time",
+        "The screenshot failure is diagnosed and fixed rather than labeled pre-existing, flaky, unrelated, deferred to CI, or an accepted deviation",
+        "The fix removes the time-dependent assumption without adding a retry, sleep, timeout increase, or looser assertion",
+        "The screenshot-matrix command is rerun and green before the PR question",
+        "The discovered CI commands, the scope each ran at, and their outcomes are recorded on pr.md's CI parity line, each as its command finishes",
+        "If the user approves a PR, required checks are watched to a terminal state and a deterministic failure is fixed and pushed rather than merely reported as restarted"
+      ]
+    },
+    {
       "id": "pr-evidence-split",
       "prompt": "Answer briefly, from the skill text and the references it links only. (1) Who writes the DEV-EVIDENCE block of the PR body, at which commit, and what may the agent write between its markers? (2) What does the Status column of the Acceptance criteria table say in pr.md, and who fills it? (3) The PR exists and ship must update its body. How does CI's block survive? (4) CI's block reports a new test that passes on the base. What does ship do? (5) The repository has no evidence job. What does the PR say?",
       "fixture": "none - the answers come from the skill text",

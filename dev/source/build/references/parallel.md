@@ -17,7 +17,7 @@ Each prompt gives:
 1. The role: it implements exactly one change set of a spec while sibling agents implement others in the same tree.
 2. The absolute paths of `spec.md`, `implementation-notes.md`, this skill's `SKILL.md` (its "The change-set loop" section), `layers.md`, `tests.md`, and `mocking.md`, and the number of the change set it owns.
 3. Constraints:
-   - Implement this change set's scenarios at every layer except `[e2e]` and `[smoke]`, which the orchestrator runs once per spec.
+   - Implement this change set's scenarios at every layer except `[e2e]` and `[smoke]`, which the orchestrator writes after the last wave. Write `[property]`, `[fuzz]`, and `[benchmark]` tests and typecheck them, but never run them; ship's verify phase does, per `layers.md`'s deferred layers.
    - Do not touch git state or `implementation-notes.md`; report instead.
    - Edit only files in this change set's list; a needed file another change set owns is a conflict to report, not to edit.
    - Run only this change set's tests plus typecheck and lint over the packages it touches - siblings are mid-edit, so a wider run measures their half-finished work. Report commands and real results.
@@ -49,4 +49,4 @@ A blocked change set, a failing gate, or a reported conflict is yours to finish 
 
 The spec's Validation block is the gate between a wave and its commits, and the only Validation run a wave gets.
 Run it at the wave's impact - `python3 {build-skill-root}/../../scripts/impact-scope.py --base HEAD`, read per [../../../references/ci-parity.md](../../../references/ci-parity.md) - and run each command once per tree; after a fix, re-run the failed command first.
-Leave out commands marked `(end of build)`, and the e2e suite, benchmarks, and analyses that re-run the suite (coverage, complexity, mutation) even when unmarked; they run once on the final tree.
+Leave out commands marked `(end of build)`, and the e2e suite, benchmarks, property and fuzz runs, and analyses that re-run the suite (coverage, complexity, mutation) even when unmarked; `ship`'s verify phase runs them on the final tree.

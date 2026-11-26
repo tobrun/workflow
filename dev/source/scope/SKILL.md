@@ -57,7 +57,7 @@ When a later section references a decision, echo the chosen line's leading label
 **Scope**: inputs, outputs, invariants, and error handling.
 Second-order work becomes nested sub-efforts with their own decisions; weighed and cut options become `⊘` non-goals with a because clause.
 End with a `### Validation` block of the repository's real typecheck, test, lint, and build commands, discovered from its manifests and CI config, never guessed.
-List each once, and mark `(end of build)` the ones a build wave does not need, such as the e2e suite, benchmarks, or a coverage run that repeats the suite.
+List each once, and mark `(end of build)` the ones a build wave does not need, such as the e2e suite, benchmarks, or a coverage run that repeats the suite; `ship`'s verify phase runs those.
 Then a `### Verification` block marking each of the twenty kinds in [../../references/verification.md](../../references/verification.md) `yes - how` or `no - reason`, judged by the triggers there; `formal: yes` names its mechanism as a decision (a TLA+ or Alloy model, a Lean model with proofs, Verus or Kani, or a stateful `[property]` test).
 When it names Lean, a `### Theorems` block per [../../references/proofs.md](../../references/proofs.md): each statement the user approves with the spec, with a plain-English reading and a witness, kept short enough to read; build copies them verbatim and no agent changes them after.
 When `threat-model` applies, a `### Threat model` block: per trust boundary, each STRIDE threat with its mitigation and the scenario that tests it.
